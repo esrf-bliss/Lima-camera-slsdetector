@@ -38,6 +38,11 @@ LDFLAGS += -L../../../third-party/CBFLib/lib
 LDLIBS += -lcbf
 endif
 
+ifneq ($(COMPILE_CONFIG), 0)
+LDFLAGS += -L../../../third-party/libconfig/lib/.libs
+LDLIBS += -lconfig++
+endif
+
 LIMA_INCL_FLAGS = -I../../../hardware/include -I../../../common/include \
 		  -I../../../control/include/ \
 		  -I../../../control/software_operation/include/ \
