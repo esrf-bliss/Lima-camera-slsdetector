@@ -55,7 +55,7 @@ struct ReceiverObj {
 		argv_list.push_back(os.str());
 		unsigned int argc = argv_list.size();
 		argv = new char *[argc];
-		cout << ", argv[" << argc << "]=\"";
+		cout << "  argv[" << argc << "]=\"";
 		for (unsigned int i = 0; i < argc; ++i) {
 			argv[i] = const_cast<char *>(argv_list[i].c_str());
 			cout << (i ? " " : "") << argv[i];
