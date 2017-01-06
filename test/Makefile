@@ -56,8 +56,8 @@ SLS_DETECTORS_INCL_FLAGS = -I$(SLS_DETECTORS_SW)/include \
 			   -I$(SLS_DETECTORS_SW)/multiSlsDetector \
 			   -I$(SLS_DETECTORS_SW)/slsDetectorServer \
 			   -I$(SLS_DETECTORS_SW)/slsDetectorAnalysis \
-			   -I$(SLS_DETECTORS_RECV)/include
-
+			   -I$(SLS_DETECTORS_RECV)/include \
+			   -I$(SLS_DETECTORS_SW)/slsReceiverInterface
 
 
 
