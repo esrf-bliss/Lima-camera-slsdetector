@@ -35,119 +35,207 @@
 using namespace std;
 using namespace lima;
 
-typedef RegEx::SingleMatchType SingleMatch;
-typedef RegEx::FullMatchType FullMatch;
-typedef RegEx::MatchListType MatchList;
-typedef MatchList::const_iterator MatchListIt;
+typedef vector<string> StringList;
 
-const int FRAME_PACKETS = 128;
-
-Mutex mutex;
-
-bool print_frame = false;
-
-struct ReceiverData
+class Args
 {
-	int idx;
-	int rx_port;
-	int mode;
-	int frame;
-	int size;
-	int packets;
-};	
+public:
+	Args();
+	Args(const string& s);
+	Args(const Args& o);
 
-int start_callback(char *fpath, char *fname, int fidx, int dsize, void *priv)
+	void set(const string& s);
+	void clear();
+
+	unsigned int argc()
+	{ return m_argc; }
+	char **argv()
+	{ return m_argv; }
+
+	Args& operator =(const string& s);
+
+private:
+	void update_argc_argv();
+
+	StringList m_arg_list;
+	unsigned int m_argc;
+	AutoPtr<char *, true> m_argv;
+};
+
+Args::Args() : m_argc(0)
 {
-	AutoLock<Mutex> l(mutex);
-
-	ReceiverData *data = static_cast<ReceiverData *>(priv);
-	if (print_frame) {
-		cout << "********* Start! *******" << endl;
-		cout << "fpath=" << fpath << ", fname=" << fname << ", " 
-		     << "fidex=" << fidx << ", dsize=" << dsize 
-		     << "idx=" << data->idx << endl;
-	}
-	data->packets = 0;
-
-	return DO_NOTHING;
 }
 
-void frame_callback(int frame, char *dptr, int dsize, FILE *f, char *guidptr,
-		    void *priv)
+Args::Args(const string& s)
 {
-	AutoLock<Mutex> l(mutex);
-
-	ReceiverData *data = static_cast<ReceiverData *>(priv);
-	if (++data->packets == data->size) {
-		if (print_frame) {
-			cout << "********* Frame! *******" << endl;
-			cout << "frame=" << frame << ", "
-			     << "dsize=" << dsize << ", "
-			     << "idx=" << data->idx << endl;
-		}
-		data->packets = 0;
-	}
+	set(s);
 }
 
-struct ReceiverObj {
-	ReceiverData data;
-	vector<string> argv_list;
-	AutoPtr<char *> argv;
-	AutoPtr<slsReceiverUsers> recv;
-
-	ReceiverObj(const ReceiverData& d) : data(d)
-	{
-		argv_list.push_back("slsReceiver");
-		ostringstream os;
-		argv_list.push_back("--rx_tcpport");
-		os << data.rx_port;
-		argv_list.push_back(os.str());
-		argv_list.push_back("--mode");
-		os.str("");
-		os << data.mode;
-		argv_list.push_back(os.str());
-		unsigned int argc = argv_list.size();
-		argv = new char *[argc];
-		cout << "  argv[" << argc << "]=\"";
-		for (unsigned int i = 0; i < argc; ++i) {
-			argv[i] = const_cast<char *>(argv_list[i].c_str());
-			cout << (i ? " " : "") << argv[i];
-		}
-		cout << endl;
-		data.size = FRAME_PACKETS;
-		int init_ret;
-		recv = new slsReceiverUsers(argc, argv, init_ret);
-		if (init_ret == slsReceiverDefs::FAIL)
-			throw runtime_error("Error creating slsReceiver");
-		if (recv->start() == slsReceiverDefs::FAIL) 
-			throw runtime_error("Error starting slsReceiver");
-		recv->registerCallBackStartAcquisition(start_callback, &data);
-		recv->registerCallBackRawDataReady(frame_callback, &data);
-	}
-
-	~ReceiverObj()
-	{
-		recv->stop();
-	}
-}; 
-
-
-int main(int argc, char *argv[])
+Args::Args(const Args& o) : m_arg_list(o.m_arg_list)
 {
-	if (argc < 2) {
-		cerr << "Missing config file" << endl;
-		return 1;
-	}
+	update_argc_argv();
+}
 
-	int nb_frames = 5;
-	if (argc == 3) {
-		istringstream is(argv[2]);
-		is >> nb_frames;
+void Args::set(const string& s)
+{
+	m_arg_list.clear();
+	istringstream is(s);
+	while (is) {
+		string token;
+		is >> token;
+		m_arg_list.push_back(token);
 	}
+	update_argc_argv();
+}
 
-	string config_file_name = argv[1];
-	vector<string> host_name_list;
-	map<int, int> recv_port_map;
+void Args::update_argc_argv()
+{
+	m_argc = m_arg_list.size();
+	m_argv = new char *[m_argc];
+	for (unsigned int i = 0; i < m_argc; ++i)
+		m_argv[i] = const_cast<char *>(m_arg_list[i].c_str());
+}
+
+
+class SlsDetectorAcq
+{
+public:
+	typedef RegEx::SingleMatchType SingleMatch;
+	typedef RegEx::FullMatchType FullMatch;
+	typedef RegEx::MatchListType MatchList;
+	typedef MatchList::const_iterator MatchListIt;
+
+	typedef StringList HostnameList;
+	typedef map<int, int> RecvPortMap;
+	typedef map<int, int> FrameRecvMap;
+
+	static const int FRAME_PACKETS;
+
+	struct AppInputData
+	{
+		string config_file_name;
+		HostnameList host_name_list;
+		RecvPortMap recv_port_map;
+		AppInputData(string cfg_fname);
+		void parseConfigFile();
+	};
+
+	class FrameMap
+	{
+	public:
+		typedef map<int, int> Map;
+		typedef list<int> List;
+
+		class Callback
+		{
+		public:
+			Callback(FrameMap *map);
+			virtual ~Callback();
+			virtual void finishedFrame(int frame) = 0;
+		private:
+			friend class FrameMap;
+			FrameMap *m_map;
+		};
+
+		FrameMap();
+		~FrameMap();
+		
+		void setNbItems(int nb_items);
+		void clear();
+		void frameItemFinished(int frame, int item);
+		
+		int getLastSeqFinishedFrame()
+		{ return m_last_seq_finished_frame; }
+
+		const List getNonSeqFinishedFrames()
+		{ return m_non_seq_finished_frames; }
+
+	private:
+		friend class Callback;
+
+		Map m_map;
+		List m_non_seq_finished_frames;
+		int m_last_seq_finished_frame;
+		Callback *m_cb;
+	};
+
+	struct ReceiverData
+	{
+		typedef map<int, int> FramePacketMap;
+		SlsDetectorAcq *acq;
+		int idx;
+		int rx_port;
+		int mode;
+		int frame;
+		int size;
+		FramePacketMap packets;
+		ReceiverData(SlsDetectorAcq *a, int i) : acq(a), idx(i) 
+		{}
+	};
+
+	struct ReceiverObj {
+		ReceiverData data;
+		Args args;
+		AutoPtr<slsReceiverUsers> recv;
+
+		ReceiverObj(const ReceiverData& d);
+		~ReceiverObj();
+		void start();
+		void registerCallbacks();
+
+		static int startCallback(char *fpath, char *fname, int fidx, 
+					 int dsize, void *priv);
+
+		static void frameCallback(int frame, char *dptr, int dsize, 
+					  FILE *f, char *guidptr, void *priv);
+	}; 
+
+	typedef vector<AutoPtr<ReceiverObj> > RecvList;
+
+	SlsDetectorAcq(string config_fname);
+	virtual ~SlsDetectorAcq();
+
+	void setNbFrames(int nb_frames)
+	{ m_nb_frames = nb_frames; }
+
+	void prepareAcq();
+	void startAcq();
+	void stopAcq();
+	void waitAcq();
+
+private:
+	friend struct ReceiverObj;
+
+	int startCallback(ReceiverData *data, char *fpath, char *fname, 
+			  int fidx, int dsize);
+	void frameCallback(ReceiverData *data, int frame, char *dptr, 
+			   int dsize, FILE *f, char *guidptr);
+
+	void createReceivers();
+
+	void putCmd(const string& s);
+	string getCmd(const string& s);
+
+	Mutex m_mutex;
+	bool m_print_frame;
+	AutoPtr<AppInputData> m_input_data;
+	RecvList m_recv_list;
+	AutoPtr<multiSlsDetector> m_det;
+	AutoPtr<multiSlsDetectorCommand> m_cmd;
+	int m_nb_frames;
+	bool m_started;
+};
+
+const int SlsDetectorAcq::FRAME_PACKETS = 128;
+
+SlsDetectorAcq::AppInputData::AppInputData(string cfg_fname) 
+  : config_file_name(cfg_fname) 
+{
+	parseConfigFile();
+}
+
+void SlsDetectorAcq::AppInputData::parseConfigFile()
+{
 	ifstream config_file(config_file_name.c_str());
 	while (config_file) {
 		string s;
@@ -179,7 +267,7 @@ int main(int argc, char *argv[])
 			is >> id;
 			if (id < 0) {
 				cerr << "Invalid detector id: " << id << endl;
-				return 1;
+				exit(1);
 			}
 			int rx_tcpport;
 			config_file >> rx_tcpport;
@@ -187,20 +275,139 @@ int main(int argc, char *argv[])
 			continue;
 		}
 	}
+}
 
-	vector<AutoPtr<ReceiverObj> >recv_list;
+
+SlsDetectorAcq::FrameMap::Callback(FrameMap *map)
+: m_map(map)
+{
+}
+
+SlsDetectorAcq::FrameMap::~Callback()
+{
+	if (m_map)
+		m_map->m_cb = NULL;
+}
+
+SlsDetectorAcq::FrameMap::FrameMap()
+	: m_nb_items(0), m_last_seq_finished_frame(-1), m_cb(NULL)
+{
+}
+
+SlsDetectorAcq::FrameMap::~FrameMap()
+{
+	if (m_cb)
+		m_cb->m_map == NULL;
+}
+
+SlsDetectorAcq::FrameMap::setNbItems(int nb_items)
+{
+	m_nb_items = nb_items;
+}
+
+void SlsDetectorAcq::FrameMap::clear()
+{
+	m_map.clear();
+	m_non_seq_finished_frames.clear();
+	m_last_seq_finished_frame = -1;
+}
+
+void SlsDetectorAcq::FrameMap::frameItemFinished(int frame, int item)
+{
+	if (m_nb_items == 0)
+		throw "SlsDetectorAcq::FrameMap::frameItemFinished: no items";
+	xxxx
+}
+
+SlsDetectorAcq::ReceiverObj::ReceiverObj(const ReceiverData& d) : data(d)
+{
+	data.size = FRAME_PACKETS;
+	
+	ostringstream os;
+	os << "slsReceiver"
+	   << " --rx_tcpport " << data.rx_port
+	   << " --mode " << data.mode;
+	args.set(os.str());
+
+	start();
+	registerCallbacks();
+}
+
+SlsDetectorAcq::ReceiverObj::~ReceiverObj()
+{
+	recv->stop();
+}
+
+void SlsDetectorAcq::ReceiverObj::start()
+{	
+	int init_ret;
+	recv = new slsReceiverUsers(args.argc(), args.argv(), init_ret);
+	if (init_ret == slsReceiverDefs::FAIL)
+		throw runtime_error("Error creating slsReceiver");
+	if (recv->start() == slsReceiverDefs::FAIL) 
+		throw runtime_error("Error starting slsReceiver");
+}
+
+void SlsDetectorAcq::ReceiverObj::registerCallbacks()
+{
+	recv->registerCallBackStartAcquisition(startCallback, &data);
+	recv->registerCallBackRawDataReady(frameCallback, &data);
+}
+
+int SlsDetectorAcq::ReceiverObj::startCallback(char *fpath, char *fname, 
+					       int fidx, int dsize, void *priv)
+{
+	ReceiverData *data = static_cast<ReceiverData *>(priv);
+	SlsDetectorAcq *acq = data->acq;
+	return acq->startCallback(data, fpath, fname, fidx, dsize);
+}
+
+void SlsDetectorAcq::ReceiverObj::frameCallback(int frame, char *dptr, 
+						int dsize, FILE *f, 
+						char *guidptr, void *priv)
+{
+	ReceiverData *data = static_cast<ReceiverData *>(priv);
+	SlsDetectorAcq *acq = data->acq;
+	acq->frameCallback(data, frame, dptr, dsize, f, guidptr);
+}
+
+SlsDetectorAcq::SlsDetectorAcq(string config_fname) 
+	: m_print_frame(true), m_nb_frames(1), m_started(false)
+{
+	m_input_data = new AppInputData(config_fname);
+
+	createReceivers();
+
+	cout << "+++ Creating the multiSlsDetector object ..." << endl;
+	m_det = new multiSlsDetector(0);
+	cout << "+++ Reading configuration file ..." << endl;
+	const char *fname = m_input_data->config_file_name.c_str();
+	m_det->readConfigurationFile(fname);
+
+	cout << "+++ Creating the multiSlsDetectorCommand ..." << endl;
+	m_cmd = new multiSlsDetectorCommand(m_det);
+}
+
+SlsDetectorAcq::~SlsDetectorAcq()
+{
+	cout << "+++ Starting cleanup ..." << endl;
+	stopAcq();
+}
+
+void SlsDetectorAcq::createReceivers()
+{
 	cout << "+++ Receivers:" << endl;
-	map<int, int>::const_iterator mit, mend = recv_port_map.end();
+	const RecvPortMap& recv_port_map = m_input_data->recv_port_map;
+	RecvPortMap::const_iterator mit, mend = recv_port_map.end();
 	int idx = 0;
 	for (mit = recv_port_map.begin(); mit != mend; ++mit, ++idx) {
-		ReceiverData data;
-		data.idx = idx;
+		ReceiverData data(this, idx);
 		unsigned int id = mit->first;
-		if (id >= host_name_list.size()) {
+		if (id >= m_input_data->host_name_list.size()) {
 			cerr << "Detector id too high: " << id << endl;
-			return 1;
+			exit(1);
 		}
-		const string& host_name = host_name_list[id];
+		const string& host_name = m_input_data->host_name_list[id];
 		data.rx_port = mit->second;
 		data.mode = (id % 2);
 		cout << "  " << host_name << ": "
@@ -208,97 +415,152 @@ int main(int argc, char *argv[])
 		     << "mode=" << data.mode << endl;
 
 		AutoPtr<ReceiverObj> recv_obj = new ReceiverObj(data);
-		recv_list.push_back(recv_obj);
+		m_recv_list.push_back(recv_obj);
 	}
+}
 
-	cout << "+++ Creating the multiSlsDetector object ..." << endl;
-	multiSlsDetector det(0);
-	cout << "+++ Reading configuration file ..." << endl;
-	det.readConfigurationFile(config_file_name.c_str());
+void SlsDetectorAcq::putCmd(const string& s)
+{
+	Args args(s);
+	m_cmd->putCommand(args.argc(), args.argv());
+}
 
-	cout << "+++ Creating the multiSlsDetectorCommand ..." << endl;
-	multiSlsDetectorCommand cmd(&det);
+string SlsDetectorAcq::getCmd(const string& s)
+{
+	Args args(s);
+	return m_cmd->getCommand(args.argc(), args.argv());
+}
 
-	char **args = new char*[10];
-	string ans;
+void SlsDetectorAcq::prepareAcq()
+{
+	ostringstream os;
 
 	cout << "+++ Setting timming ..." << endl;
-	args[0] = "timing";
-	args[1] = "auto";
-	cmd.putCommand(2, args);
+	putCmd("timing auto");
 
-	{
-		ostringstream os;
-		os << nb_frames;
-		string s = os.str();
-		cout << "+++ Setting frames ..." << endl;
-		args[0] = "frames";
-		args[1] = const_cast<char *>(s.c_str());
-		cmd.putCommand(2, args);
-	}
+	cout << "+++ Setting frames ..." << endl;
+	os.str("");
+	os << "frames " << m_nb_frames;
+	putCmd(os.str());
 
 	cout << "+++ Setting exptime ..." << endl;
-	args[0] = "exptime";
-	args[1] = "0.4e-3";
-	cmd.putCommand(2, args);
+	putCmd("exptime 0.4e-3");
 
 	cout << "+++ Setting period ..." << endl;
-	args[0] = "period";
-	args[1] = "1.0e-3";
-	cmd.putCommand(2, args);
+	putCmd("period 1.0e-3");
 
 	cout << "+++ Querying status ..." << endl;
-	args[0] = "status";
-	ans = cmd.getCommand(1, args);
-        cout << "  status=" << ans << endl;
+        cout << "  status=" << getCmd("status") << endl;
 
 	cout << "+++ Starting receivers ..." << endl;
-	args[0] = "receiver";
-	args[1] = "start";
-	ans = cmd.putCommand(2, args);
+	putCmd("receiver start");
+}
 
+void SlsDetectorAcq::startAcq()
+{
 	cout << "+++ Starting acq ..." << endl;
-	args[0] = "status";
-	args[1] = "start";
-	cmd.putCommand(2, args);
+	putCmd("status start");
 
 	cout << "+++ Querying status ..." << endl;
-	args[0] = "status";
-	ans = cmd.getCommand(1, args);
-        cout << "  status=" << ans << endl;
+        cout << "  status=" << getCmd("status") << endl;
+
+	m_started = true;
+}
+
+void SlsDetectorAcq::stopAcq()
+{
+	if (!m_started)
+		return;
+
+	cout << "+++ Stopping acq ..." << endl;
+	putCmd("status stop");
+
+	cout << "+++ Stopping receivers ..." << endl;
+	putCmd("receiver stop");
+
+	cout << "+++ Querying status ..." << endl;
+        cout << "  status=" << getCmd("status") << endl;
+
+	m_started = false;
+}
+
+void SlsDetectorAcq::waitAcq()
+{
+	if (!m_started)
+		return;
 
 	cout << "+++ Waiting for end ..." << endl;
 	{
 		int frames_caught = 0;
-		while (frames_caught < nb_frames) {
-			args[0] = "framescaught";
-			ans = cmd.getCommand(1, args);
-			{
-				AutoLock<Mutex> l(mutex);
-				cout << "  framescaught=" << ans << endl;
-			}
+		while (frames_caught < m_nb_frames) {
+			string ans = getCmd("framescaught");
 			istringstream is(ans);
 			is >> frames_caught;
+			{
+				AutoLock<Mutex> l(m_mutex);
+				cout << "  framescaught=" << ans << endl;
+			}
 			usleep(100000);
 		}
 	}
+}
 
-	cout << "+++ Stopping acq ..." << endl;
-	args[0] = "status";
-	args[1] = "stop";
-	cmd.putCommand(2, args);
+int SlsDetectorAcq::startCallback(ReceiverData *data, char *fpath, 
+				  char *fname, int fidx, int dsize)
+{
+	AutoLock<Mutex> l(m_mutex);
 
-	cout << "+++ Stopping receivers ..." << endl;
-	args[0] = "receiver";
-	args[1] = "stop";
-	cmd.putCommand(2, args);
+	if (m_print_frame) {
+		cout << "********* Start! *******" << endl;
+		cout << "fpath=" << fpath << ", fname=" << fname << ", " 
+		     << "fidex=" << fidx << ", dsize=" << dsize 
+		     << "idx=" << data->idx << endl;
+	}
 
-	cout << "+++ Querying status ..." << endl;
-	args[0] = "status";
-	ans = cmd.getCommand(1, args);
-        cout << "  status=" << ans << endl;
+	return DO_NOTHING;
+}
 
-	cout << "+++ Starting cleanup ..." << endl;
+void SlsDetectorAcq::frameCallback(ReceiverData *data, int frame, char *dptr,
+				   int dsize, FILE *f, char *guidptr)
+{
+	AutoLock<Mutex> l(m_mutex);
+	
+	ReceiverData::FramePacketMap& packets = data->packets;
+	ReceiverData::FramePacketMap::iterator it, end = packets.end();
+	it = packets.find(frame);
+	if (it == end) {
+		packets.insert(make_pair(frame, 1));
+	} else if (++it->second == data->size) {
+		if (m_print_frame) {
+			cout << "********* Frame! *******" << endl;
+			cout << "frame=" << frame << ", "
+			     << "dsize=" << dsize << ", "
+			     << "idx=" << data->idx << endl;
+		}
+		packets.erase(it);
+	}
+}
+
+
+int main(int argc, char *argv[])
+{
+	if (argc < 2) {
+		cerr << "Missing config file" << endl;
+		exit(1);
+	}
+	string config_fname = argv[1];
+
+	int nb_frames = 5;
+	if (argc == 3) {
+		istringstream is(argv[2]);
+		is >> nb_frames;
+	}
+
+	SlsDetectorAcq acq(config_fname);
+	acq.setNbFrames(nb_frames);
+	acq.prepareAcq();
+	acq.startAcq();
+	acq.waitAcq();
 
 	return 0;
 }
