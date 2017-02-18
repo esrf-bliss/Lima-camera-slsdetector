@@ -123,15 +123,15 @@ public:
 	class FrameMap
 	{
 	public:
-		typedef map<int, int> Map;
-		typedef list<int> List;
+		typedef set<int> List;
+		typedef map<int, List> Map;
 
 		class Callback
 		{
 		public:
 			Callback(FrameMap *map);
 			virtual ~Callback();
-			virtual void finishedFrame(int frame) = 0;
+			virtual void frameFinished(int frame) = 0;
 		private:
 			friend class FrameMap;
 			FrameMap *m_map;
@@ -140,6 +140,9 @@ public:
 		FrameMap();
 		~FrameMap();
 		
+		void setCallback(Callback *cb)
+		{ m_cb = cb; }
+
 		void setNbItems(int nb_items);
 		void clear();
 		void frameItemFinished(int frame, int item);
@@ -159,29 +162,26 @@ public:
 		Callback *m_cb;
 	};
 
-	struct ReceiverData
-	{
-		typedef map<int, int> FramePacketMap;
-		SlsDetectorAcq *acq;
-		int idx;
-		int rx_port;
-		int mode;
-		int frame;
-		int size;
-		FramePacketMap packets;
-		ReceiverData(SlsDetectorAcq *a, int i) : acq(a), idx(i) 
-		{}
-	};
-
-	struct ReceiverObj {
-		ReceiverData data;
-		Args args;
-		AutoPtr<slsReceiverUsers> recv;
-
-		ReceiverObj(const ReceiverData& d);
+	class ReceiverObj {
+	public:
+		ReceiverObj(SlsDetectorAcq *acq, 
+			    int idx, int rx_port, int mode);
 		~ReceiverObj();
 		void start();
 		void registerCallbacks();
+
+	private:
+		friend class SlsDetectorAcq;
+
+		SlsDetectorAcq *m_acq;
+		int m_idx;
+		int m_rx_port;
+		int m_mode;
+		FrameMap m_packet_map;
+		Args m_args;
+		AutoPtr<ReceiverFinishedCallback> m_finished_cb;
+		AutoPtr<slsReceiverUsers> m_recv;
+
 
 		static int startCallback(char *fpath, char *fname, int fidx, 
 					 int dsize, void *priv);
@@ -204,11 +204,29 @@ public:
 	void waitAcq();
 
 private:
-	friend struct ReceiverObj;
+	friend class ReceiverObj;
 
-	int startCallback(ReceiverData *data, char *fpath, char *fname, 
+	class ReceiverFinishedCallback : public FrameMap::Callback
+	{
+	public:
+		ReceiverFinishedCallback(ReceiverObj *d);
+		virtual frameFinished(int frame);
+	private:
+		ReceiverObj *recv;
+	};
+
+	class FrameFinishedCallback : public FrameMap::Callback
+	{
+	public:
+		FrameFinishedCallback(SlsDetectorAcq *a);
+		virtual frameFinished(int frame);
+	private:
+		SlsDetectorAcq *acq;
+	};
+
+	int startCallback(ReceiverObj *recv, char *fpath, char *fname, 
 			  int fidx, int dsize);
-	void frameCallback(ReceiverData *data, int frame, char *dptr, 
+	void frameCallback(ReceiverObj *recv, int frame, char *dptr, 
 			   int dsize, FILE *f, char *guidptr);
 
 	void createReceivers();
@@ -224,6 +242,8 @@ private:
 	AutoPtr<multiSlsDetectorCommand> m_cmd;
 	int m_nb_frames;
 	bool m_started;
+	FrameMap m_recv_map;
+	AutoPtr<ReceiverFinishedCallback> m_finished_cb;
 };
 
 const int SlsDetectorAcq::FRAME_PACKETS = 128;
@@ -316,12 +336,49 @@ void SlsDetectorAcq::FrameMap::frameItemFinished(int frame, int item)
 {
 	if (m_nb_items == 0)
 		throw "SlsDetectorAcq::FrameMap::frameItemFinished: no items";
-	xxxx
+	else if ((item < 0) || (item >= m_nb_items))
+		throw "SlsDetectorAcq::FrameMap::frameItemFinished: bad item";
+	Map::iterator mit = m_map.find(frame);
+	if (mit == m_map.end()) {
+		for (int i = 0; i < m_nb_items; ++i)
+			if (i != item)
+				m_map[frame].insert(i);
+		return;
+	}
+
+	List& item_list = mit->second;
+	List::iterator lit = item_list.find(item);
+	if (lit == item_list.end())
+		throw "SlsDetectorAcq::FrameMap::frameItemFinished: " 
+			"item already finished";
+	item_list.erase(lit);
+	if (!item_list.empty())
+		return;
+
+	int &last = m_last_seq_finished_frame;
+	List &waiting = m_non_seq_finished_frames;
+	if (frame == last + 1) {
+		++last;
+		while ((lit = waiting.find(last + 1)) != waiting.end()) {
+			waiting.erase(lit);
+			++last;
+		}
+	} else {
+		waiting.insert(frame);
+	}
+	if (m_cb)
+		m_cb->frameFinished(frame);
 }
 
-SlsDetectorAcq::ReceiverObj::ReceiverObj(const ReceiverData& d) : data(d)
+SlsDetectorAcq::ReceiverObj::ReceiverObj(SlsDetectorAcq *acq, 
+					 int idx, int rx_port, int mode)
+	: m_idx(idx), m_rx_port(rx_port), m_mode(mode)
 {
-	data.size = FRAME_PACKETS;
+
+	data.packet_map.setNbItems(FRAME_PACKETS);
+	finished_cb = new ReceiverFinishedCallback(&data);
+	data.packet_map.setCallback(finished_cb);
+
 	
 	ostringstream os;
 	os << "slsReceiver"
@@ -350,25 +407,25 @@ void SlsDetectorAcq::ReceiverObj::start()
 
 void SlsDetectorAcq::ReceiverObj::registerCallbacks()
 {
-	recv->registerCallBackStartAcquisition(startCallback, &data);
-	recv->registerCallBackRawDataReady(frameCallback, &data);
+	recv->registerCallBackStartAcquisition(startCallback, this);
+	recv->registerCallBackRawDataReady(frameCallback, this);
 }
 
 int SlsDetectorAcq::ReceiverObj::startCallback(char *fpath, char *fname, 
 					       int fidx, int dsize, void *priv)
 {
-	ReceiverData *data = static_cast<ReceiverData *>(priv);
-	SlsDetectorAcq *acq = data->acq;
-	return acq->startCallback(data, fpath, fname, fidx, dsize);
+	ReceiverObj *recv = static_cast<ReceiverObj *>(priv);
+	SlsDetectorAcq *acq = recv->m_acq;
+	return acq->startCallback(recv, fpath, fname, fidx, dsize);
 }
 
 void SlsDetectorAcq::ReceiverObj::frameCallback(int frame, char *dptr, 
 						int dsize, FILE *f, 
 						char *guidptr, void *priv)
 {
-	ReceiverData *data = static_cast<ReceiverData *>(priv);
-	SlsDetectorAcq *acq = data->acq;
-	acq->frameCallback(data, frame, dptr, dsize, f, guidptr);
+	ReceiverObj *recv = static_cast<ReceiverObj *>(priv);
+	SlsDetectorAcq *acq = recv->m_acq;
+	acq->frameCallback(recv, frame, dptr, dsize, f, guidptr);
 }
 
 SlsDetectorAcq::SlsDetectorAcq(string config_fname) 
@@ -524,11 +581,13 @@ void SlsDetectorAcq::frameCallback(ReceiverData *data, int frame, char *dptr,
 				   int dsize, FILE *f, char *guidptr)
 {
 	AutoLock<Mutex> l(m_mutex);
-	
-	ReceiverData::FramePacketMap& packets = data->packets;
-	ReceiverData::FramePacketMap::iterator it, end = packets.end();
-	it = packets.find(frame);
-	if (it == end) {
+	FrameMap& packet_map = data->packet_map;
+	packet_map.frameItemFinished(frame, data->idx);
+}
+
+{
+	ReceiverData::FramePacketMap::iterator it = packets.find(frame);
+	if (it == packets.end()) {
 		packets.insert(make_pair(frame, 1));
 	} else if (++it->second == data->size) {
 		if (m_print_frame) {
