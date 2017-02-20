@@ -19,51 +19,29 @@
 // You should have received a copy of the GNU General Public License
 // along with this program; if not, see <http://www.gnu.org/licenses/>.
 //###########################################################################
-#include "multiSlsDetector.h"
-#include "multiSlsDetectorCommand.h"
-#include "slsReceiverUsers.h"
-#include "receiver_defs.h"
 
-#include "lima/RegExUtils.h"
-#include "lima/ThreadUtils.h"
+#include "test_sls_detector.h"
+#include "lima/Timestamp.h"
 
-#include <iostream>
-#include <string>
-#include <stdexcept>
-#include <cstdlib>
+#define THROW(x)					\
+	do {						\
+		throw runtime_error(x);			\
+	} while (0)
+
 
 using namespace std;
 using namespace lima;
 
-typedef vector<string> StringList;
-
-class Args
-{
-public:
-	Args();
-	Args(const string& s);
-	Args(const Args& o);
-
-	void set(const string& s);
-	void clear();
-
-	unsigned int argc()
-	{ return m_argc; }
-	char **argv()
-	{ return m_argv; }
-
-	Args& operator =(const string& s);
-
-private:
-	void update_argc_argv();
-
-	StringList m_arg_list;
-	unsigned int m_argc;
-	AutoPtr<char *, true> m_argv;
-};
 
 Args::Args() : m_argc(0)
 {
+}
+
+Args::Args(unsigned int argc, char *argv[])
+{
+	for (unsigned int i = 0; i < argc; ++i)
+		m_arg_list.push_back(argv[i]);
+	update_argc_argv();
 }
 
 Args::Args(const string& s)
@@ -88,168 +66,49 @@ void Args::set(const string& s)
 	update_argc_argv();
 }
 
+void Args::clear()
+{
+	m_arg_list.clear();
+	update_argc_argv();
+}
+
+Args& Args::operator =(const std::string& s)
+{
+	set(s);
+	return *this;
+}
+
+string Args::pop_front()
+{
+	string s = m_arg_list[0];
+	erase(0);
+	return s;
+}
+
+void Args::erase(int pos)
+{
+	m_arg_list.erase(m_arg_list.begin() + pos);
+	update_argc_argv();
+}
+
 void Args::update_argc_argv()
 {
 	m_argc = m_arg_list.size();
+	if (m_argc == 0) {
+		m_argv = NULL;
+		return;
+	}
+
 	m_argv = new char *[m_argc];
 	for (unsigned int i = 0; i < m_argc; ++i)
 		m_argv[i] = const_cast<char *>(m_arg_list[i].c_str());
 }
 
 
-class SlsDetectorAcq
-{
-public:
-	typedef RegEx::SingleMatchType SingleMatch;
-	typedef RegEx::FullMatchType FullMatch;
-	typedef RegEx::MatchListType MatchList;
-	typedef MatchList::const_iterator MatchListIt;
-
-	typedef StringList HostnameList;
-	typedef map<int, int> RecvPortMap;
-	typedef map<int, int> FrameRecvMap;
-
-	static const int FRAME_PACKETS;
-
-	struct AppInputData
-	{
-		string config_file_name;
-		HostnameList host_name_list;
-		RecvPortMap recv_port_map;
-		AppInputData(string cfg_fname);
-		void parseConfigFile();
-	};
-
-	class FrameMap
-	{
-	public:
-		typedef set<int> List;
-		typedef map<int, List> Map;
-
-		class Callback
-		{
-		public:
-			Callback(FrameMap *map);
-			virtual ~Callback();
-			virtual void frameFinished(int frame) = 0;
-		private:
-			friend class FrameMap;
-			FrameMap *m_map;
-		};
-
-		FrameMap();
-		~FrameMap();
-		
-		void setCallback(Callback *cb)
-		{ m_cb = cb; }
-
-		void setNbItems(int nb_items);
-		void clear();
-		void frameItemFinished(int frame, int item);
-		
-		int getLastSeqFinishedFrame()
-		{ return m_last_seq_finished_frame; }
-
-		const List getNonSeqFinishedFrames()
-		{ return m_non_seq_finished_frames; }
-
-	private:
-		friend class Callback;
-
-		Map m_map;
-		List m_non_seq_finished_frames;
-		int m_last_seq_finished_frame;
-		Callback *m_cb;
-	};
-
-	class ReceiverObj {
-	public:
-		ReceiverObj(SlsDetectorAcq *acq, 
-			    int idx, int rx_port, int mode);
-		~ReceiverObj();
-		void start();
-		void registerCallbacks();
-
-	private:
-		friend class SlsDetectorAcq;
-
-		SlsDetectorAcq *m_acq;
-		int m_idx;
-		int m_rx_port;
-		int m_mode;
-		FrameMap m_packet_map;
-		Args m_args;
-		AutoPtr<ReceiverFinishedCallback> m_finished_cb;
-		AutoPtr<slsReceiverUsers> m_recv;
-
-
-		static int startCallback(char *fpath, char *fname, int fidx, 
-					 int dsize, void *priv);
-
-		static void frameCallback(int frame, char *dptr, int dsize, 
-					  FILE *f, char *guidptr, void *priv);
-	}; 
-
-	typedef vector<AutoPtr<ReceiverObj> > RecvList;
-
-	SlsDetectorAcq(string config_fname);
-	virtual ~SlsDetectorAcq();
-
-	void setNbFrames(int nb_frames)
-	{ m_nb_frames = nb_frames; }
-
-	void prepareAcq();
-	void startAcq();
-	void stopAcq();
-	void waitAcq();
-
-private:
-	friend class ReceiverObj;
-
-	class ReceiverFinishedCallback : public FrameMap::Callback
-	{
-	public:
-		ReceiverFinishedCallback(ReceiverObj *d);
-		virtual frameFinished(int frame);
-	private:
-		ReceiverObj *recv;
-	};
-
-	class FrameFinishedCallback : public FrameMap::Callback
-	{
-	public:
-		FrameFinishedCallback(SlsDetectorAcq *a);
-		virtual frameFinished(int frame);
-	private:
-		SlsDetectorAcq *acq;
-	};
-
-	int startCallback(ReceiverObj *recv, char *fpath, char *fname, 
-			  int fidx, int dsize);
-	void frameCallback(ReceiverObj *recv, int frame, char *dptr, 
-			   int dsize, FILE *f, char *guidptr);
-
-	void createReceivers();
-
-	void putCmd(const string& s);
-	string getCmd(const string& s);
-
-	Mutex m_mutex;
-	bool m_print_frame;
-	AutoPtr<AppInputData> m_input_data;
-	RecvList m_recv_list;
-	AutoPtr<multiSlsDetector> m_det;
-	AutoPtr<multiSlsDetectorCommand> m_cmd;
-	int m_nb_frames;
-	bool m_started;
-	FrameMap m_recv_map;
-	AutoPtr<ReceiverFinishedCallback> m_finished_cb;
-};
-
 const int SlsDetectorAcq::FRAME_PACKETS = 128;
 
 SlsDetectorAcq::AppInputData::AppInputData(string cfg_fname) 
-  : config_file_name(cfg_fname) 
+	: config_file_name(cfg_fname) 
 {
 	parseConfigFile();
 }
@@ -298,12 +157,12 @@ void SlsDetectorAcq::AppInputData::parseConfigFile()
 }
 
 
-SlsDetectorAcq::FrameMap::Callback(FrameMap *map)
-: m_map(map)
+SlsDetectorAcq::FrameMap::Callback::Callback()
+	: m_map(NULL)
 {
 }
 
-SlsDetectorAcq::FrameMap::~Callback()
+SlsDetectorAcq::FrameMap::Callback::~Callback()
 {
 	if (m_map)
 		m_map->m_cb = NULL;
@@ -317,10 +176,10 @@ SlsDetectorAcq::FrameMap::FrameMap()
 SlsDetectorAcq::FrameMap::~FrameMap()
 {
 	if (m_cb)
-		m_cb->m_map == NULL;
+		m_cb->m_map = NULL;
 }
 
-SlsDetectorAcq::FrameMap::setNbItems(int nb_items)
+void SlsDetectorAcq::FrameMap::setNbItems(int nb_items)
 {
 	m_nb_items = nb_items;
 }
@@ -332,12 +191,21 @@ void SlsDetectorAcq::FrameMap::clear()
 	m_last_seq_finished_frame = -1;
 }
 
+void SlsDetectorAcq::FrameMap::setCallback(Callback *cb)
+{ 
+	if (m_cb)
+		m_cb->m_map = NULL;
+	m_cb = cb; 
+	if (m_cb)
+		m_cb->m_map = this;
+}
+
 void SlsDetectorAcq::FrameMap::frameItemFinished(int frame, int item)
 {
-	if (m_nb_items == 0)
-		throw "SlsDetectorAcq::FrameMap::frameItemFinished: no items";
+	if (m_nb_items == 0)		
+		THROW("SlsDetectorAcq::FrameMap::frameItemFinished: no items");
 	else if ((item < 0) || (item >= m_nb_items))
-		throw "SlsDetectorAcq::FrameMap::frameItemFinished: bad item";
+		THROW("SlsDetectorAcq::FrameMap::frameItemFinished: bad item");
 	Map::iterator mit = m_map.find(frame);
 	if (mit == m_map.end()) {
 		for (int i = 0; i < m_nb_items; ++i)
@@ -348,12 +216,17 @@ void SlsDetectorAcq::FrameMap::frameItemFinished(int frame, int item)
 
 	List& item_list = mit->second;
 	List::iterator lit = item_list.find(item);
-	if (lit == item_list.end())
-		throw "SlsDetectorAcq::FrameMap::frameItemFinished: " 
-			"item already finished";
+	if (lit == item_list.end()) {
+		ostringstream os;
+		os << "SlsDetectorAcq::FrameMap::frameItemFinished: item "
+		   << item << " already finished for frame " << frame;
+		THROW(os.str());
+	}
+
 	item_list.erase(lit);
 	if (!item_list.empty())
 		return;
+	m_map.erase(mit);
 
 	int &last = m_last_seq_finished_frame;
 	List &waiting = m_non_seq_finished_frames;
@@ -370,53 +243,98 @@ void SlsDetectorAcq::FrameMap::frameItemFinished(int frame, int item)
 		m_cb->frameFinished(frame);
 }
 
+ostream& lima::operator <<(ostream& os, const SlsDetectorAcq::FrameMap& m)
+{
+	os << "<";
+	os << "LastSeqFinishedFrame=" << m.getLastSeqFinishedFrame() << ", "
+	   << "NonSeqFinishedFrames=" << m.getNonSeqFinishedFrames() << ", "
+	   << "FramePendingItemsMap=" << m.getFramePendingItemsMap();
+	return os << ">";
+}
+
+ostream& lima::operator <<(ostream& os, const SlsDetectorAcq::FrameMap::List& l)
+{
+	os << "[";
+	typedef SlsDetectorAcq::FrameMap::List List;
+	List::const_iterator it, end = l.end();
+	bool first;
+	for (it = l.begin(), first = true; it != end; ++it, first = false)
+		os << (first ? "" : ", ") << *it;
+	return os << "]";
+}
+
+ostream& lima::operator <<(ostream& os, const SlsDetectorAcq::FrameMap::Map& m)
+{
+	os << "{";
+	typedef SlsDetectorAcq::FrameMap::Map Map;
+	Map::const_iterator it, end = m.end();
+	bool first;
+	for (it = m.begin(), first = true; it != end; ++it, first = false)
+		os << (first ? "" : ", ") << it->first << ": " << it->second;
+	return os << "}";
+}
+
+SlsDetectorAcq::
+ReceiverObj::FrameFinishedCallback::FrameFinishedCallback(ReceiverObj *r, 
+							  int p) 
+	: m_recv(r), m_print_policy(p)
+{
+}
+
+void SlsDetectorAcq::
+ReceiverObj::FrameFinishedCallback::frameFinished(int frame) 
+{
+	if (m_print_policy & PRINT_POLICY_RECV) {
+		cout << "********* End! *******" << endl;
+		cout << "frame=" << frame << ", "
+		     << "idx=" << m_recv->m_idx << endl;
+	}
+
+	m_recv->m_acq->receiverFrameFinished(frame, m_recv);
+	m_recv->m_packet_idx = -1;
+}
+
 SlsDetectorAcq::ReceiverObj::ReceiverObj(SlsDetectorAcq *acq, 
 					 int idx, int rx_port, int mode)
-	: m_idx(idx), m_rx_port(rx_port), m_mode(mode)
+	: m_mutex(acq->m_mutex), m_acq(acq), 
+	  m_idx(idx), m_rx_port(rx_port), m_mode(mode), m_packet_idx(-1)
 {
+	m_cb = new FrameFinishedCallback(this, m_acq->m_print_policy);
 
-	data.packet_map.setNbItems(FRAME_PACKETS);
-	finished_cb = new ReceiverFinishedCallback(&data);
-	data.packet_map.setCallback(finished_cb);
+	m_packet_map.setNbItems(FRAME_PACKETS);
+	m_packet_map.setCallback(m_cb);
 
-	
 	ostringstream os;
 	os << "slsReceiver"
-	   << " --rx_tcpport " << data.rx_port
-	   << " --mode " << data.mode;
-	args.set(os.str());
+	   << " --rx_tcpport " << m_rx_port << " --mode " << m_mode;
+	m_args.set(os.str());
 
 	start();
-	registerCallbacks();
+
+	m_recv->registerCallBackStartAcquisition(startCallback, this);
+	m_recv->registerCallBackRawDataReady(frameCallback, this);
 }
 
 SlsDetectorAcq::ReceiverObj::~ReceiverObj()
 {
-	recv->stop();
+	m_recv->stop();
 }
 
 void SlsDetectorAcq::ReceiverObj::start()
 {	
 	int init_ret;
-	recv = new slsReceiverUsers(args.argc(), args.argv(), init_ret);
+	m_recv = new slsReceiverUsers(m_args.size(), m_args, init_ret);
 	if (init_ret == slsReceiverDefs::FAIL)
-		throw runtime_error("Error creating slsReceiver");
-	if (recv->start() == slsReceiverDefs::FAIL) 
-		throw runtime_error("Error starting slsReceiver");
-}
-
-void SlsDetectorAcq::ReceiverObj::registerCallbacks()
-{
-	recv->registerCallBackStartAcquisition(startCallback, this);
-	recv->registerCallBackRawDataReady(frameCallback, this);
+		THROW("Error creating slsReceiver");
+	if (m_recv->start() == slsReceiverDefs::FAIL) 
+		THROW("Error starting slsReceiver");
 }
 
 int SlsDetectorAcq::ReceiverObj::startCallback(char *fpath, char *fname, 
 					       int fidx, int dsize, void *priv)
 {
 	ReceiverObj *recv = static_cast<ReceiverObj *>(priv);
-	SlsDetectorAcq *acq = recv->m_acq;
-	return acq->startCallback(recv, fpath, fname, fidx, dsize);
+	return recv->startCallback(fpath, fname, fidx, dsize);
 }
 
 void SlsDetectorAcq::ReceiverObj::frameCallback(int frame, char *dptr, 
@@ -424,12 +342,51 @@ void SlsDetectorAcq::ReceiverObj::frameCallback(int frame, char *dptr,
 						char *guidptr, void *priv)
 {
 	ReceiverObj *recv = static_cast<ReceiverObj *>(priv);
-	SlsDetectorAcq *acq = recv->m_acq;
-	acq->frameCallback(recv, frame, dptr, dsize, f, guidptr);
+	recv->frameCallback(frame, dptr, dsize, f, guidptr);
+}
+
+int SlsDetectorAcq::ReceiverObj::startCallback(char *fpath, char *fname, 
+					       int fidx, int dsize)
+{
+	AutoLock<Mutex> l(m_mutex);
+
+	if (m_acq->m_print_policy & PRINT_POLICY_START) {
+		cout << "********* Start! *******" << endl;
+		cout << "fpath=" << fpath << ", fname=" << fname << ", " 
+		     << "fidex=" << fidx << ", dsize=" << dsize << ", "
+		     << "idx=" << m_idx << endl;
+	}
+
+	return DO_NOTHING;
+}
+
+void SlsDetectorAcq::ReceiverObj::frameCallback(int frame, char *dptr, 
+						int dsize, FILE *f, 
+						char *guidptr)
+{
+	AutoLock<Mutex> l(m_mutex);
+	if (m_acq->m_print_policy & PRINT_POLICY_PACKET) {
+		cout << "********* Frame! *******" << endl;
+		cout << "frame=" << frame << ", dsize=" << dsize << ", "
+		     << "idx=" << m_idx << endl;
+	}
+
+	m_packet_map.frameItemFinished(frame, ++m_packet_idx);
+}
+
+SlsDetectorAcq::FrameFinishedCallback::FrameFinishedCallback(SlsDetectorAcq *a)
+	 : m_acq(a)
+{
+}
+
+void SlsDetectorAcq::FrameFinishedCallback::frameFinished(int frame)
+{
+	m_acq->frameFinished(frame);
 }
 
 SlsDetectorAcq::SlsDetectorAcq(string config_fname) 
-	: m_print_frame(true), m_nb_frames(1), m_started(false)
+	: m_print_policy(PRINT_POLICY_NONE), m_nb_frames(1), m_exp_time(0.99),
+	  m_frame_period(1.0), m_started(false)
 {
 	m_input_data = new AppInputData(config_fname);
 
@@ -458,34 +415,38 @@ void SlsDetectorAcq::createReceivers()
 	RecvPortMap::const_iterator mit, mend = recv_port_map.end();
 	int idx = 0;
 	for (mit = recv_port_map.begin(); mit != mend; ++mit, ++idx) {
-		ReceiverData data(this, idx);
 		unsigned int id = mit->first;
 		if (id >= m_input_data->host_name_list.size()) {
 			cerr << "Detector id too high: " << id << endl;
 			exit(1);
 		}
 		const string& host_name = m_input_data->host_name_list[id];
-		data.rx_port = mit->second;
-		data.mode = (id % 2);
+		int rx_port = mit->second;
+		int mode = (id % 2);
 		cout << "  " << host_name << ": "
-		     << "receiver port=" << data.rx_port << ", "
-		     << "mode=" << data.mode << endl;
+		     << "receiver port=" << rx_port << ", "
+		     << "mode=" << mode << endl;
 
-		AutoPtr<ReceiverObj> recv_obj = new ReceiverObj(data);
+		AutoPtr<ReceiverObj> recv_obj = new ReceiverObj(this, idx, 
+								rx_port, mode);
 		m_recv_list.push_back(recv_obj);
 	}
+
+	m_frame_cb = new FrameFinishedCallback(this);
+	m_recv_map.setNbItems(recv_port_map.size());
+	m_recv_map.setCallback(m_frame_cb);
 }
 
 void SlsDetectorAcq::putCmd(const string& s)
 {
 	Args args(s);
-	m_cmd->putCommand(args.argc(), args.argv());
+	m_cmd->putCommand(args.size(), args);
 }
 
 string SlsDetectorAcq::getCmd(const string& s)
 {
 	Args args(s);
-	return m_cmd->getCommand(args.argc(), args.argv());
+	return m_cmd->getCommand(args.size(), args);
 }
 
 void SlsDetectorAcq::prepareAcq()
@@ -501,10 +462,14 @@ void SlsDetectorAcq::prepareAcq()
 	putCmd(os.str());
 
 	cout << "+++ Setting exptime ..." << endl;
-	putCmd("exptime 0.4e-3");
+	os.str("");
+	os << "exptime " << m_exp_time;
+	putCmd(os.str());
 
 	cout << "+++ Setting period ..." << endl;
-	putCmd("period 1.0e-3");
+	os.str("");
+	os << "period " << m_frame_period;
+	putCmd(os.str());
 
 	cout << "+++ Querying status ..." << endl;
         cout << "  status=" << getCmd("status") << endl;
@@ -549,77 +514,127 @@ void SlsDetectorAcq::waitAcq()
 	cout << "+++ Waiting for end ..." << endl;
 	{
 		int frames_caught = 0;
+		string last_msg;
+		Timestamp last_change = Timestamp::now();
+		double timeout = 2;
 		while (frames_caught < m_nb_frames) {
+			if (Timestamp::now() - last_change > timeout) {
+				cout << "!!!!! Blocked "
+				     << "(" << timeout <<"s) !!!!!" << endl;
+				break;
+			}
+
+			usleep(200000);
 			string ans = getCmd("framescaught");
 			istringstream is(ans);
 			is >> frames_caught;
-			{
+			ostringstream os;
+			os << "  framescaught=" << frames_caught;
+			if (m_print_policy & PRINT_POLICY_MAP) {
 				AutoLock<Mutex> l(m_mutex);
-				cout << "  framescaught=" << ans << endl;
+				os << ", " << "m_recv_map=" << m_recv_map;
 			}
-			usleep(100000);
+			string msg = os.str();
+			cout << msg << endl;
+			if (msg != last_msg)
+				last_change = Timestamp::now();
+			last_msg = msg;
 		}
 	}
 }
 
-int SlsDetectorAcq::startCallback(ReceiverData *data, char *fpath, 
-				  char *fname, int fidx, int dsize)
+void SlsDetectorAcq::receiverFrameFinished(int frame, ReceiverObj *recv)
 {
-	AutoLock<Mutex> l(m_mutex);
-
-	if (m_print_frame) {
-		cout << "********* Start! *******" << endl;
-		cout << "fpath=" << fpath << ", fname=" << fname << ", " 
-		     << "fidex=" << fidx << ", dsize=" << dsize 
-		     << "idx=" << data->idx << endl;
-	}
-
-	return DO_NOTHING;
+	m_recv_map.frameItemFinished(frame, recv->m_idx);
 }
 
-void SlsDetectorAcq::frameCallback(ReceiverData *data, int frame, char *dptr,
-				   int dsize, FILE *f, char *guidptr)
+void SlsDetectorAcq::frameFinished(int frame)
 {
-	AutoLock<Mutex> l(m_mutex);
-	FrameMap& packet_map = data->packet_map;
-	packet_map.frameItemFinished(frame, data->idx);
-}
-
-{
-	ReceiverData::FramePacketMap::iterator it = packets.find(frame);
-	if (it == packets.end()) {
-		packets.insert(make_pair(frame, 1));
-	} else if (++it->second == data->size) {
-		if (m_print_frame) {
-			cout << "********* Frame! *******" << endl;
-			cout << "frame=" << frame << ", "
-			     << "dsize=" << dsize << ", "
-			     << "idx=" << data->idx << endl;
-		}
-		packets.erase(it);
+	if (m_print_policy & PRINT_POLICY_ACQ) {
+		cout << "********* Finished! *******" << endl;
+		cout << "frame=" << frame << endl;
 	}
 }
-
 
 int main(int argc, char *argv[])
 {
-	if (argc < 2) {
+	string config_fname;
+	int nb_frames = 10;
+	double exp_time = 2.0e-3;
+	double frame_period = 2.5e-3;
+	int print_policy = (PRINT_POLICY_NONE);
+	
+	Args args(argc, argv);
+	string prog_name = args.pop_front();
+
+	while (args && *args[0] == '-') {
+		string s = args.pop_front();
+		if ((s == "-c") || (s == "--config")) {
+			if (!args) {
+				cerr << "Missing config file" << endl;
+				exit(1);
+			}
+			config_fname = args.pop_front();
+		}
+
+		if ((s == "-n") || (s == "--nb-frames")) {
+			if (!args) {
+				cerr << "Missing number of frames" << endl;
+				exit(1);
+			}
+			istringstream is(args.pop_front());
+			is >> nb_frames;
+		}
+
+		if ((s == "-e") || (s == "--exp-time")) {
+			if (!args) {
+				cerr << "Missing exposure time" << endl;
+				exit(1);
+			}
+			istringstream is(args.pop_front());
+			is >> exp_time;
+		}
+
+		if ((s == "-p") || (s == "--frame-period")) {
+			if (!args) {
+				cerr << "Missing frame period" << endl;
+				exit(1);
+			}
+			istringstream is(args.pop_front());
+			is >> frame_period;
+		}
+
+		if ((s == "-l") || (s == "--print-policy")) {
+			if (!args) {
+				cerr << "Missing print policy" << endl;
+				exit(1);
+			}
+			istringstream is(args.pop_front());
+			is >> print_policy;
+		}
+	}
+
+	if (config_fname.empty()) {
 		cerr << "Missing config file" << endl;
 		exit(1);
 	}
-	string config_fname = argv[1];
 
-	int nb_frames = 5;
-	if (argc == 3) {
-		istringstream is(argv[2]);
-		is >> nb_frames;
+	try {
+		SlsDetectorAcq acq(config_fname);
+		acq.setPrintPolicy(print_policy);
+		acq.setNbFrames(nb_frames);
+		acq.setExpTime(exp_time);
+		acq.setFramePeriod(frame_period);
+		acq.prepareAcq();
+		acq.startAcq();
+		acq.waitAcq();
+	} catch (string s) {
+		cerr << "Exception: " << s << endl;
+		exit(1);
+	} catch (...) {
+		cerr << "Exception" << endl;
+		exit(1);
 	}
-
-	SlsDetectorAcq acq(config_fname);
-	acq.setNbFrames(nb_frames);
-	acq.prepareAcq();
-	acq.startAcq();
-	acq.waitAcq();
 
 	return 0;
 }
