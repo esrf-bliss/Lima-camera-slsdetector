@@ -30,6 +30,7 @@
 
 #include "lima/RegExUtils.h"
 #include "lima/ThreadUtils.h"
+#include "lima/MemUtils.h"
 
 #include <iostream>
 #include <string>
@@ -82,6 +83,10 @@ private:
 	AutoPtr<char *, true> m_argv;
 };
 
+#define CHIP_SIZE		256
+#define HALF_MODULE_CHIPS	4
+#define PACKET_DATA_LEN		(4 * 1024)
+
 class SlsDetectorAcq
 {
 public:
@@ -94,8 +99,9 @@ public:
 	typedef StringList HostnameList;
 	typedef std::map<int, int> RecvPortMap;
 	typedef std::map<int, int> FrameRecvMap;
+	typedef AutoPtr<AutoPtr<MemBuffer>, true> BufferList;
 
-	static const int FRAME_PACKETS;
+	static const double WAIT_SLEEP_TIME;
 
 	struct AppInputData
 	{
@@ -151,8 +157,45 @@ public:
 		Callback *m_cb;
 	};
 
-	class ReceiverObj {
+	class ReceiverObj 
+	{
 	public:
+		typedef unsigned char Byte;
+		typedef unsigned int Long;
+
+		struct Packet 
+		{
+			struct pre 
+			{
+				Long frame;	
+				Byte code;	// 0x6b=first, 0x69=others
+				Byte len;	// 0x80
+				Byte flags;	// 0x00=normal, 0x20=flip
+				Byte idx;	// 32-bit
+			} pre;
+			char data[PACKET_DATA_LEN];
+			struct post 
+			{
+				Long frame;
+				Byte res_1[2];	// 0x00
+				Byte next;	// 32-bit
+				Byte res_2;     // 0x00
+			} post;
+		};
+
+		static int getPacketLen()
+		{ return sizeof(Packet); }
+
+		int getImageSize()
+		{ return (HALF_MODULE_CHIPS * CHIP_SIZE * CHIP_SIZE * 
+			  m_acq->m_pixel_depth); }
+
+		int getFramePackets()
+		{ return getImageSize() / sizeof(Packet::data); }
+
+		int getRawImageSize()
+		{ return getPacketLen() * getFramePackets(); }
+
 		ReceiverObj(SlsDetectorAcq *acq, 
 			    int idx, int rx_port, int mode);
 		~ReceiverObj();
@@ -189,7 +232,6 @@ public:
 		int m_rx_port;
 		int m_mode;
 		FrameMap m_packet_map;
-		int m_packet_idx;
 		Args m_args;
 		AutoPtr<slsReceiverUsers> m_recv;
 		AutoPtr<FrameFinishedCallback> m_cb;
@@ -212,10 +254,21 @@ public:
 	void setPrintPolicy(int print_policy)
 	{ m_print_policy = print_policy; }
 
+	void setSaveRaw(bool save_raw)
+	{ m_save_raw = save_raw; }
+
 	void prepareAcq();
 	void startAcq();
 	void stopAcq();
 	void waitAcq();
+
+	int getNbHalfModules()
+	{ return m_input_data->host_name_list.size(); }
+
+	int getImageSize();
+
+	char *getBufferPtr(int pos)
+	{ return static_cast<char *>(m_buffer_list[pos]->getPtr()); }
 
 private:
 	friend class ReceiverObj;
@@ -230,6 +283,8 @@ private:
 	};
 
 	void createReceivers();
+	void allocBuffers();
+
 	void receiverFrameFinished(int frame, ReceiverObj *recv);
 	void frameFinished(int frame);
 
@@ -248,6 +303,9 @@ private:
 	bool m_started;
 	FrameMap m_recv_map;
 	AutoPtr<FrameFinishedCallback> m_frame_cb;
+	BufferList m_buffer_list;
+	int m_pixel_depth;
+	bool m_save_raw;
 };
 
 std::ostream& operator <<(std::ostream& os, 
@@ -256,6 +314,83 @@ std::ostream& operator <<(std::ostream& os,
 			  const SlsDetectorAcq::FrameMap::List& l);
 std::ostream& operator <<(std::ostream& os, 
 			  const SlsDetectorAcq::FrameMap::Map& m);
+
+class AppPars 
+{
+ public:
+	std::string config_fname;
+	int nb_frames;
+	double exp_time;
+	double frame_period;
+	int print_policy;
+	bool save_raw;
+	std::string out_dir;
+
+	AppPars();
+	void parseArgs(Args& args);
+
+ private:
+	class ArgOptBase
+	{
+	public:
+		ArgOptBase(string sopt, string lopt, string extra = "")
+			: m_sopt(sopt), m_lopt(lopt), m_extra(extra)
+		{}
+		virtual ~ArgOptBase()
+		{}
+
+		virtual bool check(Args& args) = 0;
+
+		bool hasExtra()
+		{ return !m_extra.empty(); }
+
+	protected:
+		string m_sopt;
+		string m_lopt;
+		string m_extra;
+	};
+
+	template <class T>
+	class ArgOpt : public ArgOptBase
+	{
+	public:
+		ArgOpt(T& var, string sopt, string lopt, string extra = "") 
+			: ArgOptBase(sopt, lopt, extra), m_var(var)
+		{
+			if (!hasExtra()) {
+				istringstream is("0");
+				is >> m_var;
+			}
+		}
+
+		virtual bool check(Args& args)
+		{
+			string s = args[0];
+			if ((s != m_sopt) && (s != m_lopt))
+				return false;
+			args.pop_front();
+			if (hasExtra() && !args) {
+				cerr << "Missing " << m_extra << endl;
+				exit(1);
+			}
+			s = hasExtra() ? args.pop_front() : string("1");
+			istringstream is(s);
+			is >> m_var;
+			return true;	
+		}
+
+	protected:
+		T& m_var;
+	};
+
+	typedef std::set<AutoPtr<ArgOptBase> > OptList;
+
+	void loadDefaults();
+	void loadOpts();
+
+	OptList m_opt_list;
+};
+
 
 } // namespace lima
 

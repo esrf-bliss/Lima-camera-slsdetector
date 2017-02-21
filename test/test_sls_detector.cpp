@@ -33,8 +33,9 @@ using namespace std;
 using namespace lima;
 
 
-Args::Args() : m_argc(0)
+Args::Args()
 {
+	update_argc_argv();
 }
 
 Args::Args(unsigned int argc, char *argv[])
@@ -94,18 +95,14 @@ void Args::erase(int pos)
 void Args::update_argc_argv()
 {
 	m_argc = m_arg_list.size();
-	if (m_argc == 0) {
-		m_argv = NULL;
-		return;
-	}
-
-	m_argv = new char *[m_argc];
+	m_argv = new char *[m_argc + 1];
 	for (unsigned int i = 0; i < m_argc; ++i)
 		m_argv[i] = const_cast<char *>(m_arg_list[i].c_str());
+	m_argv[m_argc] = NULL;
 }
 
 
-const int SlsDetectorAcq::FRAME_PACKETS = 128;
+const double SlsDetectorAcq::WAIT_SLEEP_TIME = 0.2;
 
 SlsDetectorAcq::AppInputData::AppInputData(string cfg_fname) 
 	: config_file_name(cfg_fname) 
@@ -291,17 +288,17 @@ ReceiverObj::FrameFinishedCallback::frameFinished(int frame)
 	}
 
 	m_recv->m_acq->receiverFrameFinished(frame, m_recv);
-	m_recv->m_packet_idx = -1;
 }
 
 SlsDetectorAcq::ReceiverObj::ReceiverObj(SlsDetectorAcq *acq, 
 					 int idx, int rx_port, int mode)
 	: m_mutex(acq->m_mutex), m_acq(acq), 
-	  m_idx(idx), m_rx_port(rx_port), m_mode(mode), m_packet_idx(-1)
+	  m_idx(idx), m_rx_port(rx_port), m_mode(mode)
 {
 	m_cb = new FrameFinishedCallback(this, m_acq->m_print_policy);
 
-	m_packet_map.setNbItems(FRAME_PACKETS);
+	int nb_packets = getFramePackets();
+	m_packet_map.setNbItems(nb_packets);
 	m_packet_map.setCallback(m_cb);
 
 	ostringstream os;
@@ -350,6 +347,12 @@ int SlsDetectorAcq::ReceiverObj::startCallback(char *fpath, char *fname,
 {
 	AutoLock<Mutex> l(m_mutex);
 
+	if (dsize != getPacketLen()) {
+		cerr << "!!!! Warning !!!!" << endl;
+		cerr << "dsize=" << dsize << ", PACKET_LEN=" << getPacketLen() 
+		     << endl;
+	}
+
 	if (m_acq->m_print_policy & PRINT_POLICY_START) {
 		cout << "********* Start! *******" << endl;
 		cout << "fpath=" << fpath << ", fname=" << fname << ", " 
@@ -364,14 +367,30 @@ void SlsDetectorAcq::ReceiverObj::frameCallback(int frame, char *dptr,
 						int dsize, FILE *f, 
 						char *guidptr)
 {
+	Packet *p = static_cast<Packet *>(static_cast<void *>(dptr));
+	int packet_idx = p->pre.idx;
+	if (p->pre.flags & 0x20)
+		packet_idx += 0x40;
+	
 	AutoLock<Mutex> l(m_mutex);
 	if (m_acq->m_print_policy & PRINT_POLICY_PACKET) {
 		cout << "********* Frame! *******" << endl;
 		cout << "frame=" << frame << ", dsize=" << dsize << ", "
-		     << "idx=" << m_idx << endl;
+		     << "PACKET_LEN=" << getPacketLen() << ", "
+		     << "idx=" << m_idx << ", packet=" << packet_idx << endl;
 	}
+	char *buffer = m_acq->getBufferPtr(frame);
+	bool raw = m_acq->m_save_raw;
+	l.unlock();
 
-	m_packet_map.frameItemFinished(frame, ++m_packet_idx);
+	int recv_size = raw ? getRawImageSize() : getImageSize();
+	int xfer_len = raw ? sizeof(*p) : sizeof(p->data);
+	void *src = raw ? dptr : p->data;
+	void *dest = buffer + recv_size * m_idx + xfer_len * packet_idx;
+	memcpy(dest, src, xfer_len);
+
+	l.lock();
+	m_packet_map.frameItemFinished(frame, packet_idx);
 }
 
 SlsDetectorAcq::FrameFinishedCallback::FrameFinishedCallback(SlsDetectorAcq *a)
@@ -385,8 +404,13 @@ void SlsDetectorAcq::FrameFinishedCallback::frameFinished(int frame)
 }
 
 SlsDetectorAcq::SlsDetectorAcq(string config_fname) 
-	: m_print_policy(PRINT_POLICY_NONE), m_nb_frames(1), m_exp_time(0.99),
-	  m_frame_period(1.0), m_started(false)
+	: m_print_policy(PRINT_POLICY_NONE), 
+	  m_nb_frames(1), 
+	  m_exp_time(0.99),
+	  m_frame_period(1.0), 
+	  m_started(false), 
+	  m_pixel_depth(2), 
+	  m_save_raw(true)
 {
 	m_input_data = new AppInputData(config_fname);
 
@@ -453,6 +477,8 @@ void SlsDetectorAcq::prepareAcq()
 {
 	ostringstream os;
 
+	allocBuffers();
+
 	cout << "+++ Setting timming ..." << endl;
 	putCmd("timing auto");
 
@@ -476,6 +502,16 @@ void SlsDetectorAcq::prepareAcq()
 
 	cout << "+++ Starting receivers ..." << endl;
 	putCmd("receiver start");
+}
+
+void SlsDetectorAcq::allocBuffers()
+{
+	long buffer_size = getImageSize();
+	cout << "+++ Allocating " << m_nb_frames << " buffers "
+	     << "(" << buffer_size << ") ..." << endl;
+	m_buffer_list = new AutoPtr<MemBuffer>[m_nb_frames];
+	for (int i = 0; i < m_nb_frames; ++i)
+		m_buffer_list[i] = new MemBuffer(buffer_size);
 }
 
 void SlsDetectorAcq::startAcq()
@@ -512,34 +548,40 @@ void SlsDetectorAcq::waitAcq()
 		return;
 
 	cout << "+++ Waiting for end ..." << endl;
-	{
-		int frames_caught = 0;
-		string last_msg;
-		Timestamp last_change = Timestamp::now();
-		double timeout = 2;
-		while (frames_caught < m_nb_frames) {
-			if (Timestamp::now() - last_change > timeout) {
-				cout << "!!!!! Blocked "
-				     << "(" << timeout <<"s) !!!!!" << endl;
-				break;
-			}
+	int finished_frames = 0;
+	string last_msg;
+	Timestamp last_change = Timestamp::now();
+	double timeout = 2;
+	unsigned long usec = WAIT_SLEEP_TIME * 1e6 + 0.1;
 
-			usleep(200000);
-			string ans = getCmd("framescaught");
-			istringstream is(ans);
-			is >> frames_caught;
-			ostringstream os;
-			os << "  framescaught=" << frames_caught;
-			if (m_print_policy & PRINT_POLICY_MAP) {
-				AutoLock<Mutex> l(m_mutex);
-				os << ", " << "m_recv_map=" << m_recv_map;
-			}
-			string msg = os.str();
-			cout << msg << endl;
-			if (msg != last_msg)
-				last_change = Timestamp::now();
-			last_msg = msg;
+	while (finished_frames < m_nb_frames) {
+		if (Timestamp::now() - last_change > timeout) {
+			cout << "!!!!! Blocked "
+			     << "(" << timeout <<"s) !!!!!" << endl;
+			break;
 		}
+
+		usleep(usec);
+
+		AutoLock<Mutex> l(m_mutex);
+		int frames_caught;
+		string ans = getCmd("framescaught");
+		istringstream is(ans);
+		is >> frames_caught;
+		finished_frames = m_recv_map.getLastSeqFinishedFrame() + 1;
+		ostringstream os;
+		os << "  framescaught=" << frames_caught << ", "
+		   << "finished_frames=" << finished_frames;
+		if (m_print_policy & PRINT_POLICY_MAP) {
+			os << ", " << "m_recv_map=" << m_recv_map;
+		}
+		l.unlock();
+
+		string msg = os.str();
+		cout << msg << endl;
+		if (msg != last_msg)
+			last_change = Timestamp::now();
+		last_msg = msg;
 	}
 }
 
@@ -556,61 +598,137 @@ void SlsDetectorAcq::frameFinished(int frame)
 	}
 }
 
-int main(int argc, char *argv[])
+int SlsDetectorAcq::getImageSize()
 {
-	string config_fname;
-	int nb_frames = 10;
-	double exp_time = 2.0e-3;
-	double frame_period = 2.5e-3;
-	int print_policy = (PRINT_POLICY_NONE);
-	
-	Args args(argc, argv);
+	ReceiverObj *recv = m_recv_list[0];
+	int size = m_save_raw ? recv->getRawImageSize() : recv->getImageSize();
+	return size * getNbHalfModules(); 
+}
+
+void save_raw_data(string out_dir, int start_frame, int nb_frames, 
+		   SlsDetectorAcq& acq)
+{
+	for (int i = 0; i < nb_frames; ++i) {
+		ostringstream os;
+		os << out_dir << "/eiger.bin." << i;
+		cout << "+++ Saving raw to " << os.str() << " ..." << endl;
+		ofstream of(os.str().c_str());
+		char *buffer = acq.getBufferPtr(start_frame + i);
+		of.write(buffer, acq.getImageSize());
+	}
+}
+
+class EdfHeaderKey
+{
+public:
+	EdfHeaderKey(const string& key) : m_key(key)
+	{}
+private:
+	friend ostream& operator <<(ostream& os, const EdfHeaderKey& h);
+	string m_key;
+};
+
+ostream& operator <<(ostream& os, const EdfHeaderKey& h)
+{
+	return os << setiosflags(ios::left) << resetiosflags(ios::right)
+		  << setw(14) << setfill(' ') << h.m_key << " = ";
+}
+
+void save_edf_frame(ofstream& of, int acq_idx, int edf_idx, SlsDetectorAcq& acq)
+{
+	ostringstream os;
+	os << "{" << endl;
+	os << EdfHeaderKey("HeaderID") << setiosflags(ios::right) 
+	   << "EH:" << setfill('0') << setw(6) << (edf_idx + 1) 
+	   << ":" << setfill('0') << setw(6) << 0 
+	   << ":" << setfill('0') << setw(6) << 0 << "; " << endl;
+	os << EdfHeaderKey("ByteOrder") << "LowByteFirst" << "; " << endl;
+	os << EdfHeaderKey("DataType") << "UnsignedShort" << "; " << endl;
+	os << EdfHeaderKey("Size") << acq.getImageSize() << "; " << endl;
+	os << EdfHeaderKey("Dim_1") << (CHIP_SIZE * 4) << "; " << endl;
+	os << EdfHeaderKey("Dim_2") << (CHIP_SIZE * acq.getNbHalfModules()) 
+	   << "; " << endl;
+	os << EdfHeaderKey("Image") << edf_idx << "; " << endl;
+	os << EdfHeaderKey("acq_frame_nb") << edf_idx << "; " << endl;
+
+	const int HEADER_BLOCK = 1024;
+	int rem = (HEADER_BLOCK - 2) - os.str().size() % HEADER_BLOCK;
+	if (rem < 0)
+		rem += HEADER_BLOCK;
+	os << string(rem, '\n') << "}" << endl;
+	of << os.str();
+
+	of.write(acq.getBufferPtr(acq_idx), acq.getImageSize());
+}
+
+void save_edf_data(string out_dir, int start_frame, int nb_frames, 
+		   SlsDetectorAcq& acq)
+{
+	ostringstream os;
+	os << out_dir << "/eiger.edf";
+	cout << "+++ Saving EDF to " << os.str() << " ..." << endl;
+	ofstream of(os.str().c_str());
+	for (int i = 0; i < nb_frames; ++i)
+		save_edf_frame(of, start_frame + i, i, acq);
+}
+
+AppPars::AppPars()
+{
+	loadDefaults();
+	loadOpts();
+}
+
+void AppPars::loadDefaults()
+{
+	nb_frames = 10;
+	exp_time = 2.0e-3;
+	frame_period = 2.5e-3;
+	print_policy = PRINT_POLICY_NONE;
+	save_raw = false;
+	out_dir = "/tmp";
+}
+
+void AppPars::loadOpts()
+{
+	AutoPtr<ArgOptBase> o;
+
+	o = new ArgOpt<string>(config_fname, "-c", "--config", 
+			       "config file name");
+	m_opt_list.insert(o);
+
+	o = new ArgOpt<int>(nb_frames, "-n", "--nb-frames", 
+			       "number of frames");
+	m_opt_list.insert(o);
+
+	o = new ArgOpt<double>(exp_time, "-e", "--exp-time", 
+			       "exposure time");
+	m_opt_list.insert(o);
+
+	o = new ArgOpt<double>(frame_period, "-p", "--frame-period", 
+			       "frame period");
+	m_opt_list.insert(o);
+
+	o = new ArgOpt<int>(print_policy, "-l", "--print-policy", 
+			    "print policy");
+	m_opt_list.insert(o);
+
+	o = new ArgOpt<bool>(save_raw, "-r", "--save-raw");
+	m_opt_list.insert(o);
+
+	o = new ArgOpt<string>(out_dir, "-o", "--out-dir",
+			       "out_dir");
+	m_opt_list.insert(o);
+}
+
+void AppPars::parseArgs(Args& args)
+{
 	string prog_name = args.pop_front();
 
-	while (args && *args[0] == '-') {
-		string s = args.pop_front();
-		if ((s == "-c") || (s == "--config")) {
-			if (!args) {
-				cerr << "Missing config file" << endl;
-				exit(1);
-			}
-			config_fname = args.pop_front();
-		}
-
-		if ((s == "-n") || (s == "--nb-frames")) {
-			if (!args) {
-				cerr << "Missing number of frames" << endl;
-				exit(1);
-			}
-			istringstream is(args.pop_front());
-			is >> nb_frames;
-		}
-
-		if ((s == "-e") || (s == "--exp-time")) {
-			if (!args) {
-				cerr << "Missing exposure time" << endl;
-				exit(1);
-			}
-			istringstream is(args.pop_front());
-			is >> exp_time;
-		}
-
-		if ((s == "-p") || (s == "--frame-period")) {
-			if (!args) {
-				cerr << "Missing frame period" << endl;
-				exit(1);
-			}
-			istringstream is(args.pop_front());
-			is >> frame_period;
-		}
-
-		if ((s == "-l") || (s == "--print-policy")) {
-			if (!args) {
-				cerr << "Missing print policy" << endl;
-				exit(1);
-			}
-			istringstream is(args.pop_front());
-			is >> print_policy;
+	while (args && (*args[0] == '-')) {
+		OptList::iterator it, end = m_opt_list.end();
+		for (it = m_opt_list.begin(); it != end; ++it) {
+			if ((*it)->check(args))
+				break;
 		}
 	}
 
@@ -618,16 +736,29 @@ int main(int argc, char *argv[])
 		cerr << "Missing config file" << endl;
 		exit(1);
 	}
+}
+
+int main(int argc, char *argv[])
+{
+	AppPars pars;
+	Args args(argc, argv);
+	pars.parseArgs(args);
 
 	try {
-		SlsDetectorAcq acq(config_fname);
-		acq.setPrintPolicy(print_policy);
-		acq.setNbFrames(nb_frames);
-		acq.setExpTime(exp_time);
-		acq.setFramePeriod(frame_period);
+		SlsDetectorAcq acq(pars.config_fname);
+		acq.setPrintPolicy(pars.print_policy);
+		acq.setNbFrames(pars.nb_frames);
+		acq.setExpTime(pars.exp_time);
+		acq.setFramePeriod(pars.frame_period);
+		acq.setSaveRaw(pars.save_raw);
 		acq.prepareAcq();
 		acq.startAcq();
 		acq.waitAcq();
+		if (pars.save_raw) {
+			save_raw_data(pars.out_dir, 0, pars.nb_frames, acq);
+		} else {
+			save_edf_data(pars.out_dir, 0, pars.nb_frames, acq);
+		}
 	} catch (string s) {
 		cerr << "Exception: " << s << endl;
 		exit(1);
