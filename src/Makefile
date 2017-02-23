@@ -45,7 +45,7 @@ SLS_DETECTORS_INCL_FLAGS = -I$(SLS_DETECTORS_SW)/include \
 CXXFLAGS = -I../include $(LIMA_INCL_FLAGS) $(SLS_DETECTORS_INCL_FLAGS) \
 	   -Wall -pthread -fPIC -g
 
-slsdetector-objs = SlsDetectorInterface.o SlsDetectorAcq.o
+slsdetector-objs = SlsDetectorInterface.o SlsDetectorCamera.o
 
 SRCS = $(slsdetector-objs:.o=.cpp) 
 

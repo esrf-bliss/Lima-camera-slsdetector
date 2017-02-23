@@ -252,8 +252,8 @@ EventCtrlObj::~EventCtrlObj()
  * \brief Hw Interface constructor
  *******************************************************************/
 
-Interface::Interface()
-	: m_event_cb(m_event)
+Interface::Interface(string config_fname)
+	: m_cam(config_fname), m_event_cb(m_event)
 {
 	DEB_CONSTRUCTOR();
 

@@ -27,15 +27,18 @@ using namespace lima;
 using namespace lima::SlsDetector;
 
 
-void save_raw_data(string out_dir, int start_frame, int nb_frames, Acq& acq)
+void save_raw_data(string out_dir, int start_frame, int nb_frames, Camera& cam)
 {
+	FrameDim frame_dim;
+	cam.getFrameDim(frame_dim, true);
+
 	for (int i = 0; i < nb_frames; ++i) {
 		ostringstream os;
 		os << out_dir << "/eiger.bin." << i;
 		cout << "+++ Saving raw to " << os.str() << " ..." << endl;
 		ofstream of(os.str().c_str());
-		char *buffer = acq.getBufferPtr(start_frame + i);
-		of.write(buffer, acq.getImageSize());
+		char *buffer = cam.getBufferPtr(start_frame + i);
+		of.write(buffer, frame_dim.getMemSize());
 	}
 }
 
@@ -55,8 +58,13 @@ ostream& operator <<(ostream& os, const EdfHeaderKey& h)
 		  << setw(14) << setfill(' ') << h.m_key << " = ";
 }
 
-void save_edf_frame(ofstream& of, int acq_idx, int edf_idx, Acq& acq)
+void save_edf_frame(ofstream& of, int acq_idx, int edf_idx, Camera& cam)
 {
+	FrameDim frame_dim;
+	cam.getFrameDim(frame_dim);
+	Size frame_size = frame_dim.getSize();
+	int image_bytes = frame_dim.getMemSize();
+	
 	ostringstream os;
 	os << "{" << endl;
 	os << EdfHeaderKey("HeaderID") << setiosflags(ios::right) 
@@ -65,10 +73,9 @@ void save_edf_frame(ofstream& of, int acq_idx, int edf_idx, Acq& acq)
 	   << ":" << setfill('0') << setw(6) << 0 << "; " << endl;
 	os << EdfHeaderKey("ByteOrder") << "LowByteFirst" << "; " << endl;
 	os << EdfHeaderKey("DataType") << "UnsignedShort" << "; " << endl;
-	os << EdfHeaderKey("Size") << acq.getImageSize() << "; " << endl;
-	os << EdfHeaderKey("Dim_1") << (CHIP_SIZE * 4) << "; " << endl;
-	os << EdfHeaderKey("Dim_2") << (CHIP_SIZE * acq.getNbHalfModules()) 
-	   << "; " << endl;
+	os << EdfHeaderKey("Size") << image_bytes << "; " << endl;
+	os << EdfHeaderKey("Dim_1") << frame_size.getWidth() << "; " << endl;
+	os << EdfHeaderKey("Dim_2") << frame_size.getHeight() << "; " << endl;
 	os << EdfHeaderKey("Image") << edf_idx << "; " << endl;
 	os << EdfHeaderKey("acq_frame_nb") << edf_idx << "; " << endl;
 
@@ -79,17 +86,17 @@ void save_edf_frame(ofstream& of, int acq_idx, int edf_idx, Acq& acq)
 	os << string(rem, '\n') << "}" << endl;
 	of << os.str();
 
-	of.write(acq.getBufferPtr(acq_idx), acq.getImageSize());
+	of.write(cam.getBufferPtr(acq_idx), image_bytes);
 }
 
-void save_edf_data(string out_dir, int start_frame, int nb_frames, Acq& acq)
+void save_edf_data(string out_dir, int start_frame, int nb_frames, Camera& cam)
 {
 	ostringstream os;
 	os << out_dir << "/eiger.edf";
 	cout << "+++ Saving EDF to " << os.str() << " ..." << endl;
 	ofstream of(os.str().c_str());
 	for (int i = 0; i < nb_frames; ++i)
-		save_edf_frame(of, start_frame + i, i, acq);
+		save_edf_frame(of, start_frame + i, i, cam);
 }
 
 AppPars::AppPars()
@@ -165,19 +172,19 @@ int main(int argc, char *argv[])
 	pars.parseArgs(args);
 
 	try {
-		Acq acq(pars.config_fname);
-		acq.setPrintPolicy(pars.print_policy);
-		acq.setNbFrames(pars.nb_frames);
-		acq.setExpTime(pars.exp_time);
-		acq.setFramePeriod(pars.frame_period);
-		acq.setSaveRaw(pars.save_raw);
-		acq.prepareAcq();
-		acq.startAcq();
-		acq.waitAcq();
+		Camera cam(pars.config_fname);
+		cam.setPrintPolicy(pars.print_policy);
+		cam.setNbFrames(pars.nb_frames);
+		cam.setExpTime(pars.exp_time);
+		cam.setFramePeriod(pars.frame_period);
+		cam.setSaveRaw(pars.save_raw);
+		cam.prepareAcq();
+		cam.startAcq();
+		cam.waitAcq();
 		if (pars.save_raw) {
-			save_raw_data(pars.out_dir, 0, pars.nb_frames, acq);
+			save_raw_data(pars.out_dir, 0, pars.nb_frames, cam);
 		} else {
-			save_edf_data(pars.out_dir, 0, pars.nb_frames, acq);
+			save_edf_data(pars.out_dir, 0, pars.nb_frames, cam);
 		}
 	} catch (string s) {
 		cerr << "Exception: " << s << endl;

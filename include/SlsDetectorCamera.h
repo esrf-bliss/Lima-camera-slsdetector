@@ -20,14 +20,15 @@
 // along with this program; if not, see <http://www.gnu.org/licenses/>.
 //###########################################################################
 
-#ifndef __SLS_DETECTOR_ACQ_H
-#define __SLS_DETECTOR_ACQ_H
+#ifndef __SLS_DETECTOR_CAMERA_H
+#define __SLS_DETECTOR_CAMERA_H
 
 #include "multiSlsDetector.h"
 #include "multiSlsDetectorCommand.h"
 #include "slsReceiverUsers.h"
 #include "receiver_defs.h"
 
+#include "lima/SizeUtils.h"
 #include "lima/RegExUtils.h"
 #include "lima/ThreadUtils.h"
 #include "lima/MemUtils.h"
@@ -41,7 +42,7 @@
 #define PRINT_POLICY_NONE	0
 #define PRINT_POLICY_START	(1 << 0)
 #define PRINT_POLICY_MAP	(1 << 1)
-#define PRINT_POLICY_ACQ	(1 << 2)
+#define PRINT_POLICY_CAMERA	(1 << 2)
 #define PRINT_POLICY_RECV	(1 << 3)
 #define PRINT_POLICY_PACKET	(1 << 4)
 
@@ -90,7 +91,7 @@ private:
 #define HALF_MODULE_CHIPS	4
 #define PACKET_DATA_LEN		(4 * 1024)
 
-class Acq
+class Camera
 {
 public:
 	typedef RegEx::SingleMatchType SingleMatch;
@@ -160,7 +161,7 @@ public:
 		Callback *m_cb;
 	};
 
-	class ReceiverObj 
+	class Receiver 
 	{
 	public:
 		typedef unsigned char Byte;
@@ -189,32 +190,25 @@ public:
 		static int getPacketLen()
 		{ return sizeof(Packet); }
 
-		int getImageSize()
-		{ return (HALF_MODULE_CHIPS * CHIP_SIZE * CHIP_SIZE * 
-			  m_acq->m_pixel_depth); }
+		void getFrameDim(FrameDim& frame_dim, bool raw = false);
+		int getFramePackets();
 
-		int getFramePackets()
-		{ return getImageSize() / sizeof(Packet::data); }
-
-		int getRawImageSize()
-		{ return getPacketLen() * getFramePackets(); }
-
-		ReceiverObj(Acq *acq, int idx, int rx_port, int mode);
-		~ReceiverObj();
+		Receiver(Camera *cam, int idx, int rx_port, int mode);
+		~Receiver();
 		void start();
 
 	private:
 		class FrameFinishedCallback : public FrameMap::Callback
 		{
 		public:
-			FrameFinishedCallback(ReceiverObj *r, int p);
+			FrameFinishedCallback(Receiver *r, int p);
 			virtual void frameFinished(int frame);
 		private:
-			ReceiverObj *m_recv;
+			Receiver *m_recv;
 			int m_print_policy;
 		};
 
-		friend class Acq;
+		friend class Camera;
 		friend class FrameFinishedCallback;
 
 		static int startCallback(char *fpath, char *fname, int fidx, 
@@ -229,7 +223,7 @@ public:
 				   char *guidptr);
 
 		Mutex& m_mutex;
-		Acq *m_acq;
+		Camera *m_cam;
 		int m_idx;
 		int m_rx_port;
 		int m_mode;
@@ -239,10 +233,10 @@ public:
 		AutoPtr<FrameFinishedCallback> m_cb;
 	}; 
 
-	typedef std::vector<AutoPtr<ReceiverObj> > RecvList;
+	typedef std::vector<AutoPtr<Receiver> > RecvList;
 
-	Acq(std::string config_fname);
-	virtual ~Acq();
+	Camera(std::string config_fname);
+	virtual ~Camera();
 
 	void setNbFrames(int nb_frames)
 	{ m_nb_frames = nb_frames; }
@@ -267,27 +261,27 @@ public:
 	int getNbHalfModules()
 	{ return m_input_data->host_name_list.size(); }
 
-	int getImageSize();
+	void getFrameDim(FrameDim& frame_dim, bool raw = false);
 
 	char *getBufferPtr(int pos)
 	{ return static_cast<char *>(m_buffer_list[pos]->getPtr()); }
 
 private:
-	friend class ReceiverObj;
+	friend class Receiver;
 
 	class FrameFinishedCallback : public FrameMap::Callback
 	{
 	public:
-		FrameFinishedCallback(Acq *a);
+		FrameFinishedCallback(Camera *cam);
 		virtual void frameFinished(int frame);
 	private:
-		Acq *m_acq;
+		Camera *m_cam;
 	};
 
 	void createReceivers();
 	void allocBuffers();
 
-	void receiverFrameFinished(int frame, ReceiverObj *recv);
+	void receiverFrameFinished(int frame, Receiver *recv);
 	void frameFinished(int frame);
 
 	void putCmd(const std::string& s);
@@ -306,13 +300,13 @@ private:
 	FrameMap m_recv_map;
 	AutoPtr<FrameFinishedCallback> m_frame_cb;
 	BufferList m_buffer_list;
-	int m_pixel_depth;
+	ImageType m_image_type;
 	bool m_save_raw;
 };
 
-std::ostream& operator <<(std::ostream& os, const Acq::FrameMap& m);
-std::ostream& operator <<(std::ostream& os, const Acq::FrameMap::List& l);
-std::ostream& operator <<(std::ostream& os, const Acq::FrameMap::Map& m);
+std::ostream& operator <<(std::ostream& os, const Camera::FrameMap& m);
+std::ostream& operator <<(std::ostream& os, const Camera::FrameMap::List& l);
+std::ostream& operator <<(std::ostream& os, const Camera::FrameMap::Map& m);
 
 } // namespace SlsDetector
 
@@ -320,4 +314,4 @@ std::ostream& operator <<(std::ostream& os, const Acq::FrameMap::Map& m);
 
 
 
-#endif // __SLS_DETECTOR_ACQ_H
+#endif // __SLS_DETECTOR_CAMERA_H

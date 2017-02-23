@@ -23,7 +23,7 @@
 #ifndef __TEST_SLS_DETECTOR_H
 #define __TEST_SLS_DETECTOR_H
 
-#include "SlsDetectorAcq.h"
+#include "SlsDetectorCamera.h"
 
 namespace lima 
 {

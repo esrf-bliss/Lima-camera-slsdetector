@@ -23,6 +23,7 @@
 #define SLSDETECTORINTERFACE_H
 
 #include "lima/HwInterface.h"
+#include "SlsDetectorCamera.h"
 
 namespace lima
 {
@@ -142,7 +143,7 @@ class Interface : public HwInterface
 	DEB_CLASS_NAMESPC(DebModCamera, "Interface", "SlsDetector");
 
  public:
-	Interface();
+	Interface(std::string config_fname);
 	virtual ~Interface();
 
 	virtual void getCapList(CapList&) const;
@@ -157,6 +158,8 @@ class Interface : public HwInterface
 	void resetDefaults();
 
  private:
+	Camera m_cam;
+
 	CapList m_cap_list;
 	DetInfoCtrlObj m_det_info;
 	SoftBufferCtrlObj  m_buffer;

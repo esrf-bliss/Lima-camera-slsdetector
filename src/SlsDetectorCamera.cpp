@@ -20,7 +20,7 @@
 // along with this program; if not, see <http://www.gnu.org/licenses/>.
 //###########################################################################
 
-#include "SlsDetectorAcq.h"
+#include "SlsDetectorCamera.h"
 #include "lima/Timestamp.h"
 
 #define THROW(x)					\
@@ -103,15 +103,15 @@ void Args::update_argc_argv()
 }
 
 
-const double Acq::WAIT_SLEEP_TIME = 0.2;
+const double Camera::WAIT_SLEEP_TIME = 0.2;
 
-Acq::AppInputData::AppInputData(string cfg_fname) 
+Camera::AppInputData::AppInputData(string cfg_fname) 
 	: config_file_name(cfg_fname) 
 {
 	parseConfigFile();
 }
 
-void Acq::AppInputData::parseConfigFile()
+void Camera::AppInputData::parseConfigFile()
 {
 	ifstream config_file(config_file_name.c_str());
 	while (config_file) {
@@ -155,41 +155,41 @@ void Acq::AppInputData::parseConfigFile()
 }
 
 
-Acq::FrameMap::Callback::Callback()
+Camera::FrameMap::Callback::Callback()
 	: m_map(NULL)
 {
 }
 
-Acq::FrameMap::Callback::~Callback()
+Camera::FrameMap::Callback::~Callback()
 {
 	if (m_map)
 		m_map->m_cb = NULL;
 }
 
-Acq::FrameMap::FrameMap()
+Camera::FrameMap::FrameMap()
 	: m_nb_items(0), m_last_seq_finished_frame(-1), m_cb(NULL)
 {
 }
 
-Acq::FrameMap::~FrameMap()
+Camera::FrameMap::~FrameMap()
 {
 	if (m_cb)
 		m_cb->m_map = NULL;
 }
 
-void Acq::FrameMap::setNbItems(int nb_items)
+void Camera::FrameMap::setNbItems(int nb_items)
 {
 	m_nb_items = nb_items;
 }
 
-void Acq::FrameMap::clear()
+void Camera::FrameMap::clear()
 {
 	m_map.clear();
 	m_non_seq_finished_frames.clear();
 	m_last_seq_finished_frame = -1;
 }
 
-void Acq::FrameMap::setCallback(Callback *cb)
+void Camera::FrameMap::setCallback(Callback *cb)
 { 
 	if (m_cb)
 		m_cb->m_map = NULL;
@@ -198,12 +198,12 @@ void Acq::FrameMap::setCallback(Callback *cb)
 		m_cb->m_map = this;
 }
 
-void Acq::FrameMap::frameItemFinished(int frame, int item)
+void Camera::FrameMap::frameItemFinished(int frame, int item)
 {
 	if (m_nb_items == 0)		
-		THROW("Acq::FrameMap::frameItemFinished: no items");
+		THROW("Camera::FrameMap::frameItemFinished: no items");
 	else if ((item < 0) || (item >= m_nb_items))
-		THROW("Acq::FrameMap::frameItemFinished: bad item");
+		THROW("Camera::FrameMap::frameItemFinished: bad item");
 	Map::iterator mit = m_map.find(frame);
 	if (mit == m_map.end()) {
 		for (int i = 0; i < m_nb_items; ++i)
@@ -216,7 +216,7 @@ void Acq::FrameMap::frameItemFinished(int frame, int item)
 	List::iterator lit = item_list.find(item);
 	if (lit == item_list.end()) {
 		ostringstream os;
-		os << "Acq::FrameMap::frameItemFinished: item "
+		os << "Camera::FrameMap::frameItemFinished: item "
 		   << item << " already finished for frame " << frame;
 		THROW(os.str());
 	}
@@ -242,7 +242,7 @@ void Acq::FrameMap::frameItemFinished(int frame, int item)
 }
 
 ostream& lima::SlsDetector::operator <<(ostream& os, 
-					const Acq::FrameMap& m)
+					const Camera::FrameMap& m)
 {
 	os << "<";
 	os << "LastSeqFinishedFrame=" << m.getLastSeqFinishedFrame() << ", "
@@ -252,10 +252,10 @@ ostream& lima::SlsDetector::operator <<(ostream& os,
 }
 
 ostream& lima::SlsDetector::operator <<(ostream& os, 
-					const Acq::FrameMap::List& l)
+					const Camera::FrameMap::List& l)
 {
 	os << "[";
-	typedef Acq::FrameMap::List List;
+	typedef Camera::FrameMap::List List;
 	List::const_iterator it, end = l.end();
 	bool first;
 	for (it = l.begin(), first = true; it != end; ++it, first = false)
@@ -264,10 +264,10 @@ ostream& lima::SlsDetector::operator <<(ostream& os,
 }
 
 ostream& lima::SlsDetector::operator <<(ostream& os, 
-					const Acq::FrameMap::Map& m)
+					const Camera::FrameMap::Map& m)
 {
 	os << "{";
-	typedef Acq::FrameMap::Map Map;
+	typedef Camera::FrameMap::Map Map;
 	Map::const_iterator it, end = m.end();
 	bool first;
 	for (it = m.begin(), first = true; it != end; ++it, first = false)
@@ -275,13 +275,12 @@ ostream& lima::SlsDetector::operator <<(ostream& os,
 	return os << "}";
 }
 
-Acq::ReceiverObj::FrameFinishedCallback::FrameFinishedCallback(ReceiverObj *r, 
-							       int p) 
+Camera::Receiver::FrameFinishedCallback::FrameFinishedCallback(Receiver *r, int p) 
 	: m_recv(r), m_print_policy(p)
 {
 }
 
-void Acq::ReceiverObj::FrameFinishedCallback::frameFinished(int frame) 
+void Camera::Receiver::FrameFinishedCallback::frameFinished(int frame) 
 {
 	if (m_print_policy & PRINT_POLICY_RECV) {
 		cout << "********* End! *******" << endl;
@@ -289,14 +288,14 @@ void Acq::ReceiverObj::FrameFinishedCallback::frameFinished(int frame)
 		     << "idx=" << m_recv->m_idx << endl;
 	}
 
-	m_recv->m_acq->receiverFrameFinished(frame, m_recv);
+	m_recv->m_cam->receiverFrameFinished(frame, m_recv);
 }
 
-Acq::ReceiverObj::ReceiverObj(Acq *acq, int idx, int rx_port, int mode)
-	: m_mutex(acq->m_mutex), m_acq(acq), 
+Camera::Receiver::Receiver(Camera *cam, int idx, int rx_port, int mode)
+	: m_mutex(cam->m_mutex), m_cam(cam), 
 	  m_idx(idx), m_rx_port(rx_port), m_mode(mode)
 {
-	m_cb = new FrameFinishedCallback(this, m_acq->m_print_policy);
+	m_cb = new FrameFinishedCallback(this, m_cam->m_print_policy);
 
 	int nb_packets = getFramePackets();
 	m_packet_map.setNbItems(nb_packets);
@@ -313,12 +312,31 @@ Acq::ReceiverObj::ReceiverObj(Acq *acq, int idx, int rx_port, int mode)
 	m_recv->registerCallBackRawDataReady(frameCallback, this);
 }
 
-Acq::ReceiverObj::~ReceiverObj()
+Camera::Receiver::~Receiver()
 {
 	m_recv->stop();
 }
 
-void Acq::ReceiverObj::start()
+void Camera::Receiver::getFrameDim(FrameDim& frame_dim, bool raw)
+{
+	if (raw) {
+		frame_dim.setImageType(Bpp8);
+		frame_dim.setSize(Size(getPacketLen() * getFramePackets(), 1));
+	} else {
+		frame_dim.setImageType(m_cam->m_image_type);
+		frame_dim.setSize(Size(HALF_MODULE_CHIPS * CHIP_SIZE, 
+				       CHIP_SIZE));
+	}
+}
+
+int Camera::Receiver::getFramePackets()
+{ 
+	FrameDim frame_dim;
+	getFrameDim(frame_dim, false);
+	return frame_dim.getMemSize() / sizeof(Packet::data); 
+}
+
+void Camera::Receiver::start()
 {	
 	int init_ret;
 	m_recv = new slsReceiverUsers(m_args.size(), m_args, init_ret);
@@ -328,22 +346,22 @@ void Acq::ReceiverObj::start()
 		THROW("Error starting slsReceiver");
 }
 
-int Acq::ReceiverObj::startCallback(char *fpath, char *fname, 
-				    int fidx, int dsize, void *priv)
+int Camera::Receiver::startCallback(char *fpath, char *fname, 
+				 int fidx, int dsize, void *priv)
 {
-	ReceiverObj *recv = static_cast<ReceiverObj *>(priv);
+	Receiver *recv = static_cast<Receiver *>(priv);
 	return recv->startCallback(fpath, fname, fidx, dsize);
 }
 
-void Acq::ReceiverObj::frameCallback(int frame, char *dptr, int dsize, FILE *f, 
-				     char *guidptr, void *priv)
+void Camera::Receiver::frameCallback(int frame, char *dptr, int dsize, FILE *f, 
+				  char *guidptr, void *priv)
 {
-	ReceiverObj *recv = static_cast<ReceiverObj *>(priv);
+	Receiver *recv = static_cast<Receiver *>(priv);
 	recv->frameCallback(frame, dptr, dsize, f, guidptr);
 }
 
-int Acq::ReceiverObj::startCallback(char *fpath, char *fname, 
-				    int fidx, int dsize)
+int Camera::Receiver::startCallback(char *fpath, char *fname, 
+				 int fidx, int dsize)
 {
 	AutoLock<Mutex> l(m_mutex);
 
@@ -353,7 +371,7 @@ int Acq::ReceiverObj::startCallback(char *fpath, char *fname,
 		     << endl;
 	}
 
-	if (m_acq->m_print_policy & PRINT_POLICY_START) {
+	if (m_cam->m_print_policy & PRINT_POLICY_START) {
 		cout << "********* Start! *******" << endl;
 		cout << "fpath=" << fpath << ", fname=" << fname << ", " 
 		     << "fidex=" << fidx << ", dsize=" << dsize << ", "
@@ -363,8 +381,8 @@ int Acq::ReceiverObj::startCallback(char *fpath, char *fname,
 	return DO_NOTHING;
 }
 
-void Acq::ReceiverObj::frameCallback(int frame, char *dptr, int dsize, FILE *f, 
-				     char *guidptr)
+void Camera::Receiver::frameCallback(int frame, char *dptr, int dsize, FILE *f, 
+				  char *guidptr)
 {
 	Packet *p = static_cast<Packet *>(static_cast<void *>(dptr));
 	bool second_half = p->pre.flags & 0x20;
@@ -374,60 +392,62 @@ void Acq::ReceiverObj::frameCallback(int frame, char *dptr, int dsize, FILE *f,
 	bool top_half = (m_idx % 2 == 0);
 
 	AutoLock<Mutex> l(m_mutex);
-	if (m_acq->m_print_policy & PRINT_POLICY_PACKET) {
+	if (m_cam->m_print_policy & PRINT_POLICY_PACKET) {
 		cout << "********* Frame! *******" << endl;
 		cout << "frame=" << frame << ", dsize=" << dsize << ", "
 		     << "PACKET_LEN=" << getPacketLen() << ", "
 		     << "idx=" << m_idx << ", packet=" << packet_idx << endl;
 	}
-	char *buffer = m_acq->getBufferPtr(frame);
-	bool raw = m_acq->m_save_raw;
+	char *buffer = m_cam->getBufferPtr(frame);
+	bool raw = m_cam->m_save_raw;
 	l.unlock();
 
+	FrameDim frame_dim;
+	getFrameDim(frame_dim, raw);
+	int recv_size = frame_dim.getMemSize();
+
 	if (raw) {
-		int recv_size = getRawImageSize();
 		int xfer_len = sizeof(*p);
 		char *dest = buffer + recv_size * m_idx + xfer_len * packet_idx;
 		memcpy(dest, dptr, xfer_len);
 	} else {
-		int recv_size = getImageSize();
 		int xfer_len = sizeof(p->data);
 		char *src = p->data;
-		int width = 2 * CHIP_SIZE * m_acq->m_pixel_depth;
-		int lines = xfer_len / width;
-		int rsize = 2 * width;
+		int pline = 2 * CHIP_SIZE * frame_dim.getDepth();
+		int plines = xfer_len / pline;
+		int dline = 2 * pline;
 		char *dest = buffer + recv_size * m_idx;
 		if (top_half) {
-			dest += (CHIP_SIZE - 1) * rsize;
-			rsize *= -1;
+			dest += (CHIP_SIZE - 1) * dline;
+			dline *= -1;
 		}
 		int right_side = !second_half ^ top_half;
-		dest += p->pre.idx * rsize * lines + right_side * width;
-		for (int i = 0; i < lines; ++i, src += width, dest += rsize)
-			memcpy(dest, src, width);
+		dest += p->pre.idx * dline * plines + right_side * pline;
+		for (int i = 0; i < plines; ++i, src += pline, dest += dline)
+			memcpy(dest, src, pline);
 	}
 
 	l.lock();
 	m_packet_map.frameItemFinished(frame, packet_idx);
 }
 
-Acq::FrameFinishedCallback::FrameFinishedCallback(Acq *a)
-	 : m_acq(a)
+Camera::FrameFinishedCallback::FrameFinishedCallback(Camera *cam)
+	 : m_cam(cam)
 {
 }
 
-void Acq::FrameFinishedCallback::frameFinished(int frame)
+void Camera::FrameFinishedCallback::frameFinished(int frame)
 {
-	m_acq->frameFinished(frame);
+	m_cam->frameFinished(frame);
 }
 
-Acq::Acq(string config_fname) 
+Camera::Camera(string config_fname) 
 	: m_print_policy(PRINT_POLICY_NONE), 
 	  m_nb_frames(1), 
 	  m_exp_time(0.99),
 	  m_frame_period(1.0), 
 	  m_started(false), 
-	  m_pixel_depth(2), 
+	  m_image_type(Bpp16), 
 	  m_save_raw(true)
 {
 	m_input_data = new AppInputData(config_fname);
@@ -444,13 +464,13 @@ Acq::Acq(string config_fname)
 	m_cmd = new multiSlsDetectorCommand(m_det);
 }
 
-Acq::~Acq()
+Camera::~Camera()
 {
 	cout << "+++ Starting cleanup ..." << endl;
 	stopAcq();
 }
 
-void Acq::createReceivers()
+void Camera::createReceivers()
 {
 	cout << "+++ Receivers:" << endl;
 	const RecvPortMap& recv_port_map = m_input_data->recv_port_map;
@@ -469,8 +489,8 @@ void Acq::createReceivers()
 		     << "receiver port=" << rx_port << ", "
 		     << "mode=" << mode << endl;
 
-		AutoPtr<ReceiverObj> recv_obj = new ReceiverObj(this, idx, 
-								rx_port, mode);
+		AutoPtr<Receiver> recv_obj = new Receiver(this, idx, rx_port, 
+							  mode);
 		m_recv_list.push_back(recv_obj);
 	}
 
@@ -479,19 +499,19 @@ void Acq::createReceivers()
 	m_recv_map.setCallback(m_frame_cb);
 }
 
-void Acq::putCmd(const string& s)
+void Camera::putCmd(const string& s)
 {
 	Args args(s);
 	m_cmd->putCommand(args.size(), args);
 }
 
-string Acq::getCmd(const string& s)
+string Camera::getCmd(const string& s)
 {
 	Args args(s);
 	return m_cmd->getCommand(args.size(), args);
 }
 
-void Acq::prepareAcq()
+void Camera::prepareAcq()
 {
 	ostringstream os;
 
@@ -522,9 +542,11 @@ void Acq::prepareAcq()
 	putCmd("receiver start");
 }
 
-void Acq::allocBuffers()
+void Camera::allocBuffers()
 {
-	long buffer_size = getImageSize();
+	FrameDim frame_dim;
+	getFrameDim(frame_dim, m_save_raw);
+	long buffer_size = frame_dim.getMemSize();
 	cout << "+++ Allocating " << m_nb_frames << " buffers "
 	     << "(" << buffer_size << ") ..." << endl;
 	m_buffer_list = new AutoPtr<MemBuffer>[m_nb_frames];
@@ -532,7 +554,7 @@ void Acq::allocBuffers()
 		m_buffer_list[i] = new MemBuffer(buffer_size);
 }
 
-void Acq::startAcq()
+void Camera::startAcq()
 {
 	cout << "+++ Starting acq ..." << endl;
 	putCmd("status start");
@@ -543,7 +565,7 @@ void Acq::startAcq()
 	m_started = true;
 }
 
-void Acq::stopAcq()
+void Camera::stopAcq()
 {
 	if (!m_started)
 		return;
@@ -560,7 +582,7 @@ void Acq::stopAcq()
 	m_started = false;
 }
 
-void Acq::waitAcq()
+void Camera::waitAcq()
 {
 	if (!m_started)
 		return;
@@ -603,23 +625,23 @@ void Acq::waitAcq()
 	}
 }
 
-void Acq::receiverFrameFinished(int frame, ReceiverObj *recv)
+void Camera::receiverFrameFinished(int frame, Receiver *recv)
 {
 	m_recv_map.frameItemFinished(frame, recv->m_idx);
 }
 
-void Acq::frameFinished(int frame)
+void Camera::frameFinished(int frame)
 {
-	if (m_print_policy & PRINT_POLICY_ACQ) {
+	if (m_print_policy & PRINT_POLICY_CAMERA) {
 		cout << "********* Finished! *******" << endl;
 		cout << "frame=" << frame << endl;
 	}
 }
 
-int Acq::getImageSize()
+void Camera::getFrameDim(FrameDim& frame_dim, bool raw)
 {
-	ReceiverObj *recv = m_recv_list[0];
-	int size = m_save_raw ? recv->getRawImageSize() : recv->getImageSize();
-	return size * getNbHalfModules(); 
+	Receiver *recv = m_recv_list[0];
+	recv->getFrameDim(frame_dim, raw);
+	frame_dim *= Point(1, getNbHalfModules());
 }
 
