@@ -19,19 +19,39 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, see <http://www.gnu.org/licenses/>.
 ############################################################################
+include ../../../config.inc
 
-slsdetector-objs = SlsdetectorInterface.o
+SLS_DETECTORS_BIN = $(SLS_DETECTORS_DIR)/bin
+SLS_DETECTORS_SW = $(SLS_DETECTORS_DIR)/slsDetectorSoftware
+SLS_DETECTORS_RECV = $(SLS_DETECTORS_DIR)/slsReceiverSoftware
+
+LIMA_INCL_FLAGS = -I../../../hardware/include -I../../../common/include \
+		  -I../../../control/include/ \
+		  -I../../../control/software_operation/include/ \
+		  -I../../../third-party/Processlib/core/include \
+		  -I../../../third-party/Processlib/tasks/include \
+		  -I../../../third-party/Sps/Include
+
+SLS_DETECTORS_INCL_FLAGS = -I$(SLS_DETECTORS_SW)/include \
+			   -I$(SLS_DETECTORS_SW)/commonFiles \
+			   -I$(SLS_DETECTORS_SW)/slsDetector \
+			   -I$(SLS_DETECTORS_SW)/multiSlsDetector \
+			   -I$(SLS_DETECTORS_SW)/slsDetectorServer \
+			   -I$(SLS_DETECTORS_SW)/slsDetectorAnalysis \
+			   -I$(SLS_DETECTORS_RECV)/include \
+			   -I$(SLS_DETECTORS_SW)/slsReceiverInterface
+
+
+CXXFLAGS = -I../include $(LIMA_INCL_FLAGS) $(SLS_DETECTORS_INCL_FLAGS) \
+	   -Wall -pthread -fPIC -g
+
+slsdetector-objs = SlsDetectorInterface.o SlsDetectorAcq.o
 
 SRCS = $(slsdetector-objs:.o=.cpp) 
 
-CXXFLAGS = -I../include \
-	   -I../../../hardware/include -I../../../common/include \
-	   -I../../../third-party/Processlib/core/include \
-	   -Wall -pthread -fPIC -g
+all:	SlsDetector.o
 
-all:	Slsdetector.o
-
-Slsdetector.o:	$(slsdetector-objs)
+SlsDetector.o:	$(slsdetector-objs)
 	$(LD) -o $@ -r $+
 
 clean:

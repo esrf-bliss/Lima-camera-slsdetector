@@ -19,28 +19,28 @@
 // You should have received a copy of the GNU General Public License
 // along with this program; if not, see <http://www.gnu.org/licenses/>.
 //###########################################################################
-#include "SlsdetectorInterface.h"
+#include "SlsDetectorInterface.h"
 
 using namespace lima;
-using namespace lima::Slsdetector;
+using namespace lima::SlsDetector;
 using namespace std;
 
 /*******************************************************************
  * \brief EventCallback constructor
  *******************************************************************/
 
-Slsdetector::EventCallback::EventCallback(HwEventCtrlObj& ctrl_obj) 
+SlsDetector::EventCallback::EventCallback(HwEventCtrlObj& ctrl_obj) 
 	: m_ctrl_obj(ctrl_obj)
 {
 	DEB_CONSTRUCTOR();
 }
 
-Slsdetector::EventCallback::~EventCallback()
+SlsDetector::EventCallback::~EventCallback()
 {
 	DEB_DESTRUCTOR();
 }
 
-void Slsdetector::EventCallback::processEvent(Event *event)
+void SlsDetector::EventCallback::processEvent(Event *event)
 {
 	DEB_MEMBER_FUNCT();
 	m_ctrl_obj.reportEvent(event);
@@ -109,7 +109,7 @@ void DetInfoCtrlObj::getPixelSize(double& x_size, double& y_size)
 void DetInfoCtrlObj::getDetectorType(std::string& det_type)
 {
 	DEB_MEMBER_FUNCT();
-	det_type = "Slsdetector";
+	det_type = "SlsDetector";
 	DEB_RETURN() << DEB_VAR1(det_type);
 }
 

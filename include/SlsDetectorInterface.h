@@ -27,7 +27,7 @@
 namespace lima
 {
 
-namespace Slsdetector
+namespace SlsDetector
 {
 
 class Interface;
@@ -39,7 +39,7 @@ class Interface;
 
 class EventCallback : public lima::EventCallback
 {
-	DEB_CLASS_NAMESPC(DebModCamera, "EventCallback", "Slsdetector");
+	DEB_CLASS_NAMESPC(DebModCamera, "EventCallback", "SlsDetector");
 
  public:
 	EventCallback(HwEventCtrlObj& ctrl_obj);
@@ -55,12 +55,12 @@ class EventCallback : public lima::EventCallback
 
 /*******************************************************************
  * \class DetInfoCtrlObj
- * \brief Control object providing Slsdetector detector info interface
+ * \brief Control object providing SlsDetector detector info interface
  *******************************************************************/
 
 class DetInfoCtrlObj : public HwDetInfoCtrlObj
 {
-	DEB_CLASS_NAMESPC(DebModCamera, "DetInfoCtrlObj", "Slsdetector");
+	DEB_CLASS_NAMESPC(DebModCamera, "DetInfoCtrlObj", "SlsDetector");
 
  public:
 	DetInfoCtrlObj();
@@ -88,12 +88,12 @@ class DetInfoCtrlObj : public HwDetInfoCtrlObj
 
 /*******************************************************************
  * \class SyncCtrlObj
- * \brief Control object providing Slsdetector synchronization interface
+ * \brief Control object providing SlsDetector synchronization interface
  *******************************************************************/
 
 class SyncCtrlObj : public HwSyncCtrlObj
 {
-	DEB_CLASS_NAMESPC(DebModCamera, "SyncCtrlObj", "Slsdetector");
+	DEB_CLASS_NAMESPC(DebModCamera, "SyncCtrlObj", "SlsDetector");
 
  public:
 	SyncCtrlObj();
@@ -120,7 +120,7 @@ class SyncCtrlObj : public HwSyncCtrlObj
 
 /*******************************************************************
  * \class EventCtrlObj
- * \brief Control object providing Slsdetector event interface
+ * \brief Control object providing SlsDetector event interface
  *******************************************************************/
 
 class EventCtrlObj : public HwEventCtrlObj
@@ -134,12 +134,12 @@ public:
 
 /*******************************************************************
  * \class Interface
- * \brief Slsdetector hardware interface
+ * \brief SlsDetector hardware interface
  *******************************************************************/
 
 class Interface : public HwInterface
 {
-	DEB_CLASS_NAMESPC(DebModCamera, "Interface", "Slsdetector");
+	DEB_CLASS_NAMESPC(DebModCamera, "Interface", "SlsDetector");
 
  public:
 	Interface();
@@ -163,13 +163,13 @@ class Interface : public HwInterface
 	SyncCtrlObj m_sync;
 	EventCtrlObj m_event;
 
-	Slsdetector::EventCallback  m_event_cb;
+	SlsDetector::EventCallback  m_event_cb;
 };
 
 
 
 
-} // namespace Slsdetector
+} // namespace SlsDetector
 
 } // namespace lima
 

@@ -23,15 +23,13 @@ include ../../../config.inc
 
 SRCS = test_sls_detector.cpp 
 
-include ../../common/espia/include/espia.inc
-
 SLS_DETECTORS_BIN = $(SLS_DETECTORS_DIR)/bin
 SLS_DETECTORS_SW = $(SLS_DETECTORS_DIR)/slsDetectorSoftware
 SLS_DETECTORS_RECV = $(SLS_DETECTORS_DIR)/slsReceiverSoftware
 
 LDFLAGS = -pthread -L$(SLS_DETECTORS_BIN) -L../../../build \
 	  -L../../../third-party/Processlib/build 
-LDLIBS = -lSlsDetector -lSlsReceiver -llimacore -lprocesslib 
+LDLIBS = -llimaslsdetector -lSlsDetector -lSlsReceiver -llimacore -lprocesslib 
 
 ifneq ($(COMPILE_CBF_SAVING), 0)
 LDFLAGS += -L../../../third-party/CBFLib/lib
