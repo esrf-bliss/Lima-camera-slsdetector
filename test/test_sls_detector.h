@@ -170,7 +170,7 @@ public:
 				Long frame;	
 				Byte code;	// 0x6b=first, 0x69=others
 				Byte len;	// 0x80
-				Byte flags;	// 0x00=normal, 0x20=flip
+				Byte flags;	// 0x00=1st-half, 0x20=2nd-half
 				Byte idx;	// 32-bit
 			} pre;
 			char data[PACKET_DATA_LEN];

@@ -368,10 +368,12 @@ void SlsDetectorAcq::ReceiverObj::frameCallback(int frame, char *dptr,
 						char *guidptr)
 {
 	Packet *p = static_cast<Packet *>(static_cast<void *>(dptr));
+	bool second_half = p->pre.flags & 0x20;
 	int packet_idx = p->pre.idx;
-	if (p->pre.flags & 0x20)
-		packet_idx += 0x40;
-	
+	if (second_half)
+		packet_idx += getFramePackets() / 2;
+	bool top_half = (m_idx % 2 == 0);
+
 	AutoLock<Mutex> l(m_mutex);
 	if (m_acq->m_print_policy & PRINT_POLICY_PACKET) {
 		cout << "********* Frame! *******" << endl;
@@ -383,11 +385,28 @@ void SlsDetectorAcq::ReceiverObj::frameCallback(int frame, char *dptr,
 	bool raw = m_acq->m_save_raw;
 	l.unlock();
 
-	int recv_size = raw ? getRawImageSize() : getImageSize();
-	int xfer_len = raw ? sizeof(*p) : sizeof(p->data);
-	void *src = raw ? dptr : p->data;
-	void *dest = buffer + recv_size * m_idx + xfer_len * packet_idx;
-	memcpy(dest, src, xfer_len);
+	if (raw) {
+		int recv_size = getRawImageSize();
+		int xfer_len = sizeof(*p);
+		char *dest = buffer + recv_size * m_idx + xfer_len * packet_idx;
+		memcpy(dest, dptr, xfer_len);
+	} else {
+		int recv_size = getImageSize();
+		int xfer_len = sizeof(p->data);
+		char *src = p->data;
+		int width = 2 * CHIP_SIZE * m_acq->m_pixel_depth;
+		int lines = xfer_len / width;
+		int rsize = 2 * width;
+		char *dest = buffer + recv_size * m_idx;
+		if (top_half) {
+			dest += (CHIP_SIZE - 1) * rsize;
+			rsize *= -1;
+		}
+		int right_side = !second_half ^ top_half;
+		dest += p->pre.idx * rsize * lines + right_side * width;
+		for (int i = 0; i < lines; ++i, src += width, dest += rsize)
+			memcpy(dest, src, width);
+	}
 
 	l.lock();
 	m_packet_map.frameItemFinished(frame, packet_idx);
