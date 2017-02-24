@@ -64,7 +64,7 @@ class DetInfoCtrlObj : public HwDetInfoCtrlObj
 	DEB_CLASS_NAMESPC(DebModCamera, "DetInfoCtrlObj", "SlsDetector");
 
  public:
-	DetInfoCtrlObj();
+	DetInfoCtrlObj(Camera& cam);
 	virtual ~DetInfoCtrlObj();
 
 	virtual void getMaxImageSize(Size& max_image_size);
@@ -84,6 +84,7 @@ class DetInfoCtrlObj : public HwDetInfoCtrlObj
 					HwMaxImageSizeCallback& cb);
 
  private:
+	Camera& m_cam;
 };
 
 

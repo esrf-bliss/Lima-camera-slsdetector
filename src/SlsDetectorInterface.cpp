@@ -51,7 +51,8 @@ void SlsDetector::EventCallback::processEvent(Event *event)
  * \brief DetInfoCtrlObj constructor
  *******************************************************************/
 
-DetInfoCtrlObj::DetInfoCtrlObj()
+DetInfoCtrlObj::DetInfoCtrlObj(Camera& cam)
+	: m_cam(cam)
 {
 	DEB_CONSTRUCTOR();
 }
@@ -64,7 +65,8 @@ DetInfoCtrlObj::~DetInfoCtrlObj()
 void DetInfoCtrlObj::getMaxImageSize(Size& max_image_size)
 {
 	DEB_MEMBER_FUNCT();
-	FrameDim max_frame_dim(Size(1024, 1024), Bpp16);
+	FrameDim max_frame_dim;
+	m_cam.getFrameDim(max_frame_dim);
 	max_image_size = max_frame_dim.getSize();
 
 }
@@ -72,22 +74,25 @@ void DetInfoCtrlObj::getMaxImageSize(Size& max_image_size)
 void DetInfoCtrlObj::getDetectorImageSize(Size& det_image_size)
 {
 	DEB_MEMBER_FUNCT();
-	FrameDim max_frame_dim(Size(1024, 1024), Bpp16);
-	det_image_size = max_frame_dim.getSize();
+	FrameDim frame_dim;
+	m_cam.getFrameDim(frame_dim);
+	det_image_size = frame_dim.getSize();
 }
 
 void DetInfoCtrlObj::getDefImageType(ImageType& def_image_type)
 {
 	DEB_MEMBER_FUNCT();
-	FrameDim max_frame_dim(Size(1024, 1024), Bpp16);
-	def_image_type = max_frame_dim.getImageType();
+	FrameDim frame_dim;
+	m_cam.getFrameDim(frame_dim);
+	def_image_type = frame_dim.getImageType();
 }
 
 void DetInfoCtrlObj::getCurrImageType(ImageType& curr_image_type)
 {
 	DEB_MEMBER_FUNCT();
-	FrameDim max_frame_dim(Size(1024, 1024), Bpp16);
-	curr_image_type = max_frame_dim.getImageType();
+	FrameDim frame_dim;
+	m_cam.getFrameDim(frame_dim);
+	curr_image_type = frame_dim.getImageType();
 }
 
 void DetInfoCtrlObj::setCurrImageType(ImageType curr_image_type)
@@ -102,21 +107,34 @@ void DetInfoCtrlObj::setCurrImageType(ImageType curr_image_type)
 void DetInfoCtrlObj::getPixelSize(double& x_size, double& y_size)
 {
 	DEB_MEMBER_FUNCT();
-	x_size = y_size = 10e-6;
+	x_size = y_size = 75e-6;
 	DEB_RETURN() << DEB_VAR2(x_size, y_size);
 }
 
-void DetInfoCtrlObj::getDetectorType(std::string& det_type)
+void DetInfoCtrlObj::getDetectorType(string& det_type)
 {
 	DEB_MEMBER_FUNCT();
 	det_type = "SlsDetector";
 	DEB_RETURN() << DEB_VAR1(det_type);
 }
 
-void DetInfoCtrlObj::getDetectorModel(std::string& det_model)
+void DetInfoCtrlObj::getDetectorModel(string& det_model)
 {
 	DEB_MEMBER_FUNCT();
-	det_model = "Generic";
+	FrameDim max_frame_dim;
+	m_cam.getFrameDim(max_frame_dim);
+	Size image_size = max_frame_dim.getSize();
+	int nb_pixels = image_size.getWidth() * image_size.getHeight();
+	ostringstream os;
+	os << "PSI/Eiger-";
+	if (nb_pixels == 500 * 1024) {
+		os << "500K";
+	} else if (nb_pixels == 2 * 1024 * 1024) {
+		os << "2M";
+	} else {
+		os << m_cam.getNbHalfModules() / 2 << "-Modules";
+	}
+	det_model = os.str();
 	DEB_RETURN() << DEB_VAR1(det_model);
 }
 
@@ -253,9 +271,11 @@ EventCtrlObj::~EventCtrlObj()
  *******************************************************************/
 
 Interface::Interface(string config_fname)
-	: m_cam(config_fname), m_event_cb(m_event)
+	: m_cam(config_fname), m_det_info(m_cam), m_event_cb(m_event)
 {
 	DEB_CONSTRUCTOR();
+
+	m_cam.setBufferCbMgr(&m_buffer.getBuffer());
 
 	HwDetInfoCtrlObj *det_info = &m_det_info;
 	m_cap_list.push_back(HwCap(det_info));

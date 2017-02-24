@@ -26,86 +26,25 @@ using namespace std;
 using namespace lima;
 using namespace lima::SlsDetector;
 
+DEB_GLOBAL(DebModTest);
 
-void save_raw_data(string out_dir, int start_frame, int nb_frames, Camera& cam)
+int main(int argc, char *argv[])
 {
-	FrameDim frame_dim;
-	cam.getFrameDim(frame_dim, true);
+	DEB_GLOBAL_FUNCT();
+//	DebParams::enableTypeFlags(DebParams::AllFlags);
 
-	for (int i = 0; i < nb_frames; ++i) {
-		ostringstream os;
-		os << out_dir << "/eiger.bin." << i;
-		cout << "+++ Saving raw to " << os.str() << " ..." << endl;
-		ofstream of(os.str().c_str());
-		char *buffer = cam.getBufferPtr(start_frame + i);
-		of.write(buffer, frame_dim.getMemSize());
-	}
-}
-
-class EdfHeaderKey
-{
-public:
-	EdfHeaderKey(const string& key) : m_key(key)
-	{}
-private:
-	friend ostream& operator <<(ostream& os, const EdfHeaderKey& h);
-	string m_key;
+	TestApp app(argc, argv);
+	app.run();
+	return 0;
 };
 
-ostream& operator <<(ostream& os, const EdfHeaderKey& h)
-{
-	return os << setiosflags(ios::left) << resetiosflags(ios::right)
-		  << setw(14) << setfill(' ') << h.m_key << " = ";
-}
-
-void save_edf_frame(ofstream& of, int acq_idx, int edf_idx, Camera& cam)
-{
-	FrameDim frame_dim;
-	cam.getFrameDim(frame_dim);
-	Size frame_size = frame_dim.getSize();
-	int image_bytes = frame_dim.getMemSize();
-	
-	ostringstream os;
-	os << "{" << endl;
-	os << EdfHeaderKey("HeaderID") << setiosflags(ios::right) 
-	   << "EH:" << setfill('0') << setw(6) << (edf_idx + 1) 
-	   << ":" << setfill('0') << setw(6) << 0 
-	   << ":" << setfill('0') << setw(6) << 0 << "; " << endl;
-	os << EdfHeaderKey("ByteOrder") << "LowByteFirst" << "; " << endl;
-	os << EdfHeaderKey("DataType") << "UnsignedShort" << "; " << endl;
-	os << EdfHeaderKey("Size") << image_bytes << "; " << endl;
-	os << EdfHeaderKey("Dim_1") << frame_size.getWidth() << "; " << endl;
-	os << EdfHeaderKey("Dim_2") << frame_size.getHeight() << "; " << endl;
-	os << EdfHeaderKey("Image") << edf_idx << "; " << endl;
-	os << EdfHeaderKey("acq_frame_nb") << edf_idx << "; " << endl;
-
-	const int HEADER_BLOCK = 1024;
-	int rem = (HEADER_BLOCK - 2) - os.str().size() % HEADER_BLOCK;
-	if (rem < 0)
-		rem += HEADER_BLOCK;
-	os << string(rem, '\n') << "}" << endl;
-	of << os.str();
-
-	of.write(cam.getBufferPtr(acq_idx), image_bytes);
-}
-
-void save_edf_data(string out_dir, int start_frame, int nb_frames, Camera& cam)
-{
-	ostringstream os;
-	os << out_dir << "/eiger.edf";
-	cout << "+++ Saving EDF to " << os.str() << " ..." << endl;
-	ofstream of(os.str().c_str());
-	for (int i = 0; i < nb_frames; ++i)
-		save_edf_frame(of, start_frame + i, i, cam);
-}
-
-AppPars::AppPars()
+TestApp::Pars::Pars()
 {
 	loadDefaults();
 	loadOpts();
 }
 
-void AppPars::loadDefaults()
+void TestApp::Pars::loadDefaults()
 {
 	nb_frames = 10;
 	exp_time = 2.0e-3;
@@ -115,7 +54,7 @@ void AppPars::loadDefaults()
 	out_dir = "/tmp";
 }
 
-void AppPars::loadOpts()
+void TestApp::Pars::loadOpts()
 {
 	AutoPtr<ArgOptBase> o;
 
@@ -147,7 +86,7 @@ void AppPars::loadOpts()
 	m_opt_list.insert(o);
 }
 
-void AppPars::parseArgs(Args& args)
+void TestApp::Pars::parseArgs(Args& args)
 {
 	string prog_name = args.pop_front();
 
@@ -165,26 +104,59 @@ void AppPars::parseArgs(Args& args)
 	}
 }
 
-int main(int argc, char *argv[])
+TestApp::FrameCallback::FrameCallback(TestApp *app)
+	: m_app(app)
 {
-	AppPars pars;
-	Args args(argc, argv);
-	pars.parseArgs(args);
+}
 
+bool TestApp::FrameCallback::newFrameReady(const HwFrameInfoType& frame_info)
+{
+	return m_app->newFrameReady(frame_info);
+}
+
+const double TestApp::WAIT_SLEEP_TIME = 0.2;
+
+TestApp::TestApp(int argc, char *argv[])
+	: m_cb(this)
+{
+	Args args(argc, argv);
+	m_pars.parseArgs(args);
+
+	m_cam = new Camera(m_pars.config_fname);
+	m_alloc_mgr = new SoftBufferAllocMgr();
+	m_buffer_mgr = new StdBufferCbMgr(*m_alloc_mgr);
+	m_buffer_mgr->registerFrameCallback(m_cb);
+}
+
+void TestApp::run()
+{
 	try {
-		Camera cam(pars.config_fname);
-		cam.setPrintPolicy(pars.print_policy);
-		cam.setNbFrames(pars.nb_frames);
-		cam.setExpTime(pars.exp_time);
-		cam.setFramePeriod(pars.frame_period);
-		cam.setSaveRaw(pars.save_raw);
-		cam.prepareAcq();
-		cam.startAcq();
-		cam.waitAcq();
-		if (pars.save_raw) {
-			save_raw_data(pars.out_dir, 0, pars.nb_frames, cam);
+		m_cam->setPrintPolicy(m_pars.print_policy);
+		m_cam->setNbFrames(m_pars.nb_frames);
+		m_cam->setExpTime(m_pars.exp_time);
+		m_cam->setFramePeriod(m_pars.frame_period);
+		m_cam->setSaveRaw(m_pars.save_raw);
+
+		FrameDim frame_dim;
+		m_cam->getFrameDim(frame_dim);
+		int max_buffers = m_buffer_mgr->getMaxNbBuffers(frame_dim, 1);
+		int nb_buffers = min(m_pars.nb_frames, max_buffers);
+		m_buffer_mgr->allocBuffers(nb_buffers, 1, frame_dim);
+		m_cam->setBufferCbMgr(m_buffer_mgr);
+
+		m_cam->prepareAcq();
+		m_last_msg_timestamp = Timestamp::now();
+
+		m_state.set(AcqState::Acquiring);
+		m_cam->startAcq();
+		m_state.waitNot(AcqState::Acquiring);
+
+		int first = max(0, m_pars.nb_frames - nb_buffers);
+		int save_frames = min(m_pars.nb_frames, nb_buffers);
+		if (m_pars.save_raw) {
+			save_raw_data(first, save_frames);
 		} else {
-			save_edf_data(pars.out_dir, 0, pars.nb_frames, cam);
+			save_edf_data(first, save_frames);
 		}
 	} catch (string s) {
 		cerr << "Exception: " << s << endl;
@@ -193,6 +165,85 @@ int main(int argc, char *argv[])
 		cerr << "Exception" << endl;
 		exit(1);
 	}
-
-	return 0;
 }
+
+bool TestApp::newFrameReady(const HwFrameInfoType& frame_info)
+{
+	if (frame_info.acq_frame_nb == m_pars.nb_frames - 1)
+		m_state.set(AcqState::Finished);
+
+	Timestamp timestamp = Timestamp::now();
+	if (timestamp - m_last_msg_timestamp > WAIT_SLEEP_TIME) {
+		int frames_caught = m_cam->getFramesCaught();
+		const Camera::FrameMap& recv_map = m_cam->getRecvMap();
+		int finished_frames = recv_map.getLastSeqFinishedFrame() + 1;
+		ostringstream os;
+		os << "frame=" << frame_info.acq_frame_nb << ", "
+		   << "framescaught=" << frames_caught << ", "
+		   << "finished_frames=" << finished_frames;
+		if (m_pars.print_policy & PRINT_POLICY_MAP) {
+			os << ", " << "recv_map=" << recv_map;
+		}
+		cout << os.str() << endl;
+
+		m_last_msg_timestamp = timestamp;
+	}
+
+	return true;
+}
+
+void TestApp::save_raw_data(int start_frame, int nb_frames)
+{
+	FrameDim frame_dim = m_buffer_mgr->getFrameDim();
+
+	for (int i = 0; i < nb_frames; ++i) {
+		ostringstream os;
+		os << m_pars.out_dir << "/eiger.bin." << i;
+		cout << "+++ Saving raw to " << os.str() << " ..." << endl;
+		ofstream of(os.str().c_str());
+		void *buffer = m_buffer_mgr->getFrameBufferPtr(start_frame + i);
+		of.write(static_cast<char *>(buffer), frame_dim.getMemSize());
+	}
+}
+
+void TestApp::save_edf_data(int start_frame, int nb_frames)
+{
+	ostringstream os;
+	os << m_pars.out_dir << "/eiger.edf";
+	cout << "+++ Saving EDF to " << os.str() << " ..." << endl;
+	ofstream of(os.str().c_str());
+	for (int i = 0; i < nb_frames; ++i)
+		save_edf_frame(of, start_frame + i, i);
+}
+
+void TestApp::save_edf_frame(ofstream& of, int acq_idx, int edf_idx)
+{
+	FrameDim frame_dim = m_buffer_mgr->getFrameDim();
+	Size frame_size = frame_dim.getSize();
+	int image_bytes = frame_dim.getMemSize();
+	
+	ostringstream os;
+	os << "{" << endl;
+	os << EdfHeaderKey("HeaderID") << setiosflags(ios::right) 
+	   << "EH:" << setfill('0') << setw(6) << (edf_idx + 1) 
+	   << ":" << setfill('0') << setw(6) << 0 
+	   << ":" << setfill('0') << setw(6) << 0 << "; " << endl;
+	os << EdfHeaderKey("ByteOrder") << "LowByteFirst" << "; " << endl;
+	os << EdfHeaderKey("DataType") << "UnsignedShort" << "; " << endl;
+	os << EdfHeaderKey("Size") << image_bytes << "; " << endl;
+	os << EdfHeaderKey("Dim_1") << frame_size.getWidth() << "; " << endl;
+	os << EdfHeaderKey("Dim_2") << frame_size.getHeight() << "; " << endl;
+	os << EdfHeaderKey("Image") << edf_idx << "; " << endl;
+	os << EdfHeaderKey("acq_frame_nb") << edf_idx << "; " << endl;
+
+	const int HEADER_BLOCK = 1024;
+	int rem = (HEADER_BLOCK - 2) - os.str().size() % HEADER_BLOCK;
+	if (rem < 0)
+		rem += HEADER_BLOCK;
+	os << string(rem, '\n') << "}" << endl;
+	of << os.str();
+
+	void *buffer = m_buffer_mgr->getFrameBufferPtr(acq_idx);
+	of.write(static_cast<char *>(buffer), image_bytes);
+}
+

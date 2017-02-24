@@ -32,6 +32,7 @@
 #include "lima/RegExUtils.h"
 #include "lima/ThreadUtils.h"
 #include "lima/MemUtils.h"
+#include "lima/HwBufferMgr.h"
 
 #include <iostream>
 #include <string>
@@ -54,6 +55,8 @@ namespace SlsDetector
 
 class Args
 {
+	DEB_CLASS_NAMESPC(DebModCamera, "Args", "SlsDetector");
+
 public:
 	Args();
 	Args(unsigned int argc, char *argv[]);
@@ -93,6 +96,8 @@ private:
 
 class Camera
 {
+	DEB_CLASS_NAMESPC(DebModCamera, "Camera", "SlsDetector");
+
 public:
 	typedef RegEx::SingleMatchType SingleMatch;
 	typedef RegEx::FullMatchType FullMatch;
@@ -103,12 +108,12 @@ public:
 	typedef StringList HostnameList;
 	typedef std::map<int, int> RecvPortMap;
 	typedef std::map<int, int> FrameRecvMap;
-	typedef AutoPtr<AutoPtr<MemBuffer>, true> BufferList;
-
-	static const double WAIT_SLEEP_TIME;
 
 	struct AppInputData
 	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Camera::AppInputData", 
+				  "SlsDetector");
+	public:
 		std::string config_file_name;
 		HostnameList host_name_list;
 		RecvPortMap recv_port_map;
@@ -118,12 +123,19 @@ public:
 
 	class FrameMap
 	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Camera::FrameMap", 
+				  "SlsDetector");
+
 	public:
 		typedef std::set<int> List;
 		typedef std::map<int, List> Map;
 
 		class Callback
 		{
+			DEB_CLASS_NAMESPC(DebModCamera, 
+					  "Camera::FrameMap::Callback", 
+					  "SlsDetector");
+
 		public:
 			Callback();
 			virtual ~Callback();
@@ -163,6 +175,9 @@ public:
 
 	class Receiver 
 	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Camera::Receiver", 
+				  "SlsDetector");
+
 	public:
 		typedef unsigned char Byte;
 		typedef unsigned int Long;
@@ -200,6 +215,10 @@ public:
 	private:
 		class FrameFinishedCallback : public FrameMap::Callback
 		{
+			DEB_CLASS_NAMESPC(DebModCamera, 
+					  "Camera::Receiver"
+					  "::FrameFinishedCallback", 
+					  "SlsDetector");
 		public:
 			FrameFinishedCallback(Receiver *r, int p);
 			virtual void frameFinished(int frame);
@@ -238,6 +257,9 @@ public:
 	Camera(std::string config_fname);
 	virtual ~Camera();
 
+	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr)
+	{ m_buffer_cb_mgr = buffer_cb_mgr; }
+
 	void setNbFrames(int nb_frames)
 	{ m_nb_frames = nb_frames; }
 
@@ -256,21 +278,24 @@ public:
 	void prepareAcq();
 	void startAcq();
 	void stopAcq();
-	void waitAcq();
 
 	int getNbHalfModules()
 	{ return m_input_data->host_name_list.size(); }
 
 	void getFrameDim(FrameDim& frame_dim, bool raw = false);
 
-	char *getBufferPtr(int pos)
-	{ return static_cast<char *>(m_buffer_list[pos]->getPtr()); }
+	int getFramesCaught();
+	const FrameMap& getRecvMap()
+	{ return m_recv_map; }
 
 private:
 	friend class Receiver;
 
 	class FrameFinishedCallback : public FrameMap::Callback
 	{
+		DEB_CLASS_NAMESPC(DebModCamera, 
+				  "Camera::FrameFinishedCallback", 
+				  "SlsDetector");
 	public:
 		FrameFinishedCallback(Camera *cam);
 		virtual void frameFinished(int frame);
@@ -278,8 +303,8 @@ private:
 		Camera *m_cam;
 	};
 
+	char *getFrameBufferPtr(int frame_nb);
 	void createReceivers();
-	void allocBuffers();
 
 	void receiverFrameFinished(int frame, Receiver *recv);
 	void frameFinished(int frame);
@@ -299,7 +324,7 @@ private:
 	bool m_started;
 	FrameMap m_recv_map;
 	AutoPtr<FrameFinishedCallback> m_frame_cb;
-	BufferList m_buffer_list;
+	StdBufferCbMgr *m_buffer_cb_mgr;
 	ImageType m_image_type;
 	bool m_save_raw;
 };

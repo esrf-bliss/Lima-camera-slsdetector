@@ -24,6 +24,7 @@
 #define __TEST_SLS_DETECTOR_H
 
 #include "SlsDetectorCamera.h"
+#include "lima/AcqState.h"
 
 namespace lima 
 {
@@ -31,81 +32,134 @@ namespace lima
 namespace SlsDetector
 {
 
-class AppPars 
+class TestApp
 {
  public:
-	std::string config_fname;
-	int nb_frames;
-	double exp_time;
-	double frame_period;
-	int print_policy;
-	bool save_raw;
-	std::string out_dir;
+	static const double WAIT_SLEEP_TIME;
 
-	AppPars();
-	void parseArgs(Args& args);
-
- private:
-	class ArgOptBase
+	class Pars 
 	{
 	public:
+		std::string config_fname;
+		int nb_frames;
+		double exp_time;
+		double frame_period;
+		int print_policy;
+		bool save_raw;
+		std::string out_dir;
+
+		Pars();
+		void parseArgs(Args& args);
+
+	private:
+		class ArgOptBase
+		{
+		public:
 		ArgOptBase(string sopt, string lopt, string extra = "")
 			: m_sopt(sopt), m_lopt(lopt), m_extra(extra)
-		{}
-		virtual ~ArgOptBase()
-		{}
+			{}
+			virtual ~ArgOptBase()
+				{}
 
-		virtual bool check(Args& args) = 0;
+			virtual bool check(Args& args) = 0;
 
-		bool hasExtra()
-		{ return !m_extra.empty(); }
+			bool hasExtra()
+			{ return !m_extra.empty(); }
 
-	protected:
-		string m_sopt;
-		string m_lopt;
-		string m_extra;
-	};
+		protected:
+			string m_sopt;
+			string m_lopt;
+			string m_extra;
+		};
 
-	template <class T>
-	class ArgOpt : public ArgOptBase
-	{
-	public:
+		template <class T>
+			class ArgOpt : public ArgOptBase
+		{
+		public:
 		ArgOpt(T& var, string sopt, string lopt, string extra = "") 
 			: ArgOptBase(sopt, lopt, extra), m_var(var)
-		{
-			if (!hasExtra()) {
-				istringstream is("0");
+			{
+				if (!hasExtra()) {
+					istringstream is("0");
+					is >> m_var;
+				}
+			}
+
+			virtual bool check(Args& args)
+			{
+				string s = args[0];
+				if ((s != m_sopt) && (s != m_lopt))
+					return false;
+				args.pop_front();
+				if (hasExtra() && !args) {
+					cerr << "Missing " << m_extra << endl;
+					exit(1);
+				}
+				s = hasExtra() ? args.pop_front() : string("1");
+				istringstream is(s);
 				is >> m_var;
+				return true;	
 			}
-		}
 
-		virtual bool check(Args& args)
-		{
-			string s = args[0];
-			if ((s != m_sopt) && (s != m_lopt))
-				return false;
-			args.pop_front();
-			if (hasExtra() && !args) {
-				cerr << "Missing " << m_extra << endl;
-				exit(1);
-			}
-			s = hasExtra() ? args.pop_front() : string("1");
-			istringstream is(s);
-			is >> m_var;
-			return true;	
-		}
+		protected:
+			T& m_var;
+		};
 
-	protected:
-		T& m_var;
+		typedef std::set<AutoPtr<ArgOptBase> > OptList;
+
+		void loadDefaults();
+		void loadOpts();
+
+		OptList m_opt_list;
 	};
 
-	typedef std::set<AutoPtr<ArgOptBase> > OptList;
+	class EdfHeaderKey
+	{
+	public:
+	EdfHeaderKey(const string& key) : m_key(key)
+		{}
+	private:
+		friend ostream& operator <<(ostream& os, const EdfHeaderKey& h);
+		string m_key;
+	};
 
-	void loadDefaults();
-	void loadOpts();
+	TestApp(int argc, char *argv[]);
+	void run();
 
-	OptList m_opt_list;
+ private:
+	class FrameCallback : public HwFrameCallback
+	{
+	public:
+		FrameCallback(TestApp *app);
+	protected:
+		virtual bool newFrameReady(const HwFrameInfoType& frame_info);
+	private:
+		TestApp *m_app;
+	};
+
+	friend class FrameCallback;
+
+	bool newFrameReady(const HwFrameInfoType& frame_info);
+
+	void save_raw_data(int start_frame, int nb_frames);
+	void save_edf_data(int start_frame, int nb_frames);
+	void save_edf_frame(ofstream& of, int acq_idx, int edf_idx);
+
+	Pars m_pars;
+	AutoPtr<Camera> m_cam;
+	AutoPtr<SoftBufferAllocMgr> m_alloc_mgr;
+	AutoPtr<StdBufferCbMgr> m_buffer_mgr;
+	AcqState m_state;
+	FrameCallback m_cb;
+	Timestamp m_last_msg_timestamp;
 };
+
+ostream& operator <<(ostream& os, const TestApp::EdfHeaderKey& h)
+{
+	return os << setiosflags(ios::left) << resetiosflags(ios::right)
+		  << setw(14) << setfill(' ') << h.m_key << " = ";
+}
+
 
 
 } // namespace SlsDetector
