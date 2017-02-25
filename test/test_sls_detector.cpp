@@ -31,8 +31,6 @@ DEB_GLOBAL(DebModTest);
 int main(int argc, char *argv[])
 {
 	DEB_GLOBAL_FUNCT();
-//	DebParams::enableTypeFlags(DebParams::AllFlags);
-
 	TestApp app(argc, argv);
 	app.run();
 	return 0;
@@ -51,6 +49,7 @@ void TestApp::Pars::loadDefaults()
 	frame_period = 2.5e-3;
 	print_policy = PRINT_POLICY_NONE;
 	save_raw = false;
+	debug_type_flags = 0;
 	out_dir = "/tmp";
 }
 
@@ -79,6 +78,10 @@ void TestApp::Pars::loadOpts()
 	m_opt_list.insert(o);
 
 	o = new ArgOpt<bool>(save_raw, "-r", "--save-raw");
+	m_opt_list.insert(o);
+
+	o = new ArgOpt<int>(debug_type_flags, "-d", "--debug-type-flags", 
+			    "debug type flags");
 	m_opt_list.insert(o);
 
 	o = new ArgOpt<string>(out_dir, "-o", "--out-dir",
@@ -119,8 +122,12 @@ const double TestApp::WAIT_SLEEP_TIME = 0.2;
 TestApp::TestApp(int argc, char *argv[])
 	: m_cb(this)
 {
+	DEB_CONSTRUCTOR();
+
 	Args args(argc, argv);
 	m_pars.parseArgs(args);
+
+	DebParams::enableTypeFlags(m_pars.debug_type_flags);
 
 	m_cam = new Camera(m_pars.config_fname);
 	m_alloc_mgr = new SoftBufferAllocMgr();

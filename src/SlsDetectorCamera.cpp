@@ -446,18 +446,18 @@ void Camera::Receiver::frameCallback(int frame, char *dptr, int dsize, FILE *f,
 	} else {
 		int xfer_len = sizeof(p->data);
 		char *src = p->data;
-		int pline = 2 * CHIP_SIZE * frame_dim.getDepth();
-		int plines = xfer_len / pline;
-		int dline = 2 * pline;
+		int plw = 2 * CHIP_SIZE * frame_dim.getDepth();
+		int plnb = xfer_len / plw;
+		int dlw = 2 * plw;
 		char *dest = buffer + recv_size * m_idx;
 		if (top_half) {
-			dest += (CHIP_SIZE - 1) * dline;
-			dline *= -1;
+			dest += (CHIP_SIZE - 1) * dlw;
+			dlw *= -1;
 		}
 		int right_side = !second_half ^ top_half;
-		dest += p->pre.idx * dline * plines + right_side * pline;
-		for (int i = 0; i < plines; ++i, src += pline, dest += dline)
-			memcpy(dest, src, pline);
+		dest += p->pre.idx * dlw * plnb + right_side * plw;
+		for (int i = 0; i < plnb; ++i, src += plw, dest += dlw)
+			memcpy(dest, src, plw);
 	}
 
 	l.lock();
@@ -478,12 +478,10 @@ void Camera::FrameFinishedCallback::frameFinished(int frame)
 
 Camera::Camera(string config_fname) 
 	: m_print_policy(PRINT_POLICY_NONE), 
-	  m_nb_frames(1), 
-	  m_exp_time(0.99),
-	  m_frame_period(1.0), 
 	  m_started(false), 
+	  m_recv_started(false),
 	  m_image_type(Bpp16), 
-	  m_save_raw(true)
+	  m_save_raw(false)
 {
 	DEB_CONSTRUCTOR();
 
@@ -499,6 +497,10 @@ Camera::Camera(string config_fname)
 
 	cout << "+++ Creating the multiSlsDetectorCommand ..." << endl;
 	m_cmd = new multiSlsDetectorCommand(m_det);
+
+	setNbFrames(1);
+	setExpTime(0.99);
+	setFramePeriod(1.0);
 }
 
 Camera::~Camera()
@@ -506,6 +508,11 @@ Camera::~Camera()
 	DEB_DESTRUCTOR();
 	cout << "+++ Starting cleanup ..." << endl;
 	stopAcq();
+
+	if (m_recv_started) {
+		putCmd("receiver stop");
+		m_recv_started = false;
+	}
 }
 
 char *Camera::getFrameBufferPtr(int frame_nb)
@@ -568,51 +575,74 @@ string Camera::getCmd(const string& s)
 	return m_cmd->getCommand(args.size(), args);
 }
 
+void Camera::setNbFrames(int nb_frames)
+{
+	DEB_MEMBER_FUNCT();
+	putCmd("timing auto");
+	ostringstream os;
+	os << "frames " << nb_frames;
+	putCmd(os.str());
+	m_nb_frames = nb_frames;
+}
+
+void Camera::getNbFrames(int& nb_frames)
+{
+	DEB_MEMBER_FUNCT();
+	nb_frames = m_nb_frames;
+}
+
+void Camera::setExpTime(double exp_time)
+{
+	DEB_MEMBER_FUNCT();
+	ostringstream os;
+	os << "exptime " << exp_time;
+	putCmd(os.str());
+	m_exp_time = exp_time;
+}
+
+void Camera::getExpTime(double& exp_time)
+{ 
+	DEB_MEMBER_FUNCT();
+	exp_time = m_exp_time;
+}
+
+void Camera::setFramePeriod(double frame_period)
+{
+	DEB_MEMBER_FUNCT();
+	ostringstream os;
+	os << "period " << frame_period;
+	putCmd(os.str());
+	m_frame_period = frame_period;
+}
+
+void Camera::getFramePeriod(double& frame_period)
+{
+	DEB_MEMBER_FUNCT();
+	frame_period = m_frame_period;
+}
+
 void Camera::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
 
-	ostringstream os;
-
 	if (!m_buffer_cb_mgr)
 		THROW("Camera::prepareAcq: no BufferCbMgr defined");
 
-	cout << "+++ Setting timming ..." << endl;
-	putCmd("timing auto");
-
-	cout << "+++ Setting frames ..." << endl;
-	os.str("");
-	os << "frames " << m_nb_frames;
-	putCmd(os.str());
-
-	cout << "+++ Setting exptime ..." << endl;
-	os.str("");
-	os << "exptime " << m_exp_time;
-	putCmd(os.str());
-
-	cout << "+++ Setting period ..." << endl;
-	os.str("");
-	os << "period " << m_frame_period;
-	putCmd(os.str());
-
-	cout << "+++ Querying status ..." << endl;
-        cout << "  status=" << getCmd("status") << endl;
-
-	cout << "+++ Starting receivers ..." << endl;
-	putCmd("receiver start");
+	if (!m_recv_started) {
+		putCmd("receiver start");
+		m_recv_started = true;
+	}
 }
 
 void Camera::startAcq()
 {
 	DEB_MEMBER_FUNCT();
+
+	if (m_started)
+		THROW("Camera::startAcq: camera already started");
+
 	m_buffer_cb_mgr->setStartTimestamp(Timestamp::now());
-
-	cout << "+++ Starting acq ..." << endl;
 	putCmd("status start");
-
-	cout << "+++ Querying status ..." << endl;
-        cout << "  status=" << getCmd("status") << endl;
-
 	m_started = true;
 }
 
@@ -623,15 +653,7 @@ void Camera::stopAcq()
 	if (!m_started)
 		return;
 
-	cout << "+++ Stopping acq ..." << endl;
 	putCmd("status stop");
-
-	cout << "+++ Stopping receivers ..." << endl;
-	putCmd("receiver stop");
-
-	cout << "+++ Querying status ..." << endl;
-        cout << "  status=" << getCmd("status") << endl;
-
 	m_started = false;
 }
 
@@ -652,6 +674,7 @@ void Camera::frameFinished(int frame)
 	HwFrameInfoType frame_info;
 	frame_info.acq_frame_nb = frame;
 	bool cont_acq = m_buffer_cb_mgr->newFrameReady(frame_info);
+	cont_acq &= (frame < m_nb_frames - 1);
 	if (!cont_acq)
 		stopAcq();
 }
@@ -662,6 +685,7 @@ void Camera::getFrameDim(FrameDim& frame_dim, bool raw)
 	Receiver *recv = m_recv_list[0];
 	recv->getFrameDim(frame_dim, raw);
 	frame_dim *= Point(1, getNbHalfModules());
+	DEB_RETURN() << DEB_VAR1(frame_dim);
 }
 
 int Camera::getFramesCaught()
@@ -672,4 +696,10 @@ int Camera::getFramesCaught()
 	istringstream is(ans);
 	is >> frames_caught;
 	return frames_caught;
+}
+
+string Camera::getStatus()
+{
+	DEB_MEMBER_FUNCT();
+	return getCmd("status");
 }

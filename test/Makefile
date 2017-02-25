@@ -19,7 +19,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, see <http://www.gnu.org/licenses/>.
 ############################################################################
-include ../../../config.inc
+LIMA_DIR := $(shell pwd)/../../..
+
+include $(LIMA_DIR)/config.inc
+include $(LIMA_DIR)/control/control.inc
 
 SRCS = test_sls_detector.cpp 
 
@@ -41,13 +44,6 @@ LDFLAGS += -L../../../third-party/libconfig/lib/.libs
 LDLIBS += -lconfig++
 endif
 
-LIMA_INCL_FLAGS = -I../../../hardware/include -I../../../common/include \
-		  -I../../../control/include/ \
-		  -I../../../control/software_operation/include/ \
-		  -I../../../third-party/Processlib/core/include \
-		  -I../../../third-party/Processlib/tasks/include \
-		  -I../../../third-party/Sps/Include
-
 SLS_DETECTORS_INCL_FLAGS = -I$(SLS_DETECTORS_SW)/include \
 			   -I$(SLS_DETECTORS_SW)/commonFiles \
 			   -I$(SLS_DETECTORS_SW)/slsDetector \
@@ -59,15 +55,17 @@ SLS_DETECTORS_INCL_FLAGS = -I$(SLS_DETECTORS_SW)/include \
 
 
 
-CXXFLAGS = -I../include $(LIMA_INCL_FLAGS) $(SLS_DETECTORS_INCL_FLAGS) \
-	   -Wall -pthread -g
+CXXFLAGS = -I../include $(CT_CXXFLAGS) $(SLS_DETECTORS_INCL_FLAGS)
 
-test-progs = test_sls_detector
+test-progs = test_sls_detector test_sls_detector_control
 old-progs  = 
 
 all: 	$(test-progs)
 
 test_sls_detector:		test_sls_detector.o
+	$(CXX) $(LDFLAGS) -o $@ $+ $(LDLIBS)
+
+test_sls_detector_control:	test_sls_detector_control.o
 	$(CXX) $(LDFLAGS) -o $@ $+ $(LDLIBS)
 
 clean:

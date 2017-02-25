@@ -94,15 +94,15 @@ void ImageStatusCallback::imageStatusChanged(
 
 
 //*********************************************************************
-//* FrelonAcq
+//* SlsDetectorAcq
 //*********************************************************************
 
-class FrelonAcq
+class SlsDetectorAcq
 {
-	DEB_CLASS(DebModTest, "FrelonAcq");
+	DEB_CLASS(DebModTest, "SlsDetectorAcq");
 public:
-	FrelonAcq(int espia_dev_nb);
-	~FrelonAcq();
+	SlsDetectorAcq(std::string config_fname);
+	~SlsDetectorAcq();
 
 	void initSaving(string dir, string prefix, string suffix, int idx, 
 			CtSaving::FileFormat fmt, CtSaving::SavingMode mode,
@@ -121,13 +121,8 @@ public:
 private:
 	void printDefaults();
 
-	Espia::Dev		m_edev;
-	Espia::Acq		m_acq;
-	Espia::BufferMgr	m_buffer_cb_mgr;
-	Espia::SerialLine	m_eserline;
-	Frelon::Camera		m_cam;
-	BufferCtrlMgr		m_buffer_mgr;
-	Frelon::Interface	m_hw_inter;
+	SlsDetector::Camera	m_cam;
+	SlsDetector::Interface	m_hw_inter;
 	AcqState		m_acq_state;
 
 	CtControl		*m_ct;
@@ -142,14 +137,8 @@ private:
 	ImageStatusCallback	*m_img_status_cb;
 };
 
-FrelonAcq::FrelonAcq(int espia_dev_nb)
-	: m_edev(espia_dev_nb), 
-	  m_acq(m_edev), 
-	  m_buffer_cb_mgr(m_acq), 
-	  m_eserline(m_edev),
-	  m_cam(m_eserline), 
-	  m_buffer_mgr(m_buffer_cb_mgr),
-	  m_hw_inter(m_acq, m_buffer_mgr, m_cam),
+SlsDetectorAcq::SlsDetectorAcq(string config_fname)
+	: m_cam(config_fname), m_hw_inter(m_cam),
 	  m_ct(NULL), m_img_status_cb(NULL)
 {
 	DEB_CONSTRUCTOR();
@@ -170,7 +159,7 @@ FrelonAcq::FrelonAcq(int espia_dev_nb)
 	img_status_cb = new ImageStatusCallback(*ct, m_acq_state);
 	ct->registerImageStatusCallback(*img_status_cb);
 #ifdef WITH_SPS_IMAGE
-	m_ct_display->setNames("_ccd_ds_", "frelon_live");
+	m_ct_display->setNames("_ccd_ds_", "slsdetector_live");
 	m_ct_display->setActive(true);
 #endif
 	DEB_TRACE() << "All is OK!";
@@ -178,7 +167,7 @@ FrelonAcq::FrelonAcq(int espia_dev_nb)
 	m_img_status_cb = img_status_cb.forget();
 }
 
-FrelonAcq::~FrelonAcq()
+SlsDetectorAcq::~SlsDetectorAcq()
 {
 	DEB_DESTRUCTOR();
 
@@ -186,7 +175,7 @@ FrelonAcq::~FrelonAcq()
 	delete m_ct;
 }
 
-void FrelonAcq::printDefaults()
+void SlsDetectorAcq::printDefaults()
 {
 	DEB_MEMBER_FUNCT();
 
@@ -224,7 +213,7 @@ void FrelonAcq::printDefaults()
 
 }
 
-void FrelonAcq::start()
+void SlsDetectorAcq::start()
 {
 	DEB_MEMBER_FUNCT();
 
@@ -234,23 +223,23 @@ void FrelonAcq::start()
    	m_ct->startAcq();
 }
 
-void FrelonAcq::wait()
+void SlsDetectorAcq::wait()
 {
 	DEB_MEMBER_FUNCT();
 	m_acq_state.waitNot(AcqState::Acquiring | AcqState::Saving);
 	DEB_TRACE() << "Acquisition finished";
 }
 
-void FrelonAcq::run()
+void SlsDetectorAcq::run()
 {
 	DEB_MEMBER_FUNCT();
 	start();
 	wait();
 }
 
-void FrelonAcq::initSaving(string dir, string prefix, string suffix, int idx, 
-			   CtSaving::FileFormat fmt, CtSaving::SavingMode mode,
-			   int frames_per_file)
+void SlsDetectorAcq::initSaving(string dir, string prefix, string suffix, 
+				int idx, CtSaving::FileFormat fmt, 
+				CtSaving::SavingMode mode, int frames_per_file)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -263,15 +252,17 @@ void FrelonAcq::initSaving(string dir, string prefix, string suffix, int idx,
 	m_ct_saving->setFramesPerFile(frames_per_file);
 }
 
-void FrelonAcq::setExpTime(double exp_time)
+void SlsDetectorAcq::setExpTime(double exp_time)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(exp_time);
 
-	m_ct_acq->setAcqExpoTime(exp_time);
+	double lat_time = 1e-3;
+	m_ct_acq->setAcqExpoTime(exp_time - lat_time);
+	m_ct_acq->setLatencyTime(lat_time);
 }
 
-void FrelonAcq::setNbAcqFrames(int nb_acq_frames)
+void SlsDetectorAcq::setNbAcqFrames(int nb_acq_frames)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(nb_acq_frames);
@@ -279,7 +270,7 @@ void FrelonAcq::setNbAcqFrames(int nb_acq_frames)
 	m_ct_acq->setAcqNbFrames(nb_acq_frames);
 }
 
-void FrelonAcq::setBin(Bin& bin)
+void SlsDetectorAcq::setBin(Bin& bin)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(bin);
@@ -287,7 +278,7 @@ void FrelonAcq::setBin(Bin& bin)
 	m_ct_image->setBin(bin);
 }
 
-void FrelonAcq::setRoi(Roi& roi)
+void SlsDetectorAcq::setRoi(Roi& roi)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(roi);
@@ -297,20 +288,19 @@ void FrelonAcq::setRoi(Roi& roi)
 }
 
 //*********************************************************************
-//* test_frelon_control
+//* test_slsdetector_control
 //*********************************************************************
 
-void test_frelon_control(bool enable_debug = false)
+void test_slsdetector_control(string config_fname, bool enable_debug = false)
 {
 	DEB_GLOBAL_FUNCT();
 
-	if (!enable_debug) {
-		DebParams::disableModuleFlags(DebParams::AllFlags);
+	if (enable_debug) {
+		DebParams::enableTypeFlags(DebParams::AllFlags);
 	}
 
-	DEB_ALWAYS() << "Creating FrelonAcq";
-	int espia_dev_nb = 0;
-	FrelonAcq acq(espia_dev_nb);
+	DEB_ALWAYS() << "Creating SlsDetectorAcq";
+	SlsDetectorAcq acq(config_fname);
 	DEB_ALWAYS() << "Done!";
 
 	acq.initSaving("data", "img", ".edf", 0, CtSaving::EDF, 
@@ -320,10 +310,10 @@ void test_frelon_control(bool enable_debug = false)
 	acq.run();
 	DEB_ALWAYS() << "Done!";
 
-	double exp_time = 1e-6;
+	double exp_time = 100e-3;
 	acq.setExpTime(exp_time);
 
-	int nb_acq_frames = 500;
+	int nb_acq_frames = 50;
 	acq.setNbAcqFrames(nb_acq_frames);
 
 	DEB_ALWAYS() << "Run " << DEB_VAR2(exp_time, nb_acq_frames);
@@ -365,13 +355,19 @@ int main(int argc, char *argv[])
 {
 	DEB_GLOBAL_FUNCT();
 
+	if (argc < 2) {
+		DEB_ERROR() << "Must provide configuration file";
+		exit(1);
+	}
+	string config_fname = argv[1];
+
 	string par;
-	if (argc > 1)
-		par = argv[1];
+	if (argc > 2)
+		par = argv[2];
 	bool enable_debug = (par == "debug");
 
 	try {
-		test_frelon_control(enable_debug);
+		test_slsdetector_control(config_fname, enable_debug);
 	} catch (Exception& e) {
 		DEB_ERROR() << "LIMA Exception: " << e;
 	}

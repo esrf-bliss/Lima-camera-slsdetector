@@ -142,6 +142,7 @@ void DetInfoCtrlObj::registerMaxImageSizeCallback(
 					HwMaxImageSizeCallback& cb)
 {
 	DEB_MEMBER_FUNCT();
+	
 }
 
 void DetInfoCtrlObj::unregisterMaxImageSizeCallback(
@@ -155,8 +156,8 @@ void DetInfoCtrlObj::unregisterMaxImageSizeCallback(
  * \brief SyncCtrlObj constructor
  *******************************************************************/
 
-SyncCtrlObj::SyncCtrlObj()
-	: HwSyncCtrlObj()
+SyncCtrlObj::SyncCtrlObj(Camera& cam)
+	: m_cam(cam)
 {
 	DEB_CONSTRUCTOR();
 }
@@ -203,46 +204,54 @@ void SyncCtrlObj::getTrigMode(TrigMode& trig_mode)
 void SyncCtrlObj::setExpTime(double exp_time)
 {
 	DEB_MEMBER_FUNCT();
+	m_cam.setExpTime(exp_time);
 }
 
 void SyncCtrlObj::getExpTime(double& exp_time)
 {
 	DEB_MEMBER_FUNCT();
-	exp_time = 1.0;
+	m_cam.getExpTime(exp_time);
 }
 
 void SyncCtrlObj::setLatTime(double lat_time)
 {
 	DEB_MEMBER_FUNCT();
+	double exp_time;
+	m_cam.getExpTime(exp_time);
+	m_cam.setFramePeriod(exp_time + lat_time);
 }
 
 void SyncCtrlObj::getLatTime(double& lat_time)
 {
 	DEB_MEMBER_FUNCT();
-	lat_time = 0.0;
+	double exp_time, frame_period;
+	m_cam.getExpTime(exp_time);
+	m_cam.getFramePeriod(frame_period);
+	lat_time = frame_period - exp_time;
 }
 
 void SyncCtrlObj::setNbHwFrames(int nb_frames)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(nb_frames);
+	m_cam.setNbFrames(nb_frames);
 }
 
 void SyncCtrlObj::getNbHwFrames(int& nb_frames)
 {
 	DEB_MEMBER_FUNCT();
-	nb_frames = 1;
+	m_cam.getNbFrames(nb_frames);
 }
 
 void SyncCtrlObj::getValidRanges(ValidRangesType& valid_ranges)
 {
 	DEB_MEMBER_FUNCT();
 
-	valid_ranges.min_exp_time = 1e-6;
-	valid_ranges.max_exp_time = 1e6;
+	valid_ranges.min_exp_time = 100e-6;
+	valid_ranges.max_exp_time = 1e3;
 
-	valid_ranges.min_lat_time = 1e-6;
-	valid_ranges.max_lat_time = 1e6;
+	valid_ranges.min_lat_time = 100e-6;
+	valid_ranges.max_lat_time = 1e3;
 
 	DEB_RETURN() << DEB_VAR2(valid_ranges.min_exp_time, 
 				 valid_ranges.max_exp_time);
@@ -270,8 +279,9 @@ EventCtrlObj::~EventCtrlObj()
  * \brief Hw Interface constructor
  *******************************************************************/
 
-Interface::Interface(string config_fname)
-	: m_cam(config_fname), m_det_info(m_cam), m_event_cb(m_event)
+Interface::Interface(Camera& cam)
+	: m_cam(cam), m_det_info(m_cam), m_sync(m_cam), 
+	  m_event_cb(m_event)
 {
 	DEB_CONSTRUCTOR();
 
@@ -328,16 +338,19 @@ void Interface::resetDefaults()
 void Interface::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
+	m_cam.prepareAcq();
 }
 
 void Interface::startAcq()
 {
 	DEB_MEMBER_FUNCT();
+	m_cam.startAcq();
 }
 
 void Interface::stopAcq()
 {
 	DEB_MEMBER_FUNCT();
+	m_cam.stopAcq();
 }
 
 void Interface::getStatus(StatusType& status)

@@ -98,7 +98,7 @@ class SyncCtrlObj : public HwSyncCtrlObj
 	DEB_CLASS_NAMESPC(DebModCamera, "SyncCtrlObj", "SlsDetector");
 
  public:
-	SyncCtrlObj();
+	SyncCtrlObj(Camera& cam);
 	virtual ~SyncCtrlObj();
 
 	virtual bool checkTrigMode(TrigMode trig_mode);
@@ -117,6 +117,7 @@ class SyncCtrlObj : public HwSyncCtrlObj
 	virtual void getValidRanges(ValidRangesType& valid_ranges);
 
  private:
+	Camera& m_cam;
 };
 
 
@@ -144,7 +145,7 @@ class Interface : public HwInterface
 	DEB_CLASS_NAMESPC(DebModCamera, "Interface", "SlsDetector");
 
  public:
-	Interface(std::string config_fname);
+	Interface(Camera& cam);
 	virtual ~Interface();
 
 	virtual void getCapList(CapList&) const;
@@ -159,7 +160,7 @@ class Interface : public HwInterface
 	void resetDefaults();
 
  private:
-	Camera m_cam;
+	Camera& m_cam;
 
 	CapList m_cap_list;
 	DetInfoCtrlObj m_det_info;

@@ -260,20 +260,18 @@ public:
 	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr)
 	{ m_buffer_cb_mgr = buffer_cb_mgr; }
 
-	void setNbFrames(int nb_frames)
-	{ m_nb_frames = nb_frames; }
-
-	void setExpTime(double exp_time)
-	{ m_exp_time = exp_time; }
-
-	void setFramePeriod(double frame_period)
-	{ m_frame_period = frame_period; }
-
 	void setPrintPolicy(int print_policy)
 	{ m_print_policy = print_policy; }
 
 	void setSaveRaw(bool save_raw)
 	{ m_save_raw = save_raw; }
+
+	void setNbFrames(int  nb_frames);
+	void getNbFrames(int& nb_frames);
+	void setExpTime(double  exp_time);
+	void getExpTime(double& exp_time);
+	void setFramePeriod(double  frame_period);
+	void getFramePeriod(double& frame_period);
 
 	void prepareAcq();
 	void startAcq();
@@ -285,6 +283,8 @@ public:
 	void getFrameDim(FrameDim& frame_dim, bool raw = false);
 
 	int getFramesCaught();
+	std::string getStatus();
+
 	const FrameMap& getRecvMap()
 	{ return m_recv_map; }
 
@@ -322,6 +322,7 @@ private:
 	double m_exp_time;
 	double m_frame_period;
 	bool m_started;
+	bool m_recv_started;
 	FrameMap m_recv_map;
 	AutoPtr<FrameFinishedCallback> m_frame_cb;
 	StdBufferCbMgr *m_buffer_cb_mgr;

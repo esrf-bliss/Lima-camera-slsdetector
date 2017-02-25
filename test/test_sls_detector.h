@@ -34,6 +34,8 @@ namespace SlsDetector
 
 class TestApp
 {
+	DEB_CLASS_NAMESPC(DebModTest, "TestApp", "SlsDetector");
+
  public:
 	static const double WAIT_SLEEP_TIME;
 
@@ -46,6 +48,7 @@ class TestApp
 		double frame_period;
 		int print_policy;
 		bool save_raw;
+		int debug_type_flags;
 		std::string out_dir;
 
 		Pars();
