@@ -40,12 +40,18 @@
 #include <cstdlib>
 #include <set>
 
-#define PRINT_POLICY_NONE	0
-#define PRINT_POLICY_START	(1 << 0)
-#define PRINT_POLICY_MAP	(1 << 1)
-#define PRINT_POLICY_CAMERA	(1 << 2)
-#define PRINT_POLICY_RECV	(1 << 3)
-#define PRINT_POLICY_PACKET	(1 << 4)
+
+#define DebTypeCameraStart	DebType(1 << 16)
+#define DebTypeCameraMap	DebType(1 << 17)
+#define DebTypeCameraFrame	DebType(1 << 18)
+#define DebTypeRecvFrame	DebType(1 << 19)
+#define DebTypeRecvPacket	DebType(1 << 20)
+
+#define DEB_CAMERA_START()	DEB_MSG(DebTypeCameraStart)
+#define DEB_CAMERA_MAP()	DEB_MSG(DebTypeCameraMap)
+#define DEB_CAMERA_FRAME()	DEB_MSG(DebTypeCameraFrame)
+#define DEB_RECV_FRAME()	DEB_MSG(DebTypeRecvFrame)
+#define DEB_RECV_PACKET()	DEB_MSG(DebTypeRecvPacket)
 
 namespace lima 
 {
@@ -109,6 +115,10 @@ public:
 	typedef std::map<int, int> RecvPortMap;
 	typedef std::map<int, int> FrameRecvMap;
 
+	enum State {
+		Idle, Init, Starting, Running, StopReq, Stopping, Stopped,
+	};
+
 	struct AppInputData
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Camera::AppInputData", 
@@ -139,6 +149,7 @@ public:
 		public:
 			Callback();
 			virtual ~Callback();
+		protected:
 			virtual void frameFinished(int frame) = 0;
 		private:
 			friend class FrameMap;
@@ -172,6 +183,44 @@ public:
 		int m_last_seq_finished_frame;
 		Callback *m_cb;
 	};
+
+	Camera(std::string config_fname);
+	virtual ~Camera();
+
+	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr)
+	{ m_buffer_cb_mgr = buffer_cb_mgr; }
+
+	void setSaveRaw(bool save_raw)
+	{ m_save_raw = save_raw; }
+
+	void setNbFrames(int  nb_frames);
+	void getNbFrames(int& nb_frames);
+	void setExpTime(double  exp_time);
+	void getExpTime(double& exp_time);
+	void setFramePeriod(double  frame_period);
+	void getFramePeriod(double& frame_period);
+
+	State getState();
+	void waitState(State state);
+	State waitNotState(State state);
+
+	void prepareAcq();
+	void startAcq();
+	void stopAcq();
+
+	int getNbHalfModules()
+	{ return m_input_data->host_name_list.size(); }
+
+	void getFrameDim(FrameDim& frame_dim, bool raw = false);
+
+	int getFramesCaught();
+	std::string getStatus();
+
+	const FrameMap& getRecvMap()
+	{ return m_recv_map; }
+
+private:
+	typedef std::queue<int> FrameQueue;
 
 	class Receiver 
 	{
@@ -212,6 +261,8 @@ public:
 		~Receiver();
 		void start();
 
+		void prepareAcq();
+
 	private:
 		class FrameFinishedCallback : public FrameMap::Callback
 		{
@@ -220,11 +271,11 @@ public:
 					  "::FrameFinishedCallback", 
 					  "SlsDetector");
 		public:
-			FrameFinishedCallback(Receiver *r, int p);
+			FrameFinishedCallback(Receiver *r);
+		protected:
 			virtual void frameFinished(int frame);
 		private:
 			Receiver *m_recv;
-			int m_print_policy;
 		};
 
 		friend class Camera;
@@ -241,7 +292,6 @@ public:
 		void frameCallback(int frame, char *dptr, int dsize, FILE *f, 
 				   char *guidptr);
 
-		Mutex& m_mutex;
 		Camera *m_cam;
 		int m_idx;
 		int m_rx_port;
@@ -254,42 +304,23 @@ public:
 
 	typedef std::vector<AutoPtr<Receiver> > RecvList;
 
-	Camera(std::string config_fname);
-	virtual ~Camera();
+	class AcqThread : public Thread
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Camera::AcqThread", 
+				  "SlsDetector");
+	public:
+		AcqThread(Camera *cam);
+		void stop(bool wait);
+	protected:
+		virtual void threadFunction();
+	private:
+		bool newFrameReady(int frame);
 
-	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr)
-	{ m_buffer_cb_mgr = buffer_cb_mgr; }
-
-	void setPrintPolicy(int print_policy)
-	{ m_print_policy = print_policy; }
-
-	void setSaveRaw(bool save_raw)
-	{ m_save_raw = save_raw; }
-
-	void setNbFrames(int  nb_frames);
-	void getNbFrames(int& nb_frames);
-	void setExpTime(double  exp_time);
-	void getExpTime(double& exp_time);
-	void setFramePeriod(double  frame_period);
-	void getFramePeriod(double& frame_period);
-
-	void prepareAcq();
-	void startAcq();
-	void stopAcq();
-
-	int getNbHalfModules()
-	{ return m_input_data->host_name_list.size(); }
-
-	void getFrameDim(FrameDim& frame_dim, bool raw = false);
-
-	int getFramesCaught();
-	std::string getStatus();
-
-	const FrameMap& getRecvMap()
-	{ return m_recv_map; }
-
-private:
-	friend class Receiver;
+		Camera *m_cam;
+		Cond& m_cond;
+		volatile State& m_state;
+		FrameQueue& m_frame_queue;
+	};
 
 	class FrameFinishedCallback : public FrameMap::Callback
 	{
@@ -298,12 +329,19 @@ private:
 				  "SlsDetector");
 	public:
 		FrameFinishedCallback(Camera *cam);
+	protected:
 		virtual void frameFinished(int frame);
 	private:
 		Camera *m_cam;
 	};
 
+	AutoMutex lock()
+	{ return AutoMutex(m_cond.mutex()); }
+
+	State getEffectiveState();
+
 	char *getFrameBufferPtr(int frame_nb);
+	void removeSharedMem();
 	void createReceivers();
 
 	void receiverFrameFinished(int frame, Receiver *recv);
@@ -312,22 +350,23 @@ private:
 	void putCmd(const std::string& s);
 	std::string getCmd(const std::string& s);
 
-	Mutex m_mutex;
-	int m_print_policy;
+	Cond m_cond;
 	AutoPtr<AppInputData> m_input_data;
 	RecvList m_recv_list;
 	AutoPtr<multiSlsDetector> m_det;
 	AutoPtr<multiSlsDetectorCommand> m_cmd;
+	Mutex m_cmd_mutex;
 	int m_nb_frames;
 	double m_exp_time;
 	double m_frame_period;
-	bool m_started;
-	bool m_recv_started;
 	FrameMap m_recv_map;
 	AutoPtr<FrameFinishedCallback> m_frame_cb;
 	StdBufferCbMgr *m_buffer_cb_mgr;
 	ImageType m_image_type;
 	bool m_save_raw;
+	AutoPtr<AcqThread> m_acq_thread;
+	volatile State m_state;
+	FrameQueue m_frame_queue;
 };
 
 std::ostream& operator <<(std::ostream& os, const Camera::FrameMap& m);

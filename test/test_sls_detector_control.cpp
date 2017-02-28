@@ -29,6 +29,7 @@
 
 using namespace lima;
 using namespace std;
+using namespace SlsDetector;
 
 DEB_GLOBAL(DebModTest);
 
@@ -74,10 +75,12 @@ void ImageStatusCallback::imageStatusChanged(
 
 	int last_acq_frame_nb = img_status.LastImageAcquired;
 	int last_saved_frame_nb = img_status.LastImageSaved;
+	DEB_ALWAYS() << DEB_VAR1(img_status);
 
 	if (last_acq_frame_nb == 0) {
 		CtAcquisition *ct_acq = m_ct.acquisition();
 		ct_acq->getAcqNbFrames(m_nb_frames);
+		DEB_ALWAYS() << DEB_VAR1(m_nb_frames);
 	}
 
 	if ((last_acq_frame_nb == m_nb_frames - 1) &&
@@ -121,8 +124,8 @@ public:
 private:
 	void printDefaults();
 
-	SlsDetector::Camera	m_cam;
-	SlsDetector::Interface	m_hw_inter;
+	Camera			m_cam;
+	Interface		m_hw_inter;
 	AcqState		m_acq_state;
 
 	CtControl		*m_ct;
@@ -228,6 +231,9 @@ void SlsDetectorAcq::wait()
 	DEB_MEMBER_FUNCT();
 	m_acq_state.waitNot(AcqState::Acquiring | AcqState::Saving);
 	DEB_TRACE() << "Acquisition finished";
+	m_cam.waitState(Camera::Idle);
+	DEB_TRACE() << "Camera finished";
+
 }
 
 void SlsDetectorAcq::run()
@@ -330,20 +336,12 @@ void test_slsdetector_control(string config_fname, bool enable_debug = false)
 	acq.run();
 	DEB_ALWAYS() << "Done!";
 
-	Roi roi = Roi(Point(256, 256), Size(512, 512));
+	Roi roi = Roi(Point(256, 512), Size(256, 512));
 	acq.setRoi(roi);
 
 	DEB_ALWAYS() << "Run " << DEB_VAR1(roi);
 	acq.run();
 	DEB_ALWAYS() << "Done!";
-
-	roi = Roi(Point(267, 267), Size(501, 501));
-	acq.setRoi(roi);
-
-	DEB_ALWAYS() << "Run " << DEB_VAR1(roi);
-	acq.run();
-	DEB_ALWAYS() << "Done!";
-
 }
 
 

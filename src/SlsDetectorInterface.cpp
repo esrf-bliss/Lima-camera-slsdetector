@@ -204,7 +204,10 @@ void SyncCtrlObj::getTrigMode(TrigMode& trig_mode)
 void SyncCtrlObj::setExpTime(double exp_time)
 {
 	DEB_MEMBER_FUNCT();
+	double lat_time;
+	getLatTime(lat_time);
 	m_cam.setExpTime(exp_time);
+	setLatTime(lat_time);
 }
 
 void SyncCtrlObj::getExpTime(double& exp_time)
@@ -306,6 +309,8 @@ Interface::Interface(Camera& cam)
 Interface::~Interface()
 {
 	DEB_DESTRUCTOR();
+	stopAcq();
+	m_cam.setBufferCbMgr(NULL);
 }
 
 void Interface::getCapList(HwInterface::CapList &cap_list) const
@@ -357,7 +362,8 @@ void Interface::getStatus(StatusType& status)
 {
 	DEB_MEMBER_FUNCT();
 
-	status.acq = AcqReady;
+	Camera::State state = m_cam.getState();
+	status.acq = (state == Camera::Idle) ? AcqReady : AcqRunning;
 	status.det = DetIdle;
 
 	DEB_RETURN() << DEB_VAR1(status);

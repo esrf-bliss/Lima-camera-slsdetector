@@ -38,16 +38,17 @@ int main(int argc, char *argv[])
 
 TestApp::Pars::Pars()
 {
+	DEB_CONSTRUCTOR();
 	loadDefaults();
 	loadOpts();
 }
 
 void TestApp::Pars::loadDefaults()
 {
+	DEB_MEMBER_FUNCT();
 	nb_frames = 10;
 	exp_time = 2.0e-3;
 	frame_period = 2.5e-3;
-	print_policy = PRINT_POLICY_NONE;
 	save_raw = false;
 	debug_type_flags = 0;
 	out_dir = "/tmp";
@@ -55,6 +56,8 @@ void TestApp::Pars::loadDefaults()
 
 void TestApp::Pars::loadOpts()
 {
+	DEB_MEMBER_FUNCT();
+
 	AutoPtr<ArgOptBase> o;
 
 	o = new ArgOpt<string>(config_fname, "-c", "--config", 
@@ -73,10 +76,6 @@ void TestApp::Pars::loadOpts()
 			       "frame period");
 	m_opt_list.insert(o);
 
-	o = new ArgOpt<int>(print_policy, "-l", "--print-policy", 
-			    "print policy");
-	m_opt_list.insert(o);
-
 	o = new ArgOpt<bool>(save_raw, "-r", "--save-raw");
 	m_opt_list.insert(o);
 
@@ -91,6 +90,8 @@ void TestApp::Pars::loadOpts()
 
 void TestApp::Pars::parseArgs(Args& args)
 {
+	DEB_MEMBER_FUNCT();
+
 	string prog_name = args.pop_front();
 
 	while (args && (*args[0] == '-')) {
@@ -110,10 +111,12 @@ void TestApp::Pars::parseArgs(Args& args)
 TestApp::FrameCallback::FrameCallback(TestApp *app)
 	: m_app(app)
 {
+	DEB_CONSTRUCTOR();
 }
 
 bool TestApp::FrameCallback::newFrameReady(const HwFrameInfoType& frame_info)
 {
+	DEB_MEMBER_FUNCT();
 	return m_app->newFrameReady(frame_info);
 }
 
@@ -137,8 +140,9 @@ TestApp::TestApp(int argc, char *argv[])
 
 void TestApp::run()
 {
+	DEB_MEMBER_FUNCT();
+
 	try {
-		m_cam->setPrintPolicy(m_pars.print_policy);
 		m_cam->setNbFrames(m_pars.nb_frames);
 		m_cam->setExpTime(m_pars.exp_time);
 		m_cam->setFramePeriod(m_pars.frame_period);
@@ -176,6 +180,8 @@ void TestApp::run()
 
 bool TestApp::newFrameReady(const HwFrameInfoType& frame_info)
 {
+	DEB_MEMBER_FUNCT();
+
 	if (frame_info.acq_frame_nb == m_pars.nb_frames - 1)
 		m_state.set(AcqState::Finished);
 
@@ -184,15 +190,9 @@ bool TestApp::newFrameReady(const HwFrameInfoType& frame_info)
 		int frames_caught = m_cam->getFramesCaught();
 		const Camera::FrameMap& recv_map = m_cam->getRecvMap();
 		int finished_frames = recv_map.getLastSeqFinishedFrame() + 1;
-		ostringstream os;
-		os << "frame=" << frame_info.acq_frame_nb << ", "
-		   << "framescaught=" << frames_caught << ", "
-		   << "finished_frames=" << finished_frames;
-		if (m_pars.print_policy & PRINT_POLICY_MAP) {
-			os << ", " << "recv_map=" << recv_map;
-		}
-		cout << os.str() << endl;
-
+		DEB_ALWAYS() << DEB_VAR3(frame_info.acq_frame_nb, 
+					 frames_caught, finished_frames);
+		DEB_CAMERA_MAP() << DEB_VAR1(recv_map);
 		m_last_msg_timestamp = timestamp;
 	}
 
@@ -201,12 +201,13 @@ bool TestApp::newFrameReady(const HwFrameInfoType& frame_info)
 
 void TestApp::save_raw_data(int start_frame, int nb_frames)
 {
+	DEB_MEMBER_FUNCT();
 	FrameDim frame_dim = m_buffer_mgr->getFrameDim();
 
 	for (int i = 0; i < nb_frames; ++i) {
 		ostringstream os;
 		os << m_pars.out_dir << "/eiger.bin." << i;
-		cout << "+++ Saving raw to " << os.str() << " ..." << endl;
+		DEB_TRACE() << "Saving raw to " << os.str();
 		ofstream of(os.str().c_str());
 		void *buffer = m_buffer_mgr->getFrameBufferPtr(start_frame + i);
 		of.write(static_cast<char *>(buffer), frame_dim.getMemSize());
@@ -215,9 +216,10 @@ void TestApp::save_raw_data(int start_frame, int nb_frames)
 
 void TestApp::save_edf_data(int start_frame, int nb_frames)
 {
+	DEB_MEMBER_FUNCT();
 	ostringstream os;
 	os << m_pars.out_dir << "/eiger.edf";
-	cout << "+++ Saving EDF to " << os.str() << " ..." << endl;
+	DEB_TRACE() << "Saving EDF to " << os.str();
 	ofstream of(os.str().c_str());
 	for (int i = 0; i < nb_frames; ++i)
 		save_edf_frame(of, start_frame + i, i);
@@ -225,6 +227,7 @@ void TestApp::save_edf_data(int start_frame, int nb_frames)
 
 void TestApp::save_edf_frame(ofstream& of, int acq_idx, int edf_idx)
 {
+	DEB_MEMBER_FUNCT();
 	FrameDim frame_dim = m_buffer_mgr->getFrameDim();
 	Size frame_size = frame_dim.getSize();
 	int image_bytes = frame_dim.getMemSize();

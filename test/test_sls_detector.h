@@ -41,12 +41,12 @@ class TestApp
 
 	class Pars 
 	{
+		DEB_CLASS_NAMESPC(DebModTest, "TestApp::Pars", "SlsDetector");
 	public:
 		std::string config_fname;
 		int nb_frames;
 		double exp_time;
 		double frame_period;
-		int print_policy;
 		bool save_raw;
 		int debug_type_flags;
 		std::string out_dir;
@@ -132,6 +132,8 @@ class TestApp
  private:
 	class FrameCallback : public HwFrameCallback
 	{
+		DEB_CLASS_NAMESPC(DebModTest, "TestApp::FrameCallback", 
+				  "SlsDetector");
 	public:
 		FrameCallback(TestApp *app);
 	protected:

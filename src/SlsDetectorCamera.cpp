@@ -23,12 +23,6 @@
 #include "SlsDetectorCamera.h"
 #include "lima/Timestamp.h"
 
-#define THROW(x)					\
-	do {						\
-		throw runtime_error(x);			\
-	} while (0)
-
-
 using namespace std;
 using namespace lima;
 using namespace lima::SlsDetector;
@@ -153,10 +147,9 @@ void Camera::AppInputData::parseConfigFile()
 			istringstream is(full_match[1]);
 			int id;
 			is >> id;
-			if (id < 0) {
-				cerr << "Invalid detector id: " << id << endl;
-				exit(1);
-			}
+			if (id < 0)
+				THROW_HW_FATAL(InvalidValue) << 
+					"Invalid detector id: " << id;
 			int rx_tcpport;
 			config_file >> rx_tcpport;
 			recv_port_map[id] = rx_tcpport;
@@ -221,9 +214,9 @@ void Camera::FrameMap::frameItemFinished(int frame, int item)
 	DEB_MEMBER_FUNCT();
 
 	if (m_nb_items == 0)		
-		THROW("Camera::FrameMap::frameItemFinished: no items");
+		THROW_HW_ERROR(InvalidValue) << "No items defined";
 	else if ((item < 0) || (item >= m_nb_items))
-		THROW("Camera::FrameMap::frameItemFinished: bad item");
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR2(item, m_nb_items);
 	Map::iterator mit = m_map.find(frame);
 	if (mit == m_map.end()) {
 		for (int i = 0; i < m_nb_items; ++i)
@@ -234,12 +227,9 @@ void Camera::FrameMap::frameItemFinished(int frame, int item)
 
 	List& item_list = mit->second;
 	List::iterator lit = item_list.find(item);
-	if (lit == item_list.end()) {
-		ostringstream os;
-		os << "Camera::FrameMap::frameItemFinished: item "
-		   << item << " already finished for frame " << frame;
-		THROW(os.str());
-	}
+	if (lit == item_list.end())
+		THROW_HW_ERROR(Error) << "item " << item << " already finished "
+				      << "for frame " << frame;
 
 	item_list.erase(lit);
 	if (!item_list.empty())
@@ -295,8 +285,8 @@ ostream& lima::SlsDetector::operator <<(ostream& os,
 	return os << "}";
 }
 
-Camera::Receiver::FrameFinishedCallback::FrameFinishedCallback(Receiver *r, int p) 
-	: m_recv(r), m_print_policy(p)
+Camera::Receiver::FrameFinishedCallback::FrameFinishedCallback(Receiver *r) 
+	: m_recv(r)
 {
 	DEB_CONSTRUCTOR();
 }
@@ -304,22 +294,16 @@ Camera::Receiver::FrameFinishedCallback::FrameFinishedCallback(Receiver *r, int 
 void Camera::Receiver::FrameFinishedCallback::frameFinished(int frame) 
 {
 	DEB_MEMBER_FUNCT();
-	if (m_print_policy & PRINT_POLICY_RECV) {
-		cout << "********* End! *******" << endl;
-		cout << "frame=" << frame << ", "
-		     << "idx=" << m_recv->m_idx << endl;
-	}
-
+	DEB_RECV_FRAME() << DEB_VAR2(frame, m_recv->m_idx); 
 	m_recv->m_cam->receiverFrameFinished(frame, m_recv);
 }
 
 Camera::Receiver::Receiver(Camera *cam, int idx, int rx_port, int mode)
-	: m_mutex(cam->m_mutex), m_cam(cam), 
-	  m_idx(idx), m_rx_port(rx_port), m_mode(mode)
+	: m_cam(cam), m_idx(idx), m_rx_port(rx_port), m_mode(mode)
 {
 	DEB_CONSTRUCTOR();
 
-	m_cb = new FrameFinishedCallback(this, m_cam->m_print_policy);
+	m_cb = new FrameFinishedCallback(this);
 
 	int nb_packets = getFramePackets();
 	m_packet_map.setNbItems(nb_packets);
@@ -369,13 +353,19 @@ void Camera::Receiver::start()
 	int init_ret;
 	m_recv = new slsReceiverUsers(m_args.size(), m_args, init_ret);
 	if (init_ret == slsReceiverDefs::FAIL)
-		THROW("Error creating slsReceiver");
+		THROW_HW_ERROR(Error) << "Error creating slsReceiver";
 	if (m_recv->start() == slsReceiverDefs::FAIL) 
-		THROW("Error starting slsReceiver");
+		THROW_HW_ERROR(Error) << "Error starting slsReceiver";
+}
+
+void Camera::Receiver::prepareAcq()
+{
+	DEB_MEMBER_FUNCT();
+	m_packet_map.clear();
 }
 
 int Camera::Receiver::startCallback(char *fpath, char *fname, 
-				 int fidx, int dsize, void *priv)
+				    int fidx, int dsize, void *priv)
 {
 	DEB_STATIC_FUNCT();
 	Receiver *recv = static_cast<Receiver *>(priv);
@@ -383,7 +373,7 @@ int Camera::Receiver::startCallback(char *fpath, char *fname,
 }
 
 void Camera::Receiver::frameCallback(int frame, char *dptr, int dsize, FILE *f, 
-				  char *guidptr, void *priv)
+				     char *guidptr, void *priv)
 {
 	DEB_STATIC_FUNCT();
 	Receiver *recv = static_cast<Receiver *>(priv);
@@ -391,29 +381,20 @@ void Camera::Receiver::frameCallback(int frame, char *dptr, int dsize, FILE *f,
 }
 
 int Camera::Receiver::startCallback(char *fpath, char *fname, 
-				 int fidx, int dsize)
+				    int fidx, int dsize)
 {
 	DEB_MEMBER_FUNCT();
-	AutoLock<Mutex> l(m_mutex);
+	DEB_CAMERA_START() << DEB_VAR5(fpath, fname, fidx, dsize, m_idx);
 
-	if (dsize != getPacketLen()) {
-		cerr << "!!!! Warning !!!!" << endl;
-		cerr << "dsize=" << dsize << ", PACKET_LEN=" << getPacketLen() 
-		     << endl;
-	}
-
-	if (m_cam->m_print_policy & PRINT_POLICY_START) {
-		cout << "********* Start! *******" << endl;
-		cout << "fpath=" << fpath << ", fname=" << fname << ", " 
-		     << "fidex=" << fidx << ", dsize=" << dsize << ", "
-		     << "idx=" << m_idx << endl;
-	}
+	if (dsize != getPacketLen())
+		DEB_WARNING() << "!!!! Warning !!!! " 
+			      << DEB_VAR2(dsize, getPacketLen());
 
 	return DO_NOTHING;
 }
 
 void Camera::Receiver::frameCallback(int frame, char *dptr, int dsize, FILE *f, 
-				  char *guidptr)
+				     char *guidptr)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -424,16 +405,16 @@ void Camera::Receiver::frameCallback(int frame, char *dptr, int dsize, FILE *f,
 		packet_idx += getFramePackets() / 2;
 	bool top_half = (m_idx % 2 == 0);
 
-	AutoLock<Mutex> l(m_mutex);
-	if (m_cam->m_print_policy & PRINT_POLICY_PACKET) {
-		cout << "********* Frame! *******" << endl;
-		cout << "frame=" << frame << ", dsize=" << dsize << ", "
-		     << "PACKET_LEN=" << getPacketLen() << ", "
-		     << "idx=" << m_idx << ", packet=" << packet_idx << endl;
+	DEB_RECV_PACKET() << DEB_VAR5(frame, dsize, getPacketLen(), m_idx, 
+				      packet_idx);
+
+	bool raw;
+	char *buffer;
+	{
+		AutoMutex l = m_cam->lock();
+		buffer = m_cam->getFrameBufferPtr(frame);
+		raw = m_cam->m_save_raw;
 	}
-	char *buffer = m_cam->getFrameBufferPtr(frame);
-	bool raw = m_cam->m_save_raw;
-	l.unlock();
 
 	FrameDim frame_dim;
 	getFrameDim(frame_dim, raw);
@@ -460,8 +441,10 @@ void Camera::Receiver::frameCallback(int frame, char *dptr, int dsize, FILE *f,
 			memcpy(dest, src, plw);
 	}
 
-	l.lock();
-	m_packet_map.frameItemFinished(frame, packet_idx);
+	{
+		AutoMutex l = m_cam->lock();
+		m_packet_map.frameItemFinished(frame, packet_idx);
+	}
 }
 
 Camera::FrameFinishedCallback::FrameFinishedCallback(Camera *cam)
@@ -476,26 +459,95 @@ void Camera::FrameFinishedCallback::frameFinished(int frame)
 	m_cam->frameFinished(frame);
 }
 
+Camera::AcqThread::AcqThread(Camera *cam)
+	: m_cam(cam), m_cond(m_cam->m_cond), m_state(m_cam->m_state),
+	  m_frame_queue(m_cam->m_frame_queue)
+{
+	DEB_CONSTRUCTOR();
+	m_state = Starting;
+	start();
+	while (m_state != Running)
+		m_cond.wait();
+}
+
+void Camera::AcqThread::stop(bool wait)
+{
+	DEB_MEMBER_FUNCT();
+	m_state = StopReq;
+	m_cond.broadcast();
+	while (wait && (m_state != Stopped))
+		m_cond.wait();
+}
+
+void Camera::AcqThread::threadFunction()
+{
+	DEB_MEMBER_FUNCT();
+
+	AutoMutex l = m_cam->lock();
+	{
+		AutoMutexUnlock u(l);
+		m_cam->putCmd("receiver start");
+		m_cam->putCmd("status start");
+	}
+	m_state = Running;
+	m_cond.broadcast();
+
+	do {
+		while ((m_state != StopReq) && m_frame_queue.empty())
+			m_cond.wait();
+		if (!m_frame_queue.empty()) {
+			int frame = m_frame_queue.front();
+			m_frame_queue.pop();
+			bool cont_acq;
+			{
+				AutoMutexUnlock u(l);
+				DEB_TRACE() << DEB_VAR1(frame);
+				cont_acq = newFrameReady(frame);
+			}
+			if (!cont_acq)
+				m_state = StopReq;
+		}
+	} while (m_state != StopReq);
+
+	m_state = Stopping;
+	{
+		AutoMutexUnlock u(l);
+		m_cam->putCmd("status stop");
+		m_cam->putCmd("receiver stop");
+	}
+	m_state = Stopped;
+	m_cond.broadcast();
+}
+
+bool Camera::AcqThread::newFrameReady(int frame)
+{
+	DEB_MEMBER_FUNCT();
+
+	HwFrameInfoType frame_info;
+	frame_info.acq_frame_nb = frame;
+	bool cont_acq = m_cam->m_buffer_cb_mgr->newFrameReady(frame_info);
+	return cont_acq && (frame < m_cam->m_nb_frames - 1);
+}
+
 Camera::Camera(string config_fname) 
-	: m_print_policy(PRINT_POLICY_NONE), 
-	  m_started(false), 
-	  m_recv_started(false),
-	  m_image_type(Bpp16), 
-	  m_save_raw(false)
+	: m_image_type(Bpp16), 
+	  m_save_raw(false),
+	  m_state(Idle)
 {
 	DEB_CONSTRUCTOR();
 
 	m_input_data = new AppInputData(config_fname);
 
+	removeSharedMem();
 	createReceivers();
 
-	cout << "+++ Creating the multiSlsDetector object ..." << endl;
+	DEB_TRACE() << "Creating the multiSlsDetector object";
 	m_det = new multiSlsDetector(0);
-	cout << "+++ Reading configuration file ..." << endl;
+	DEB_TRACE() << "Reading configuration file";
 	const char *fname = m_input_data->config_file_name.c_str();
 	m_det->readConfigurationFile(fname);
 
-	cout << "+++ Creating the multiSlsDetectorCommand ..." << endl;
+	DEB_TRACE() << "Creating the multiSlsDetectorCommand";
 	m_cmd = new multiSlsDetectorCommand(m_det);
 
 	setNbFrames(1);
@@ -506,13 +558,7 @@ Camera::Camera(string config_fname)
 Camera::~Camera()
 {
 	DEB_DESTRUCTOR();
-	cout << "+++ Starting cleanup ..." << endl;
 	stopAcq();
-
-	if (m_recv_started) {
-		putCmd("receiver stop");
-		m_recv_started = false;
-	}
 }
 
 char *Camera::getFrameBufferPtr(int frame_nb)
@@ -521,7 +567,7 @@ char *Camera::getFrameBufferPtr(int frame_nb)
 
 	StdBufferCbMgr *cb_mgr = m_buffer_cb_mgr;
 	if (!cb_mgr)
-		THROW("Camera::getFrameBufferPtr: no BufferCbMgr defined");
+		THROW_HW_ERROR(InvalidValue) << "No BufferCbMgr defined";
 	int nb_buffers, concat_frames;
 	cb_mgr->getNbBuffers(nb_buffers);
 	cb_mgr->getNbConcatFrames(concat_frames);
@@ -530,26 +576,33 @@ char *Camera::getFrameBufferPtr(int frame_nb)
 	return static_cast<char *>(ptr);
 }
 
+void Camera::removeSharedMem()
+{
+	DEB_MEMBER_FUNCT();
+	const char *cmd = "ipcs -m | "
+		"grep -E '^0x000016[0-9a-z]{2}' | "
+		"awk '{print $2}' | while read m; do ipcrm -m $m; done";
+	system(cmd);
+}
+
 void Camera::createReceivers()
 {
 	DEB_MEMBER_FUNCT();
 
-	cout << "+++ Receivers:" << endl;
+	DEB_TRACE() << "Receivers:";
 	const RecvPortMap& recv_port_map = m_input_data->recv_port_map;
 	RecvPortMap::const_iterator mit, mend = recv_port_map.end();
 	int idx = 0;
 	for (mit = recv_port_map.begin(); mit != mend; ++mit, ++idx) {
 		unsigned int id = mit->first;
-		if (id >= m_input_data->host_name_list.size()) {
-			cerr << "Detector id too high: " << id << endl;
-			exit(1);
-		}
+		if (id >= m_input_data->host_name_list.size())
+			THROW_HW_FATAL(InvalidValue) << DEB_VAR1(id) 
+						     << "too high";
 		const string& host_name = m_input_data->host_name_list[id];
 		int rx_port = mit->second;
 		int mode = (id % 2);
-		cout << "  " << host_name << ": "
-		     << "receiver port=" << rx_port << ", "
-		     << "mode=" << mode << endl;
+		DEB_TRACE() << "  " << host_name << ": " 
+			    << DEB_VAR2(rx_port, mode);
 
 		AutoPtr<Receiver> recv_obj = new Receiver(this, idx, rx_port, 
 							  mode);
@@ -564,15 +617,21 @@ void Camera::createReceivers()
 void Camera::putCmd(const string& s)
 {
 	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << "s=\"" << s << "\"";
 	Args args(s);
+	AutoMutex l(m_cmd_mutex);
 	m_cmd->putCommand(args.size(), args);
 }
 
 string Camera::getCmd(const string& s)
 {
 	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << "s=\"" << s << "\"";
 	Args args(s);
-	return m_cmd->getCommand(args.size(), args);
+	AutoMutex l(m_cmd_mutex);
+	string r = m_cmd->getCommand(args.size(), args);
+	DEB_RETURN() << "r=\"" << r << "\"";
+	return r;
 }
 
 void Camera::setNbFrames(int nb_frames)
@@ -621,40 +680,88 @@ void Camera::getFramePeriod(double& frame_period)
 	frame_period = m_frame_period;
 }
 
+Camera::State Camera::getState()
+{
+	DEB_MEMBER_FUNCT();
+	AutoMutex l = lock();
+	return getEffectiveState();
+}
+
+Camera::State Camera::getEffectiveState()
+{
+	if (m_state == Stopped) {
+		m_acq_thread = NULL;
+		m_state = Idle;
+	}
+	return m_state;
+}
+
+void Camera::waitState(State state)
+{
+	DEB_MEMBER_FUNCT();
+	AutoMutex l = lock();
+	while (getEffectiveState() != state)
+		m_cond.wait();
+}
+
+Camera::State Camera::waitNotState(State state)
+{
+	DEB_MEMBER_FUNCT();
+	AutoMutex l = lock();
+	while (getEffectiveState() == state)
+		m_cond.wait();
+	return getEffectiveState();
+}
+
 void Camera::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
 
 	if (!m_buffer_cb_mgr)
-		THROW("Camera::prepareAcq: no BufferCbMgr defined");
+		THROW_HW_ERROR(Error) << "No BufferCbMgr defined";
 
-	if (!m_recv_started) {
-		putCmd("receiver start");
-		m_recv_started = true;
+	waitNotState(Stopping);
+	if (getState() != Idle)
+		THROW_HW_ERROR(Error) << "Camera is not idle";
+
+	{
+		AutoMutex l = lock();
+		RecvList::iterator it, end = m_recv_list.end();
+		for (it = m_recv_list.begin(); it != end; ++it)
+			(*it)->prepareAcq();
+		m_recv_map.clear();
+		DEB_ALWAYS() << DEB_VAR1(m_frame_queue.size());
+		while (!m_frame_queue.empty())
+			m_frame_queue.pop();
 	}
+
+	putCmd("resetframescaught");
 }
 
 void Camera::startAcq()
 {
 	DEB_MEMBER_FUNCT();
 
-	if (m_started)
-		THROW("Camera::startAcq: camera already started");
+	AutoMutex l = lock();
+	if (m_acq_thread)
+		THROW_HW_ERROR(Error) << "Must call prepareAcq first";
 
 	m_buffer_cb_mgr->setStartTimestamp(Timestamp::now());
-	putCmd("status start");
-	m_started = true;
+
+	m_acq_thread = new AcqThread(this);
 }
 
 void Camera::stopAcq()
 {
 	DEB_MEMBER_FUNCT();
 
-	if (!m_started)
+	AutoMutex l = lock();
+	if (getEffectiveState() != Running)
 		return;
 
-	putCmd("status stop");
-	m_started = false;
+	m_acq_thread->stop(true);
+	if (getEffectiveState() != Idle)
+		THROW_HW_ERROR(Error) << "Camera not Idle";
 }
 
 void Camera::receiverFrameFinished(int frame, Receiver *recv)
@@ -666,17 +773,10 @@ void Camera::receiverFrameFinished(int frame, Receiver *recv)
 void Camera::frameFinished(int frame)
 {
 	DEB_MEMBER_FUNCT();
-	if (m_print_policy & PRINT_POLICY_CAMERA) {
-		cout << "********* Finished! *******" << endl;
-		cout << "frame=" << frame << endl;
-	}
+	DEB_CAMERA_FRAME() << DEB_VAR1(frame);
 
-	HwFrameInfoType frame_info;
-	frame_info.acq_frame_nb = frame;
-	bool cont_acq = m_buffer_cb_mgr->newFrameReady(frame_info);
-	cont_acq &= (frame < m_nb_frames - 1);
-	if (!cont_acq)
-		stopAcq();
+	m_frame_queue.push(frame);
+	m_cond.broadcast();
 }
 
 void Camera::getFrameDim(FrameDim& frame_dim, bool raw)
