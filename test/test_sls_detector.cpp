@@ -96,9 +96,12 @@ void TestApp::Pars::parseArgs(Args& args)
 
 	while (args && (*args[0] == '-')) {
 		OptList::iterator it, end = m_opt_list.end();
-		for (it = m_opt_list.begin(); it != end; ++it) {
-			if ((*it)->check(args))
-				break;
+		bool ok = false;
+		for (it = m_opt_list.begin(); (it != end) && !ok; ++it)
+			ok = ((*it)->check(args));
+		if (!ok) {
+			cerr << "Unknown option: " << args[0] << endl;
+			exit(1);
 		}
 	}
 
