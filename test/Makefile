@@ -30,17 +30,16 @@ SLS_DETECTORS_BIN = $(SLS_DETECTORS_DIR)/bin
 SLS_DETECTORS_SW = $(SLS_DETECTORS_DIR)/slsDetectorSoftware
 SLS_DETECTORS_RECV = $(SLS_DETECTORS_DIR)/slsReceiverSoftware
 
-LDFLAGS = -pthread -L$(SLS_DETECTORS_BIN) -L../../../build \
-	  -L../../../third-party/Processlib/build 
-LDLIBS = -llimaslsdetector -lSlsDetector -lSlsReceiver -llimacore -lprocesslib 
+LDFLAGS = -pthread -L$(LIMA_DIR)/build
+LDLIBS = -llimaslsdetector -llimacore
 
 ifneq ($(COMPILE_CBF_SAVING), 0)
-LDFLAGS += -L../../../third-party/CBFLib/lib
+LDFLAGS += -L$(LIMA_DIR)/third-party/CBFLib/lib
 LDLIBS += -lcbf
 endif
 
 ifneq ($(COMPILE_CONFIG), 0)
-LDFLAGS += -L../../../third-party/libconfig/lib/.libs
+LDFLAGS += -L$(LIMA_DIR)/third-party/libconfig/lib/.libs
 LDLIBS += -lconfig++
 endif
 
