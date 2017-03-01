@@ -100,37 +100,15 @@ private:
 #define HALF_MODULE_CHIPS	4
 #define PACKET_DATA_LEN		(4 * 1024)
 
+enum State {
+	Idle, Init, Starting, Running, StopReq, Stopping, Stopped,
+};
+
 class Camera
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "Camera", "SlsDetector");
 
 public:
-	typedef RegEx::SingleMatchType SingleMatch;
-	typedef RegEx::FullMatchType FullMatch;
-	typedef RegEx::MatchListType MatchList;
-	typedef MatchList::const_iterator MatchListIt;
-
-	typedef std::vector<std::string> StringList;
-	typedef StringList HostnameList;
-	typedef std::map<int, int> RecvPortMap;
-	typedef std::map<int, int> FrameRecvMap;
-
-	enum State {
-		Idle, Init, Starting, Running, StopReq, Stopping, Stopped,
-	};
-
-	struct AppInputData
-	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Camera::AppInputData", 
-				  "SlsDetector");
-	public:
-		std::string config_file_name;
-		HostnameList host_name_list;
-		RecvPortMap recv_port_map;
-		AppInputData(std::string cfg_fname);
-		void parseConfigFile();
-	};
-
 	class FrameMap
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Camera::FrameMap", 
@@ -220,7 +198,29 @@ public:
 	{ return m_recv_map; }
 
 private:
+	typedef RegEx::SingleMatchType SingleMatch;
+	typedef RegEx::FullMatchType FullMatch;
+	typedef RegEx::MatchListType MatchList;
+	typedef MatchList::const_iterator MatchListIt;
+
+	typedef std::vector<std::string> StringList;
+	typedef StringList HostnameList;
+	typedef std::map<int, int> RecvPortMap;
+	typedef std::map<int, int> FrameRecvMap;
+
 	typedef std::queue<int> FrameQueue;
+
+	struct AppInputData
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Camera::AppInputData", 
+				  "SlsDetector");
+	public:
+		std::string config_file_name;
+		HostnameList host_name_list;
+		RecvPortMap recv_port_map;
+		AppInputData(std::string cfg_fname);
+		void parseConfigFile();
+	};
 
 	class Receiver 
 	{

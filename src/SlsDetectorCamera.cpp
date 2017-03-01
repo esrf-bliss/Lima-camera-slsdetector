@@ -680,14 +680,14 @@ void Camera::getFramePeriod(double& frame_period)
 	frame_period = m_frame_period;
 }
 
-Camera::State Camera::getState()
+State Camera::getState()
 {
 	DEB_MEMBER_FUNCT();
 	AutoMutex l = lock();
 	return getEffectiveState();
 }
 
-Camera::State Camera::getEffectiveState()
+State Camera::getEffectiveState()
 {
 	if (m_state == Stopped) {
 		m_acq_thread = NULL;
@@ -704,7 +704,7 @@ void Camera::waitState(State state)
 		m_cond.wait();
 }
 
-Camera::State Camera::waitNotState(State state)
+State Camera::waitNotState(State state)
 {
 	DEB_MEMBER_FUNCT();
 	AutoMutex l = lock();
