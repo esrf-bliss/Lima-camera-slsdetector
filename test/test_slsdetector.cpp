@@ -20,7 +20,7 @@
 // along with this program; if not, see <http://www.gnu.org/licenses/>.
 //###########################################################################
 
-#include "test_sls_detector.h"
+#include "test_slsdetector.h"
 
 using namespace std;
 using namespace lima;

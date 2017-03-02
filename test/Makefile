@@ -24,7 +24,7 @@ LIMA_DIR := $(shell pwd)/../../..
 include $(LIMA_DIR)/config.inc
 include $(LIMA_DIR)/control/control.inc
 
-SRCS = test_sls_detector.cpp 
+SRCS = test_slsdetector.cpp 
 
 SLS_DETECTORS_BIN = $(SLS_DETECTORS_DIR)/bin
 SLS_DETECTORS_SW = $(SLS_DETECTORS_DIR)/slsDetectorSoftware
@@ -56,19 +56,23 @@ SLS_DETECTORS_INCL_FLAGS = -I$(SLS_DETECTORS_SW)/include \
 
 CXXFLAGS = -I../include $(CT_CXXFLAGS) $(SLS_DETECTORS_INCL_FLAGS)
 
-test-progs = test_sls_detector test_sls_detector_control
+test-progs = test_slsdetector test_slsdetector_control
 old-progs  = 
 
 all: 	$(test-progs)
 
-test_sls_detector:		test_sls_detector.o
+test_slsdetector:		test_slsdetector.o
 	$(CXX) $(LDFLAGS) -o $@ $+ $(LDLIBS)
 
-test_sls_detector_control:	test_sls_detector_control.o
+test_slsdetector_control:	test_slsdetector_control.o
 	$(CXX) $(LDFLAGS) -o $@ $+ $(LDLIBS)
 
 clean:
 	rm -f *.o *.P $(test-progs) $(old-progs)
+
+test_slsdetector.o:		test_slsdetector.cpp test_slsdetector.h
+
+test_slsdetector_control.o:	test_slsdetector_control.cpp
 
 %.o : %.cpp
 	$(COMPILE.cpp) -MD $(CXXFLAGS) -o $@ $<

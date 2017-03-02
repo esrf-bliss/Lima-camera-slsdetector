@@ -123,7 +123,7 @@ class SlsDetectorAcq:
             self.m_img_status_cb = cb
             self.m_ct.registerImageStatusCallback(self.m_img_status_cb)
 
-        self.m_ct_display.setNames('_ccd_ds_', 'frelon_live')
+        self.m_ct_display.setNames('_ccd_ds_', 'slsdetector_live')
         self.m_ct_display.setActive(True)
         
 
@@ -222,8 +222,8 @@ class SlsDetectorAcq:
 
 
 @Core.DEB_GLOBAL_FUNCT
-def test_frelon_control(config_fname, enable_debug, use_events, print_time, 
-                        sleep_time, all_frames):
+def test_slsdetector_control(config_fname, enable_debug, use_events, 
+                             print_time, sleep_time, all_frames):
 
     if enable_debug:
         Core.DebParams.enableModuleFlags(Core.DebParams.AllFlags)
@@ -302,8 +302,8 @@ def main(argv):
     if not config_fname:
         raise ValueError("Must provide the configuration file")
 
-    test_frelon_control(config_fname, enable_debug, use_events, print_time, 
-                        sleep_time, all_frames)
+    test_slsdetector_control(config_fname, enable_debug, use_events, 
+                             print_time, sleep_time, all_frames)
 
         
 if __name__ == '__main__':
