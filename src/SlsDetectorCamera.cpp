@@ -106,6 +106,20 @@ void Args::update_argc_argv()
 	m_argv[m_argc] = NULL;
 }
 
+ostream& lima::SlsDetector::operator <<(ostream& os, State state)
+{
+	const char *name = "Unknown";
+	switch (state) {
+	case Idle:		name = "Idle";		break;
+	case Init:		name = "Init";		break;
+	case Starting:		name = "Starting";	break;
+	case Running:		name = "Running";	break;
+	case StopReq:		name = "StopReq";	break;
+	case Stopping:		name = "Stopping";	break;
+	case Stopped:		name = "Stopped";	break;
+	}
+	return os << name;
+}
 
 Camera::AppInputData::AppInputData(string cfg_fname) 
 	: config_file_name(cfg_fname) 
@@ -684,7 +698,9 @@ State Camera::getState()
 {
 	DEB_MEMBER_FUNCT();
 	AutoMutex l = lock();
-	return getEffectiveState();
+	State state = getEffectiveState();
+	DEB_RETURN() << DEB_VAR1(state);
+	return state;
 }
 
 State Camera::getEffectiveState()
@@ -699,6 +715,7 @@ State Camera::getEffectiveState()
 void Camera::waitState(State state)
 {
 	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(state);
 	AutoMutex l = lock();
 	while (getEffectiveState() != state)
 		m_cond.wait();
@@ -707,10 +724,13 @@ void Camera::waitState(State state)
 State Camera::waitNotState(State state)
 {
 	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(state);
 	AutoMutex l = lock();
 	while (getEffectiveState() == state)
 		m_cond.wait();
-	return getEffectiveState();
+	state = getEffectiveState();
+	DEB_RETURN() << DEB_VAR1(state);
+	return state;
 }
 
 void Camera::prepareAcq()

@@ -104,6 +104,8 @@ enum State {
 	Idle, Init, Starting, Running, StopReq, Stopping, Stopped,
 };
 
+std::ostream& operator <<(std::ostream& os, State state);
+
 class Camera
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "Camera", "SlsDetector");
