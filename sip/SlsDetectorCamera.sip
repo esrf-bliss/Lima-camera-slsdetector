@@ -77,7 +77,8 @@ public:
 
 	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr);
 
-	void setSaveRaw(bool save_raw);
+	void setSaveRaw(bool  save_raw);
+	void getSaveRaw(bool& save_raw /Out/);
 
 	void setNbFrames(int  nb_frames);
 	void getNbFrames(int& nb_frames /Out/);
@@ -94,7 +95,7 @@ public:
 	void startAcq();
 	void stopAcq();
 
-	int getNbHalfModules();
+	int getNbDetModules();
 
 	void getFrameDim(FrameDim& frame_dim, bool raw = false);
 

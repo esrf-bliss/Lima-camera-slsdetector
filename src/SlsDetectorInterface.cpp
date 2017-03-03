@@ -132,7 +132,7 @@ void DetInfoCtrlObj::getDetectorModel(string& det_model)
 	} else if (nb_pixels == 2 * 1024 * 1024) {
 		os << "2M";
 	} else {
-		os << m_cam.getNbHalfModules() / 2 << "-Modules";
+		os << m_cam.getNbDetModules() << "-Modules";
 	}
 	det_model = os.str();
 	DEB_RETURN() << DEB_VAR1(det_model);

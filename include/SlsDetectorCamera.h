@@ -96,15 +96,45 @@ private:
 	AutoPtr<char *, true> m_argv;
 };
 
-#define CHIP_SIZE		256
-#define HALF_MODULE_CHIPS	4
-#define PACKET_DATA_LEN		(4 * 1024)
-
 enum State {
 	Idle, Init, Starting, Running, StopReq, Stopping, Stopped,
 };
 
 std::ostream& operator <<(std::ostream& os, State state);
+
+class Camera;
+
+class Model
+{
+	DEB_CLASS_NAMESPC(DebModCamera, "Model", "SlsDetector");
+ public:
+	enum Type {
+		Generic, Eiger, Jungfrau,
+	};
+
+	Model(Camera *cam, Type type);
+	virtual ~Model();
+
+	virtual void getFrameDim(FrameDim& frame_dim, bool raw = false) = 0;
+	
+ protected:
+	virtual int getPacketLen() = 0;
+	virtual int getRecvFramePackets() = 0;
+
+	virtual int processRecvStart(int recv_idx, int dsize) = 0;
+	virtual int processRecvPacket(int recv_idx, int frame, 
+				      char *dptr, int dsize, Mutex& lock, 
+				      char *bptr) = 0;
+
+	AutoPtr<Camera> m_cam;
+	Type m_type;
+
+ private:
+	friend class Camera;
+};
+
+std::ostream& operator <<(std::ostream& os, Model::Type type);
+
 
 class Camera
 {
@@ -170,8 +200,11 @@ public:
 	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr)
 	{ m_buffer_cb_mgr = buffer_cb_mgr; }
 
-	void setSaveRaw(bool save_raw)
+	void setSaveRaw(bool  save_raw)
 	{ m_save_raw = save_raw; }
+
+	void getSaveRaw(bool& save_raw)
+	{ save_raw = m_save_raw; }
 
 	void setNbFrames(int  nb_frames);
 	void getNbFrames(int& nb_frames);
@@ -188,10 +221,14 @@ public:
 	void startAcq();
 	void stopAcq();
 
-	int getNbHalfModules()
+	int getNbDetModules()
 	{ return m_input_data->host_name_list.size(); }
 
-	void getFrameDim(FrameDim& frame_dim, bool raw = false);
+	ImageType getImageType() const
+	{ return m_image_type; }
+
+	void getFrameDim(FrameDim& frame_dim, bool raw = false)
+	{ m_model->getFrameDim(frame_dim, raw); }
 
 	int getFramesCaught();
 	std::string getStatus();
@@ -218,6 +255,7 @@ private:
 				  "SlsDetector");
 	public:
 		std::string config_file_name;
+		Model::Type det_type;
 		HostnameList host_name_list;
 		RecvPortMap recv_port_map;
 		AppInputData(std::string cfg_fname);
@@ -230,35 +268,6 @@ private:
 				  "SlsDetector");
 
 	public:
-		typedef unsigned char Byte;
-		typedef unsigned int Long;
-
-		struct Packet 
-		{
-			struct pre 
-			{
-				Long frame;	
-				Byte code;	// 0x6b=first, 0x69=others
-				Byte len;	// 0x80
-				Byte flags;	// 0x00=1st-half, 0x20=2nd-half
-				Byte idx;	// 32-bit
-			} pre;
-			char data[PACKET_DATA_LEN];
-			struct post 
-			{
-				Long frame;
-				Byte res_1[2];	// 0x00
-				Byte next;	// 32-bit
-				Byte res_2;     // 0x00
-			} post;
-		};
-
-		static int getPacketLen()
-		{ return sizeof(Packet); }
-
-		void getFrameDim(FrameDim& frame_dim, bool raw = false);
-		int getFramePackets();
-
 		Receiver(Camera *cam, int idx, int rx_port, int mode);
 		~Receiver();
 		void start();
@@ -294,7 +303,7 @@ private:
 		void frameCallback(int frame, char *dptr, int dsize, FILE *f, 
 				   char *guidptr);
 
-		Camera *m_cam;
+		AutoPtr<Camera> m_cam;
 		int m_idx;
 		int m_rx_port;
 		int m_mode;
@@ -318,7 +327,7 @@ private:
 	private:
 		bool newFrameReady(int frame);
 
-		Camera *m_cam;
+		AutoPtr<Camera> m_cam;
 		Cond& m_cond;
 		volatile State& m_state;
 		FrameQueue& m_frame_queue;
@@ -334,8 +343,10 @@ private:
 	protected:
 		virtual void frameFinished(int frame);
 	private:
-		Camera *m_cam;
+		AutoPtr<Camera> m_cam;
 	};
+
+	friend class Model;
 
 	AutoMutex lock()
 	{ return AutoMutex(m_cond.mutex()); }
@@ -349,9 +360,10 @@ private:
 	void receiverFrameFinished(int frame, Receiver *recv);
 	void frameFinished(int frame);
 
-	void putCmd(const std::string& s);
-	std::string getCmd(const std::string& s);
+	void putCmd(const std::string& s, int idx = -1);
+	std::string getCmd(const std::string& s, int idx = -1);
 
+	AutoPtr<Model> m_model;
 	Cond m_cond;
 	AutoPtr<AppInputData> m_input_data;
 	RecvList m_recv_list;
@@ -374,6 +386,56 @@ private:
 std::ostream& operator <<(std::ostream& os, const Camera::FrameMap& m);
 std::ostream& operator <<(std::ostream& os, const Camera::FrameMap::List& l);
 std::ostream& operator <<(std::ostream& os, const Camera::FrameMap::Map& m);
+
+
+#define EIGER_CHIP_SIZE		256
+#define EIGER_BORDER_PIXELS	1
+#define EIGER_HALF_MODULE_CHIPS	4
+#define EIGER_PACKET_DATA_LEN	(4 * 1024)
+
+class Eiger : public Model
+{
+	DEB_CLASS_NAMESPC(DebModCamera, "Eiger", "SlsDetector");
+
+ public:
+	typedef unsigned char Byte;
+	typedef unsigned int Long;
+
+	struct Packet 
+	{
+		struct pre 
+		{
+			Long frame;	
+			Byte code;	// 0x6b=first, 0x69=others
+			Byte len;	// 0x80
+			Byte flags;	// 0x00=1st-half, 0x20=2nd-half
+			Byte idx;	// 32-bit
+		} pre;
+		char data[EIGER_PACKET_DATA_LEN];
+		struct post 
+		{
+			Long frame;
+			Byte res_1[2];	// 0x00
+			Byte next;	// 32-bit
+			Byte res_2;     // 0x00
+		} post;
+	};
+
+	Eiger(Camera *cam);
+	
+	virtual void getFrameDim(FrameDim& frame_dim, bool raw = false);
+
+ protected:
+	virtual int getPacketLen();
+	virtual int getRecvFramePackets();
+
+	virtual int processRecvStart(int recv_idx, int dsize);
+	virtual int processRecvPacket(int recv_idx, int frame, 
+				      char *dptr, int dsize, Mutex& lock, 
+				      char *bptr);
+ private:		
+};
+
 
 } // namespace SlsDetector
 

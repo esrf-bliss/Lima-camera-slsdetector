@@ -121,8 +121,31 @@ ostream& lima::SlsDetector::operator <<(ostream& os, State state)
 	return os << name;
 }
 
+Model::Model(Camera *cam, Type type)
+	: m_cam(cam), m_type(type)
+{
+	DEB_CONSTRUCTOR();
+	DEB_PARAM() << DEB_VAR1(type);
+}
+
+Model::~Model()
+{
+	DEB_DESTRUCTOR();
+}
+
+ostream& lima::SlsDetector::operator <<(ostream& os, Model::Type type)
+{
+	const char *name = "Unknown";
+	switch (type) {
+	case Model::Generic:		name = "Generic";	break;
+	case Model::Eiger:		name = "Eiger";		break;
+	case Model::Jungfrau:		name = "Jungfrau";	break;
+	}
+	return os << name;
+}
+
 Camera::AppInputData::AppInputData(string cfg_fname) 
-	: config_file_name(cfg_fname) 
+	: config_file_name(cfg_fname), det_type(Model::Generic)
 {
 	DEB_CONSTRUCTOR();
 	parseConfigFile();
@@ -313,14 +336,13 @@ void Camera::Receiver::FrameFinishedCallback::frameFinished(int frame)
 }
 
 Camera::Receiver::Receiver(Camera *cam, int idx, int rx_port, int mode)
-	: m_cam(cam), m_idx(idx), m_rx_port(rx_port), m_mode(mode)
+	: m_cam(cam), m_idx(idx), m_rx_port(rx_port), 
+	  m_mode(mode)
 {
 	DEB_CONSTRUCTOR();
 
 	m_cb = new FrameFinishedCallback(this);
 
-	int nb_packets = getFramePackets();
-	m_packet_map.setNbItems(nb_packets);
 	m_packet_map.setCallback(m_cb);
 
 	ostringstream os;
@@ -340,27 +362,6 @@ Camera::Receiver::~Receiver()
 	m_recv->stop();
 }
 
-void Camera::Receiver::getFrameDim(FrameDim& frame_dim, bool raw)
-{
-	DEB_MEMBER_FUNCT();
-	if (raw) {
-		frame_dim.setImageType(Bpp8);
-		frame_dim.setSize(Size(getPacketLen() * getFramePackets(), 1));
-	} else {
-		frame_dim.setImageType(m_cam->m_image_type);
-		frame_dim.setSize(Size(HALF_MODULE_CHIPS * CHIP_SIZE, 
-				       CHIP_SIZE));
-	}
-}
-
-int Camera::Receiver::getFramePackets()
-{ 
-	DEB_MEMBER_FUNCT();
-	FrameDim frame_dim;
-	getFrameDim(frame_dim, false);
-	return frame_dim.getMemSize() / sizeof(Packet::data); 
-}
-
 void Camera::Receiver::start()
 {	
 	DEB_MEMBER_FUNCT();
@@ -375,6 +376,8 @@ void Camera::Receiver::start()
 void Camera::Receiver::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
+	int nb_packets = m_cam->m_model->getRecvFramePackets();
+	m_packet_map.setNbItems(nb_packets);
 	m_packet_map.clear();
 }
 
@@ -398,13 +401,10 @@ int Camera::Receiver::startCallback(char *fpath, char *fname,
 				    int fidx, int dsize)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_CAMERA_START() << DEB_VAR5(fpath, fname, fidx, dsize, m_idx);
-
-	if (dsize != getPacketLen())
-		DEB_WARNING() << "!!!! Warning !!!! " 
-			      << DEB_VAR2(dsize, getPacketLen());
-
-	return DO_NOTHING;
+	Model *model = m_cam->m_model;
+	if (!model)
+		return DO_NOTHING;
+	return model->processRecvStart(m_idx, dsize);
 }
 
 void Camera::Receiver::frameCallback(int frame, char *dptr, int dsize, FILE *f, 
@@ -412,51 +412,16 @@ void Camera::Receiver::frameCallback(int frame, char *dptr, int dsize, FILE *f,
 {
 	DEB_MEMBER_FUNCT();
 
-	Packet *p = static_cast<Packet *>(static_cast<void *>(dptr));
-	bool second_half = p->pre.flags & 0x20;
-	int packet_idx = p->pre.idx;
-	if (second_half)
-		packet_idx += getFramePackets() / 2;
-	bool top_half = (m_idx % 2 == 0);
+	Model *model = m_cam->m_model;
+	if (!model)
+		return;
 
-	DEB_RECV_PACKET() << DEB_VAR5(frame, dsize, getPacketLen(), m_idx, 
-				      packet_idx);
-
-	bool raw;
-	char *buffer;
+	char *bptr = m_cam->getFrameBufferPtr(frame);
+	Mutex& lock = m_cam->m_cond.mutex();
+	int packet_idx = model->processRecvPacket(m_idx, frame, dptr, dsize, 
+						  lock, bptr);
 	{
-		AutoMutex l = m_cam->lock();
-		buffer = m_cam->getFrameBufferPtr(frame);
-		raw = m_cam->m_save_raw;
-	}
-
-	FrameDim frame_dim;
-	getFrameDim(frame_dim, raw);
-	int recv_size = frame_dim.getMemSize();
-
-	if (raw) {
-		int xfer_len = sizeof(*p);
-		char *dest = buffer + recv_size * m_idx + xfer_len * packet_idx;
-		memcpy(dest, dptr, xfer_len);
-	} else {
-		int xfer_len = sizeof(p->data);
-		char *src = p->data;
-		int plw = 2 * CHIP_SIZE * frame_dim.getDepth();
-		int plnb = xfer_len / plw;
-		int dlw = 2 * plw;
-		char *dest = buffer + recv_size * m_idx;
-		if (top_half) {
-			dest += (CHIP_SIZE - 1) * dlw;
-			dlw *= -1;
-		}
-		int right_side = !second_half ^ top_half;
-		dest += p->pre.idx * dlw * plnb + right_side * plw;
-		for (int i = 0; i < plnb; ++i, src += plw, dest += dlw)
-			memcpy(dest, src, plw);
-	}
-
-	{
-		AutoMutex l = m_cam->lock();
+		AutoMutex l(lock);
 		m_packet_map.frameItemFinished(frame, packet_idx);
 	}
 }
@@ -564,6 +529,14 @@ Camera::Camera(string config_fname)
 	DEB_TRACE() << "Creating the multiSlsDetectorCommand";
 	m_cmd = new multiSlsDetectorCommand(m_det);
 
+	string type_str = getCmd("type", 0);
+	if (type_str == "Eiger") {
+		m_model = new Eiger(this);
+	} else {
+		THROW_HW_ERROR(NotSupported) << "Unknown detector type: "
+					     << type_str;
+	}
+
 	setNbFrames(1);
 	setExpTime(0.99);
 	setFramePeriod(1.0);
@@ -628,22 +601,22 @@ void Camera::createReceivers()
 	m_recv_map.setCallback(m_frame_cb);
 }
 
-void Camera::putCmd(const string& s)
+void Camera::putCmd(const string& s, int idx)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << "s=\"" << s << "\"";
 	Args args(s);
 	AutoMutex l(m_cmd_mutex);
-	m_cmd->putCommand(args.size(), args);
+	m_cmd->putCommand(args.size(), args, idx);
 }
 
-string Camera::getCmd(const string& s)
+string Camera::getCmd(const string& s, int idx)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << "s=\"" << s << "\"";
 	Args args(s);
 	AutoMutex l(m_cmd_mutex);
-	string r = m_cmd->getCommand(args.size(), args);
+	string r = m_cmd->getCommand(args.size(), args, idx);
 	DEB_RETURN() << "r=\"" << r << "\"";
 	return r;
 }
@@ -799,15 +772,6 @@ void Camera::frameFinished(int frame)
 	m_cond.broadcast();
 }
 
-void Camera::getFrameDim(FrameDim& frame_dim, bool raw)
-{
-	DEB_MEMBER_FUNCT();
-	Receiver *recv = m_recv_list[0];
-	recv->getFrameDim(frame_dim, raw);
-	frame_dim *= Point(1, getNbHalfModules());
-	DEB_RETURN() << DEB_VAR1(frame_dim);
-}
-
 int Camera::getFramesCaught()
 {
 	DEB_MEMBER_FUNCT();
@@ -823,3 +787,98 @@ string Camera::getStatus()
 	DEB_MEMBER_FUNCT();
 	return getCmd("status");
 }
+
+Eiger::Eiger(Camera *cam)
+	: Model(cam, Model::Eiger)
+{
+	DEB_CONSTRUCTOR();
+
+}
+
+int Eiger::getPacketLen()
+{
+	DEB_MEMBER_FUNCT();
+	int packet_len = sizeof(Packet);
+	DEB_RETURN() << DEB_VAR1(packet_len);
+	return packet_len;
+}
+
+int Eiger::getRecvFramePackets()
+{
+	DEB_MEMBER_FUNCT();
+	FrameDim frame_dim;
+	getFrameDim(frame_dim, false);
+	return frame_dim.getMemSize() / sizeof(Packet::data); 
+}
+
+void Eiger::getFrameDim(FrameDim& frame_dim, bool raw)
+{
+	DEB_MEMBER_FUNCT();
+	if (raw) {
+		frame_dim.setImageType(Bpp8);
+		frame_dim.setSize(Size(getPacketLen(), getRecvFramePackets()));
+	} else {
+		frame_dim.setImageType(m_cam->getImageType());
+		int row_pixels = EIGER_HALF_MODULE_CHIPS * EIGER_CHIP_SIZE;
+		frame_dim.setSize(Size(row_pixels, EIGER_CHIP_SIZE));
+	}
+}
+
+int Eiger::processRecvStart(int recv_idx, int dsize)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_CAMERA_START() << DEB_VAR2(recv_idx, dsize);
+	if (dsize != getPacketLen())
+		DEB_WARNING() << "!!!! Warning !!!! " 
+			      << DEB_VAR2(dsize, getPacketLen());
+
+	return DO_NOTHING;
+}
+
+int Eiger::processRecvPacket(int recv_idx, int frame, char *dptr, int dsize,
+			     Mutex& lock, char *bptr)
+{
+	DEB_MEMBER_FUNCT();
+
+	Packet *p = static_cast<Packet *>(static_cast<void *>(dptr));
+	bool second_half = p->pre.flags & 0x20;
+	int packet_idx = p->pre.idx;
+	if (second_half)
+		packet_idx += getRecvFramePackets() / 2;
+	bool top_half_recv = (recv_idx % 2 == 0);
+
+	DEB_RECV_PACKET() << DEB_VAR4(frame, dsize, recv_idx, packet_idx);
+
+	bool raw;
+	m_cam->getSaveRaw(raw);
+
+	FrameDim frame_dim;
+	getFrameDim(frame_dim, raw);
+	int recv_size = frame_dim.getMemSize();
+
+	if (raw) {
+		int xfer_len = getPacketLen();
+		char *dest = (bptr + recv_size * recv_idx + 
+			      xfer_len * packet_idx);
+		memcpy(dest, dptr, xfer_len);
+	} else {
+		int xfer_len = sizeof(p->data);
+		char *src = p->data;
+		int plw = EIGER_HALF_MODULE_CHIPS / 2 * EIGER_CHIP_SIZE;
+		plw *= frame_dim.getDepth();
+		int plnb = xfer_len / plw;
+		int dlw = 2 * plw;
+		char *dest = bptr + recv_size * recv_idx;
+		if (top_half_recv) {
+			dest += (EIGER_CHIP_SIZE - 1) * dlw;
+			dlw *= -1;
+		}
+		int right_side = !second_half ^ top_half_recv;
+		dest += p->pre.idx * dlw * plnb + right_side * plw;
+		for (int i = 0; i < plnb; ++i, src += plw, dest += dlw)
+			memcpy(dest, src, plw);
+	}
+
+	return packet_idx;
+}
+
