@@ -102,45 +102,44 @@ enum State {
 
 std::ostream& operator <<(std::ostream& os, State state);
 
-class Camera;
-
-class Model
-{
-	DEB_CLASS_NAMESPC(DebModCamera, "Model", "SlsDetector");
- public:
-	enum Type {
-		Generic, Eiger, Jungfrau,
-	};
-
-	Model(Camera *cam, Type type);
-	virtual ~Model();
-
-	virtual void getFrameDim(FrameDim& frame_dim, bool raw = false) = 0;
-	
- protected:
-	virtual int getPacketLen() = 0;
-	virtual int getRecvFramePackets() = 0;
-
-	virtual int processRecvStart(int recv_idx, int dsize) = 0;
-	virtual int processRecvPacket(int recv_idx, int frame, 
-				      char *dptr, int dsize, Mutex& lock, 
-				      char *bptr) = 0;
-
-	AutoPtr<Camera> m_cam;
-	Type m_type;
-
- private:
-	friend class Camera;
-};
-
-std::ostream& operator <<(std::ostream& os, Model::Type type);
-
 
 class Camera
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "Camera", "SlsDetector");
 
 public:
+	enum Type {
+		GenericDet, EigerDet, JungfrauDet,
+	};
+	
+	class Model
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Camera::Model", "SlsDetector");
+	public:
+		Model(Camera *cam, Type type);
+		virtual ~Model();
+	
+		virtual void getFrameDim(FrameDim& frame_dim, bool raw = false) = 0;
+		
+	protected:
+		void putCmd(const std::string& s, int idx = -1);
+		std::string getCmd(const std::string& s, int idx = -1);
+
+		virtual int getPacketLen() = 0;
+		virtual int getRecvFramePackets() = 0;
+	
+		virtual int processRecvStart(int recv_idx, int dsize) = 0;
+		virtual int processRecvPacket(int recv_idx, int frame, 
+					      char *dptr, int dsize, 
+					      Mutex& lock, char *bptr) = 0;
+	
+		Camera *m_cam;
+		Type m_type;
+	
+	private:
+		friend class Camera;
+	};
+
 	class FrameMap
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Camera::FrameMap", 
@@ -196,6 +195,9 @@ public:
 
 	Camera(std::string config_fname);
 	virtual ~Camera();
+
+	Model& getModel()
+	{ return *m_model; }
 
 	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr)
 	{ m_buffer_cb_mgr = buffer_cb_mgr; }
@@ -255,7 +257,6 @@ private:
 				  "SlsDetector");
 	public:
 		std::string config_file_name;
-		Model::Type det_type;
 		HostnameList host_name_list;
 		RecvPortMap recv_port_map;
 		AppInputData(std::string cfg_fname);
@@ -303,7 +304,7 @@ private:
 		void frameCallback(int frame, char *dptr, int dsize, FILE *f, 
 				   char *guidptr);
 
-		AutoPtr<Camera> m_cam;
+		Camera *m_cam;
 		int m_idx;
 		int m_rx_port;
 		int m_mode;
@@ -327,7 +328,7 @@ private:
 	private:
 		bool newFrameReady(int frame);
 
-		AutoPtr<Camera> m_cam;
+		Camera *m_cam;
 		Cond& m_cond;
 		volatile State& m_state;
 		FrameQueue& m_frame_queue;
@@ -343,7 +344,7 @@ private:
 	protected:
 		virtual void frameFinished(int frame);
 	private:
-		AutoPtr<Camera> m_cam;
+		Camera *m_cam;
 	};
 
 	friend class Model;
@@ -383,6 +384,8 @@ private:
 	FrameQueue m_frame_queue;
 };
 
+std::ostream& operator <<(std::ostream& os, Camera::Type type);
+
 std::ostream& operator <<(std::ostream& os, const Camera::FrameMap& m);
 std::ostream& operator <<(std::ostream& os, const Camera::FrameMap::List& l);
 std::ostream& operator <<(std::ostream& os, const Camera::FrameMap::Map& m);
@@ -393,7 +396,7 @@ std::ostream& operator <<(std::ostream& os, const Camera::FrameMap::Map& m);
 #define EIGER_HALF_MODULE_CHIPS	4
 #define EIGER_PACKET_DATA_LEN	(4 * 1024)
 
-class Eiger : public Model
+class Eiger : public Camera::Model
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "Eiger", "SlsDetector");
 
@@ -424,6 +427,7 @@ class Eiger : public Model
 	Eiger(Camera *cam);
 	
 	virtual void getFrameDim(FrameDim& frame_dim, bool raw = false);
+	void getRecvFrameDim(FrameDim& frame_dim, bool raw = false);
 
  protected:
 	virtual int getPacketLen();
@@ -433,7 +437,10 @@ class Eiger : public Model
 	virtual int processRecvPacket(int recv_idx, int frame, 
 				      char *dptr, int dsize, Mutex& lock, 
 				      char *bptr);
- private:		
+ private:
+	bool m_raw;
+	FrameDim m_recv_frame_dim;
+	int m_recv_half_frame_packets;
 };
 
 

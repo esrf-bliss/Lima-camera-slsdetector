@@ -121,31 +121,43 @@ ostream& lima::SlsDetector::operator <<(ostream& os, State state)
 	return os << name;
 }
 
-Model::Model(Camera *cam, Type type)
+Camera::Model::Model(Camera *cam, Type type)
 	: m_cam(cam), m_type(type)
 {
 	DEB_CONSTRUCTOR();
 	DEB_PARAM() << DEB_VAR1(type);
 }
 
-Model::~Model()
+Camera::Model::~Model()
 {
 	DEB_DESTRUCTOR();
 }
 
-ostream& lima::SlsDetector::operator <<(ostream& os, Model::Type type)
+void Camera::Model::putCmd(const string& s, int idx)
+{
+	DEB_MEMBER_FUNCT();
+	m_cam->putCmd(s, idx);
+}
+
+string Camera::Model::getCmd(const string& s, int idx)
+{
+	DEB_MEMBER_FUNCT();
+	return m_cam->getCmd(s, idx);
+}
+
+ostream& lima::SlsDetector::operator <<(ostream& os, Camera::Type type)
 {
 	const char *name = "Unknown";
 	switch (type) {
-	case Model::Generic:		name = "Generic";	break;
-	case Model::Eiger:		name = "Eiger";		break;
-	case Model::Jungfrau:		name = "Jungfrau";	break;
+	case Camera::GenericDet:	name = "Generic";	break;
+	case Camera::EigerDet:		name = "Eiger";		break;
+	case Camera::JungfrauDet:	name = "Jungfrau";	break;
 	}
 	return os << name;
 }
 
 Camera::AppInputData::AppInputData(string cfg_fname) 
-	: config_file_name(cfg_fname), det_type(Model::Generic)
+	: config_file_name(cfg_fname)
 {
 	DEB_CONSTRUCTOR();
 	parseConfigFile();
@@ -789,7 +801,7 @@ string Camera::getStatus()
 }
 
 Eiger::Eiger(Camera *cam)
-	: Model(cam, Model::Eiger)
+	: Camera::Model(cam, Camera::EigerDet)
 {
 	DEB_CONSTRUCTOR();
 
@@ -807,21 +819,36 @@ int Eiger::getRecvFramePackets()
 {
 	DEB_MEMBER_FUNCT();
 	FrameDim frame_dim;
-	getFrameDim(frame_dim, false);
-	return frame_dim.getMemSize() / sizeof(Packet::data); 
+	getRecvFrameDim(frame_dim, false);
+	int frame_packets = frame_dim.getMemSize() / sizeof(Packet::data);
+	DEB_RETURN() << DEB_VAR1(frame_packets);
+	return frame_packets;
 }
 
 void Eiger::getFrameDim(FrameDim& frame_dim, bool raw)
 {
 	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(raw);
+	getRecvFrameDim(frame_dim, raw);
+	Size size = frame_dim.getSize();
+	int nb_modules = m_cam->getNbDetModules();
+	frame_dim.setSize(Size(size.getWidth(), size.getHeight() * nb_modules));
+	DEB_RETURN() << DEB_VAR1(frame_dim);
+}
+
+void Eiger::getRecvFrameDim(FrameDim& frame_dim, bool raw)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(raw);
 	if (raw) {
 		frame_dim.setImageType(Bpp8);
 		frame_dim.setSize(Size(getPacketLen(), getRecvFramePackets()));
 	} else {
 		frame_dim.setImageType(m_cam->getImageType());
-		int row_pixels = EIGER_HALF_MODULE_CHIPS * EIGER_CHIP_SIZE;
-		frame_dim.setSize(Size(row_pixels, EIGER_CHIP_SIZE));
+		int cols = EIGER_HALF_MODULE_CHIPS * EIGER_CHIP_SIZE;
+		frame_dim.setSize(Size(cols, EIGER_CHIP_SIZE));
 	}
+	DEB_RETURN() << DEB_VAR1(frame_dim);
 }
 
 int Eiger::processRecvStart(int recv_idx, int dsize)
@@ -831,6 +858,13 @@ int Eiger::processRecvStart(int recv_idx, int dsize)
 	if (dsize != getPacketLen())
 		DEB_WARNING() << "!!!! Warning !!!! " 
 			      << DEB_VAR2(dsize, getPacketLen());
+
+	m_cam->getSaveRaw(m_raw);
+	getRecvFrameDim(m_recv_frame_dim, m_raw);
+	m_recv_half_frame_packets = getRecvFramePackets() / 2;
+
+	DEB_TRACE() << DEB_VAR3(m_raw, m_recv_frame_dim, 
+				m_recv_half_frame_packets);
 
 	return DO_NOTHING;
 }
@@ -844,19 +878,14 @@ int Eiger::processRecvPacket(int recv_idx, int frame, char *dptr, int dsize,
 	bool second_half = p->pre.flags & 0x20;
 	int packet_idx = p->pre.idx;
 	if (second_half)
-		packet_idx += getRecvFramePackets() / 2;
+		packet_idx += m_recv_half_frame_packets;
 	bool top_half_recv = (recv_idx % 2 == 0);
 
 	DEB_RECV_PACKET() << DEB_VAR4(frame, dsize, recv_idx, packet_idx);
 
-	bool raw;
-	m_cam->getSaveRaw(raw);
+	int recv_size = m_recv_frame_dim.getMemSize();
 
-	FrameDim frame_dim;
-	getFrameDim(frame_dim, raw);
-	int recv_size = frame_dim.getMemSize();
-
-	if (raw) {
+	if (m_raw) {
 		int xfer_len = getPacketLen();
 		char *dest = (bptr + recv_size * recv_idx + 
 			      xfer_len * packet_idx);
@@ -865,7 +894,7 @@ int Eiger::processRecvPacket(int recv_idx, int frame, char *dptr, int dsize,
 		int xfer_len = sizeof(p->data);
 		char *src = p->data;
 		int plw = EIGER_HALF_MODULE_CHIPS / 2 * EIGER_CHIP_SIZE;
-		plw *= frame_dim.getDepth();
+		plw *= m_recv_frame_dim.getDepth();
 		int plnb = xfer_len / plw;
 		int dlw = 2 * plw;
 		char *dest = bptr + recv_size * recv_idx;
@@ -873,8 +902,8 @@ int Eiger::processRecvPacket(int recv_idx, int frame, char *dptr, int dsize,
 			dest += (EIGER_CHIP_SIZE - 1) * dlw;
 			dlw *= -1;
 		}
-		int right_side = !second_half ^ top_half_recv;
-		dest += p->pre.idx * dlw * plnb + right_side * plw;
+		bool right_side = (second_half == top_half_recv);
+		dest += p->pre.idx * dlw * plnb + right_side ? plw : 0;
 		for (int i = 0; i < plnb; ++i, src += plw, dest += dlw)
 			memcpy(dest, src, plw);
 	}
