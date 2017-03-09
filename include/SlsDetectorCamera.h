@@ -119,7 +119,8 @@ public:
 		Model(Camera *cam, Type type);
 		virtual ~Model();
 	
-		virtual void getFrameDim(FrameDim& frame_dim, bool raw = false) = 0;
+		virtual void getFrameDim(FrameDim& frame_dim, 
+					 bool raw = false) = 0;
 		
 	protected:
 		void putCmd(const std::string& s, int idx = -1);
@@ -427,7 +428,6 @@ class Eiger : public Camera::Model
 	Eiger(Camera *cam);
 	
 	virtual void getFrameDim(FrameDim& frame_dim, bool raw = false);
-	void getRecvFrameDim(FrameDim& frame_dim, bool raw = false);
 
  protected:
 	virtual int getPacketLen();
@@ -437,6 +437,9 @@ class Eiger : public Camera::Model
 	virtual int processRecvPacket(int recv_idx, int frame, 
 				      char *dptr, int dsize, Mutex& lock, 
 				      char *bptr);
+
+	void getRecvFrameDim(FrameDim& frame_dim, bool geom, bool raw);
+
  private:
 	bool m_raw;
 	FrameDim m_recv_frame_dim;

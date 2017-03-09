@@ -145,17 +145,6 @@ string Camera::Model::getCmd(const string& s, int idx)
 	return m_cam->getCmd(s, idx);
 }
 
-ostream& lima::SlsDetector::operator <<(ostream& os, Camera::Type type)
-{
-	const char *name = "Unknown";
-	switch (type) {
-	case Camera::GenericDet:	name = "Generic";	break;
-	case Camera::EigerDet:		name = "Eiger";		break;
-	case Camera::JungfrauDet:	name = "Jungfrau";	break;
-	}
-	return os << name;
-}
-
 Camera::AppInputData::AppInputData(string cfg_fname) 
 	: config_file_name(cfg_fname)
 {
@@ -298,6 +287,17 @@ void Camera::FrameMap::frameItemFinished(int frame, int item)
 	}
 	if (m_cb)
 		m_cb->frameFinished(frame);
+}
+
+ostream& lima::SlsDetector::operator <<(ostream& os, Camera::Type type)
+{
+	const char *name = "Unknown";
+	switch (type) {
+	case Camera::GenericDet:	name = "Generic";	break;
+	case Camera::EigerDet:		name = "Eiger";		break;
+	case Camera::JungfrauDet:	name = "Jungfrau";	break;
+	}
+	return os << name;
 }
 
 ostream& lima::SlsDetector::operator <<(ostream& os, 
@@ -819,7 +819,7 @@ int Eiger::getRecvFramePackets()
 {
 	DEB_MEMBER_FUNCT();
 	FrameDim frame_dim;
-	getRecvFrameDim(frame_dim, false);
+	getRecvFrameDim(frame_dim, false, false);
 	int frame_packets = frame_dim.getMemSize() / sizeof(Packet::data);
 	DEB_RETURN() << DEB_VAR1(frame_packets);
 	return frame_packets;
@@ -829,14 +829,14 @@ void Eiger::getFrameDim(FrameDim& frame_dim, bool raw)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(raw);
-	getRecvFrameDim(frame_dim, raw);
+	getRecvFrameDim(frame_dim, true, raw);
 	Size size = frame_dim.getSize();
-	int nb_modules = m_cam->getNbDetModules();
-	frame_dim.setSize(Size(size.getWidth(), size.getHeight() * nb_modules));
+	size *= Point(1, m_cam->getNbDetModules());
+	frame_dim.setSize(size);
 	DEB_RETURN() << DEB_VAR1(frame_dim);
 }
 
-void Eiger::getRecvFrameDim(FrameDim& frame_dim, bool raw)
+void Eiger::getRecvFrameDim(FrameDim& frame_dim, bool geom, bool raw)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(raw);
@@ -845,8 +845,11 @@ void Eiger::getRecvFrameDim(FrameDim& frame_dim, bool raw)
 		frame_dim.setSize(Size(getPacketLen(), getRecvFramePackets()));
 	} else {
 		frame_dim.setImageType(m_cam->getImageType());
-		int cols = EIGER_HALF_MODULE_CHIPS * EIGER_CHIP_SIZE;
-		frame_dim.setSize(Size(cols, EIGER_CHIP_SIZE));
+		Size size(EIGER_CHIP_SIZE, EIGER_CHIP_SIZE);
+		size *= Point(EIGER_HALF_MODULE_CHIPS, 2);
+		if (geom)
+			size += Point(2, 2) * Point(3, 1);
+		frame_dim.setSize(size / Point(1, 2));
 	}
 	DEB_RETURN() << DEB_VAR1(frame_dim);
 }
@@ -860,7 +863,7 @@ int Eiger::processRecvStart(int recv_idx, int dsize)
 			      << DEB_VAR2(dsize, getPacketLen());
 
 	m_cam->getSaveRaw(m_raw);
-	getRecvFrameDim(m_recv_frame_dim, m_raw);
+	getRecvFrameDim(m_recv_frame_dim, true, m_raw);
 	m_recv_half_frame_packets = getRecvFramePackets() / 2;
 
 	DEB_TRACE() << DEB_VAR3(m_raw, m_recv_frame_dim, 
