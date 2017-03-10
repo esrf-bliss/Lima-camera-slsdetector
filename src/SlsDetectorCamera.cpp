@@ -854,6 +854,9 @@ void Eiger::getFrameDim(FrameDim& frame_dim, bool raw)
 	getRecvFrameDim(frame_dim, raw, true);
 	Size size = frame_dim.getSize();
 	size *= Point(1, m_nb_det_modules);
+	if (!raw)
+		for (int i = 0; i < m_nb_det_modules / 2 - 1; ++i)
+			size += Point(0, getInterModuleGap(i));
 	frame_dim.setSize(size);
 	DEB_RETURN() << DEB_VAR1(frame_dim);
 }
@@ -919,6 +922,9 @@ int Eiger::processRecvPacket(int recv_idx, int frame, char *dptr, int dsize,
 		dest += dlw * packet_idx;
 		memcpy(dest, dptr, dlw);
 	} else {
+		int mod_idx = recv_idx / 2;
+		for (int i = 0; i < mod_idx; ++i)
+			dest += getInterModuleGap(i) * dlw;
 		int plw = ChipSize * depth;		// packet line width
 		int pchips = HalfModuleChips / 2;
 		int plines = sizeof(p->data) / plw / pchips;
@@ -980,4 +986,9 @@ double Eiger::getBorderCorrectFactor(int det, int line)
 	case 1: return 1.3;
 	default: return 1;
 	}
+}
+
+int Eiger::getInterModuleGap(int det)
+{
+	return 25;
 }

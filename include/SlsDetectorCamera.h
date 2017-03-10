@@ -520,7 +520,8 @@ class Eiger : public Camera::Model
 				correctInterChipLine(d, -width, width, 1);
 				d += width;
 				correctInterChipLine(d, width, width, 1);
-				p += mod_height * width;
+				int inter_lines = m_eiger->getInterModuleGap(i);
+				p += (mod_height + inter_lines) * width;
 			}
 		}
 
@@ -552,7 +553,8 @@ class Eiger : public Camera::Model
 				correctBorderLine(d, width, 1, f1);
 				d += width;
 				correctBorderLine(d, width, 1, f0);
-				p += mod_height * width;
+				int inter_lines = m_eiger->getInterModuleGap(i);
+				p += (mod_height + inter_lines) * width;
 			}
 		}
 	};
@@ -560,6 +562,7 @@ class Eiger : public Camera::Model
 	void getRecvFrameDim(FrameDim& frame_dim, bool raw, bool geom);
 
 	double getBorderCorrectFactor(int det, int line);
+	int getInterModuleGap(int det);
 
 	static const int ChipSize;
 	static const int ChipGap;
