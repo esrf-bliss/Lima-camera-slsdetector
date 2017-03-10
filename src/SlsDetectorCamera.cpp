@@ -145,6 +145,13 @@ string Camera::Model::getCmd(const string& s, int idx)
 	return m_cam->getCmd(s, idx);
 }
 
+void Camera::Model::reconstructFrame(int frame, void *bptr)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(frame);
+}
+
+
 Camera::AppInputData::AppInputData(string cfg_fname) 
 	: config_file_name(cfg_fname)
 {
@@ -513,7 +520,7 @@ void Camera::AcqThread::threadFunction()
 bool Camera::AcqThread::newFrameReady(int frame)
 {
 	DEB_MEMBER_FUNCT();
-
+	m_cam->reconstructFrame(frame, m_cam->getFrameBufferPtr(frame));
 	HwFrameInfoType frame_info;
 	frame_info.acq_frame_nb = frame;
 	bool cont_acq = m_cam->m_buffer_cb_mgr->newFrameReady(frame_info);
@@ -769,6 +776,13 @@ void Camera::stopAcq()
 		THROW_HW_ERROR(Error) << "Camera not Idle";
 }
 
+void Camera::reconstructFrame(int frame, void *bptr)
+{
+	DEB_MEMBER_FUNCT();
+	if (m_model)
+		m_model->reconstructFrame(frame, bptr);
+}
+
 void Camera::receiverFrameFinished(int frame, Receiver *recv)
 {
 	DEB_MEMBER_FUNCT();
@@ -810,6 +824,8 @@ Eiger::Eiger(Camera *cam)
 {
 	DEB_CONSTRUCTOR();
 
+	m_nb_det_modules = m_cam->getNbDetModules();
+	DEB_TRACE() << "Using Eiger detector, " << DEB_VAR1(m_nb_det_modules);
 }
 
 int Eiger::getPacketLen()
@@ -836,7 +852,7 @@ void Eiger::getFrameDim(FrameDim& frame_dim, bool raw)
 	DEB_PARAM() << DEB_VAR1(raw);
 	getRecvFrameDim(frame_dim, raw, true);
 	Size size = frame_dim.getSize();
-	size *= Point(1, m_cam->getNbDetModules());
+	size *= Point(1, m_nb_det_modules);
 	frame_dim.setSize(size);
 	DEB_RETURN() << DEB_VAR1(frame_dim);
 }
@@ -926,3 +942,41 @@ int Eiger::processRecvPacket(int recv_idx, int frame, char *dptr, int dsize,
 	return packet_idx;
 }
 
+void Eiger::reconstructFrame(int frame, void *bptr)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(frame);
+
+	DEB_ALWAYS() << DEB_VAR1(frame);
+
+	AutoPtr<ChipBorderCorrectBase> corr;
+	ImageType image_type = m_recv_frame_dim.getImageType();
+	switch (image_type) {
+	case Bpp8:
+		corr = new ChipBorderCorrect<Byte>(this);
+		break;
+	case Bpp16:
+		corr = new ChipBorderCorrect<Word>(this);
+		break;
+	case Bpp32:
+		corr = new ChipBorderCorrect<Long>(this);
+		break;
+	default:
+		THROW_HW_ERROR(NotSupported) 
+			<< "Eiger reconstruction not supported for " 
+			<< image_type;
+	}
+
+	corr->correctFrame(bptr);
+
+}
+
+double Eiger::getBorderCorrectFactor(int det, int line)
+{
+	DEB_MEMBER_FUNCT();
+	switch (line) {
+	case 0: return 2.0;
+	case 1: return 1.3;
+	default: return 1;
+	}
+}

@@ -133,7 +133,9 @@ public:
 		virtual int processRecvPacket(int recv_idx, int frame, 
 					      char *dptr, int dsize, 
 					      Mutex& lock, char *bptr) = 0;
-	
+
+		virtual void reconstructFrame(int frame, void *bptr);
+
 		Camera *m_cam;
 		Type m_type;
 	
@@ -238,6 +240,8 @@ public:
 
 	const FrameMap& getRecvMap()
 	{ return m_recv_map; }
+
+	void reconstructFrame(int frame, void *bptr);
 
 private:
 	typedef RegEx::SingleMatchType SingleMatch;
@@ -400,6 +404,7 @@ class Eiger : public Camera::Model
 
  public:
 	typedef unsigned char Byte;
+	typedef unsigned short Word;
 	typedef unsigned int Long;
 
 	struct Packet 
@@ -435,13 +440,132 @@ class Eiger : public Camera::Model
 				      char *dptr, int dsize, Mutex& lock, 
 				      char *bptr);
 
-	void getRecvFrameDim(FrameDim& frame_dim, bool raw, bool geom);
+	virtual void reconstructFrame(int frame, void *bptr);
 
  private:
+	class ChipBorderCorrectBase
+	{
+	public:
+		ChipBorderCorrectBase(Eiger *eiger)
+			: m_eiger(eiger)
+		{
+			m_nb_modules = m_eiger->m_nb_det_modules / 2;
+			Size recv_size = m_eiger->m_recv_frame_dim.getSize();
+			m_mod_size = recv_size * Point(1, 2);
+			m_size = m_mod_size * Point(1, m_nb_modules);
+		}
+		virtual ~ChipBorderCorrectBase()
+		{}
+
+		virtual void correctFrame(void *ptr) = 0;
+
+	protected:
+		Eiger *m_eiger;
+		int m_nb_modules;
+		Size m_mod_size;
+		Size m_size;
+	};
+
+	template <class T>
+	class ChipBorderCorrect : public ChipBorderCorrectBase
+	{
+	public:
+		ChipBorderCorrect(Eiger *eiger)
+			: ChipBorderCorrectBase(eiger)
+		{}
+
+	protected:
+		virtual void correctFrame(void *ptr)
+		{
+			correctBorderCols(ptr);
+			correctBorderRows(ptr);
+			correctInterChipCols(ptr);
+			correctInterChipRows(ptr);
+		}
+
+	private:
+		static void correctInterChipLine(T *d, int offset, int nb_iter, 
+						 int step) 
+		{
+			for (int i = 0; i < nb_iter; ++i, d += step)
+				d[0] = d[offset] /= 2;
+		}
+
+		static void correctBorderLine(T *d, int nb_iter, int step,
+					      double f) 
+		{
+			for (int i = 0; i < nb_iter; ++i, d += step)
+				d[0] /= f;
+		}
+
+		void correctInterChipCols(void *ptr)
+		{
+			int width = m_size.getWidth();
+			int height= m_size.getHeight();
+			T *d = static_cast<T *>(ptr);
+			for (int i = 0; i < HalfModuleChips - 1; ++i) {
+				d += ChipSize;
+				correctInterChipLine(d++, -1, height, width);
+				correctInterChipLine(d++, 1, height, width);
+			}
+		}
+
+		void correctInterChipRows(void *ptr)
+		{
+			int width = m_size.getWidth();
+			int mod_height = m_mod_size.getHeight();
+			T *p = static_cast<T *>(ptr);
+			for (int i = 0; i < m_nb_modules; ++i) {
+				T *d = p + ChipSize * width;
+				correctInterChipLine(d, -width, width, 1);
+				d += width;
+				correctInterChipLine(d, width, width, 1);
+				p += mod_height * width;
+			}
+		}
+
+		void correctBorderCols(void *ptr)
+		{
+			int width = m_size.getWidth();
+			int height= m_size.getHeight();
+			T *d = static_cast<T *>(ptr);
+			correctBorderLine(d, height, width, 2);
+			d += width - 1;
+			correctBorderLine(d, height, width, 2);
+		}
+
+		void correctBorderRows(void *ptr)
+		{
+			int width = m_size.getWidth();
+			int mod_height = m_mod_size.getHeight();
+			T *p = static_cast<T *>(ptr);
+			for (int i = 0; i < m_nb_modules; ++i) {
+				double f0, f1;
+				f0 = m_eiger->getBorderCorrectFactor(i, 0);
+				f1 = m_eiger->getBorderCorrectFactor(i, 1);
+
+				T *d = p;
+				correctBorderLine(d, width, 1, f0);
+				d += width;
+				correctBorderLine(d, width, 1, f1);
+				d += (mod_height - 3) * width;
+				correctBorderLine(d, width, 1, f1);
+				d += width;
+				correctBorderLine(d, width, 1, f0);
+				p += mod_height * width;
+			}
+		}
+	};
+
+	void getRecvFrameDim(FrameDim& frame_dim, bool raw, bool geom);
+
+	double getBorderCorrectFactor(int det, int line);
+
 	static const int ChipSize;
 	static const int ChipGap;
 	static const int HalfModuleChips;
 
+	int m_nb_det_modules;
 	bool m_raw;
 	FrameDim m_recv_frame_dim;
 	int m_recv_half_frame_packets;
