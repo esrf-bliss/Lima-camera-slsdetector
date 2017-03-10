@@ -520,7 +520,8 @@ void Camera::AcqThread::threadFunction()
 bool Camera::AcqThread::newFrameReady(int frame)
 {
 	DEB_MEMBER_FUNCT();
-	m_cam->reconstructFrame(frame, m_cam->getFrameBufferPtr(frame));
+	if (!m_cam->m_save_raw)
+		m_cam->reconstructFrame(frame, m_cam->getFrameBufferPtr(frame));
 	HwFrameInfoType frame_info;
 	frame_info.acq_frame_nb = frame;
 	bool cont_acq = m_cam->m_buffer_cb_mgr->newFrameReady(frame_info);

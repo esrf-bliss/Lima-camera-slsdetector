@@ -66,7 +66,9 @@ void DetInfoCtrlObj::getMaxImageSize(Size& max_image_size)
 {
 	DEB_MEMBER_FUNCT();
 	FrameDim max_frame_dim;
-	m_cam.getFrameDim(max_frame_dim);
+	bool raw;
+	m_cam.getSaveRaw(raw);
+	m_cam.getFrameDim(max_frame_dim, raw);
 	max_image_size = max_frame_dim.getSize();
 
 }
@@ -75,7 +77,9 @@ void DetInfoCtrlObj::getDetectorImageSize(Size& det_image_size)
 {
 	DEB_MEMBER_FUNCT();
 	FrameDim frame_dim;
-	m_cam.getFrameDim(frame_dim);
+	bool raw;
+	m_cam.getSaveRaw(raw);
+	m_cam.getFrameDim(frame_dim, raw);
 	det_image_size = frame_dim.getSize();
 }
 
@@ -83,7 +87,9 @@ void DetInfoCtrlObj::getDefImageType(ImageType& def_image_type)
 {
 	DEB_MEMBER_FUNCT();
 	FrameDim frame_dim;
-	m_cam.getFrameDim(frame_dim);
+	bool raw;
+	m_cam.getSaveRaw(raw);
+	m_cam.getFrameDim(frame_dim, raw);
 	def_image_type = frame_dim.getImageType();
 }
 
@@ -91,7 +97,9 @@ void DetInfoCtrlObj::getCurrImageType(ImageType& curr_image_type)
 {
 	DEB_MEMBER_FUNCT();
 	FrameDim frame_dim;
-	m_cam.getFrameDim(frame_dim);
+	bool raw;
+	m_cam.getSaveRaw(raw);
+	m_cam.getFrameDim(frame_dim, raw);
 	curr_image_type = frame_dim.getImageType();
 }
 
@@ -122,7 +130,9 @@ void DetInfoCtrlObj::getDetectorModel(string& det_model)
 {
 	DEB_MEMBER_FUNCT();
 	FrameDim max_frame_dim;
-	m_cam.getFrameDim(max_frame_dim);
+	bool raw;
+	m_cam.getSaveRaw(raw);
+	m_cam.getFrameDim(max_frame_dim, raw);
 	Size image_size = max_frame_dim.getSize();
 	int nb_pixels = image_size.getWidth() * image_size.getHeight();
 	ostringstream os;
