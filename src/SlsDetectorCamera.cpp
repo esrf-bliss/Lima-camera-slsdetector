@@ -772,6 +772,7 @@ void Camera::stopAcq()
 void Camera::receiverFrameFinished(int frame, Receiver *recv)
 {
 	DEB_MEMBER_FUNCT();
+	DEB_RECV_FRAME() << DEB_VAR2(frame, recv->m_idx);
 	m_recv_map.frameItemFinished(frame, recv->m_idx);
 }
 
@@ -799,6 +800,10 @@ string Camera::getStatus()
 	DEB_MEMBER_FUNCT();
 	return getCmd("status");
 }
+
+const int Eiger::ChipSize = 256;
+const int Eiger::ChipGap = 2;
+const int Eiger::HalfModuleChips = 4;
 
 Eiger::Eiger(Camera *cam)
 	: Camera::Model(cam, Camera::EigerDet)
@@ -829,14 +834,14 @@ void Eiger::getFrameDim(FrameDim& frame_dim, bool raw)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(raw);
-	getRecvFrameDim(frame_dim, true, raw);
+	getRecvFrameDim(frame_dim, raw, true);
 	Size size = frame_dim.getSize();
 	size *= Point(1, m_cam->getNbDetModules());
 	frame_dim.setSize(size);
 	DEB_RETURN() << DEB_VAR1(frame_dim);
 }
 
-void Eiger::getRecvFrameDim(FrameDim& frame_dim, bool geom, bool raw)
+void Eiger::getRecvFrameDim(FrameDim& frame_dim, bool raw, bool geom)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(raw);
@@ -845,10 +850,10 @@ void Eiger::getRecvFrameDim(FrameDim& frame_dim, bool geom, bool raw)
 		frame_dim.setSize(Size(getPacketLen(), getRecvFramePackets()));
 	} else {
 		frame_dim.setImageType(m_cam->getImageType());
-		Size size(EIGER_CHIP_SIZE, EIGER_CHIP_SIZE);
-		size *= Point(EIGER_HALF_MODULE_CHIPS, 2);
+		Size size(ChipSize, ChipSize);
+		size *= Point(HalfModuleChips, 2);
 		if (geom)
-			size += Point(2, 2) * Point(3, 1);
+			size += Point(ChipGap, ChipGap) * Point(3, 1);
 		frame_dim.setSize(size / Point(1, 2));
 	}
 	DEB_RETURN() << DEB_VAR1(frame_dim);
@@ -863,7 +868,7 @@ int Eiger::processRecvStart(int recv_idx, int dsize)
 			      << DEB_VAR2(dsize, getPacketLen());
 
 	m_cam->getSaveRaw(m_raw);
-	getRecvFrameDim(m_recv_frame_dim, true, m_raw);
+	getRecvFrameDim(m_recv_frame_dim, m_raw, true);
 	m_recv_half_frame_packets = getRecvFramePackets() / 2;
 
 	DEB_TRACE() << DEB_VAR3(m_raw, m_recv_frame_dim, 
@@ -879,36 +884,43 @@ int Eiger::processRecvPacket(int recv_idx, int frame, char *dptr, int dsize,
 
 	Packet *p = static_cast<Packet *>(static_cast<void *>(dptr));
 	bool second_half = p->pre.flags & 0x20;
-	int packet_idx = p->pre.idx;
-	if (second_half)
-		packet_idx += m_recv_half_frame_packets;
+	int half_packet_idx = p->pre.idx;
+	int packet_idx = second_half ? m_recv_half_frame_packets : 0;
+	packet_idx += half_packet_idx;
 	bool top_half_recv = (recv_idx % 2 == 0);
 
 	DEB_RECV_PACKET() << DEB_VAR4(frame, dsize, recv_idx, packet_idx);
 
-	int recv_size = m_recv_frame_dim.getMemSize();
+	const FrameDim& frame_dim = m_recv_frame_dim;
+	const Size& size = frame_dim.getSize();
+	int depth = frame_dim.getDepth();
+	int dlw = size.getWidth() * depth;		// dest line width
+	int recv_size = frame_dim.getMemSize();
+	char *dest = bptr + recv_size * recv_idx;	
 
 	if (m_raw) {
-		int xfer_len = getPacketLen();
-		char *dest = (bptr + recv_size * recv_idx + 
-			      xfer_len * packet_idx);
-		memcpy(dest, dptr, xfer_len);
+		dest += dlw * packet_idx;
+		memcpy(dest, dptr, dlw);
 	} else {
-		int xfer_len = sizeof(p->data);
-		char *src = p->data;
-		int plw = EIGER_HALF_MODULE_CHIPS / 2 * EIGER_CHIP_SIZE;
-		plw *= m_recv_frame_dim.getDepth();
-		int plnb = xfer_len / plw;
-		int dlw = 2 * plw;
-		char *dest = bptr + recv_size * recv_idx;
+		int plw = ChipSize * depth;		// packet line width
+		int pchips = HalfModuleChips / 2;
+		int plines = sizeof(p->data) / plw / pchips;
 		if (top_half_recv) {
-			dest += (EIGER_CHIP_SIZE - 1) * dlw;
+			dest += (ChipSize - 1) * dlw;
 			dlw *= -1;
+		} else {
+			dest += dlw * (ChipGap / 2);
 		}
+		dest += half_packet_idx * plines * dlw;
+		int clw = plw + ChipGap * depth;	// chip line width
 		bool right_side = (second_half == top_half_recv);
-		dest += p->pre.idx * dlw * plnb + right_side ? plw : 0;
-		for (int i = 0; i < plnb; ++i, src += plw, dest += dlw)
-			memcpy(dest, src, plw);
+		dest += right_side ? pchips * clw : 0;
+		char *src = p->data;
+		for (int i = 0; i < plines; ++i, dest += dlw) {
+			char *d = dest;
+			for (int j = 0; j < pchips; ++j, src += plw, d += clw)
+				memcpy(d, src, plw);
+		}
 	}
 
 	return packet_idx;

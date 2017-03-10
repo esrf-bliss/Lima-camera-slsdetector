@@ -392,9 +392,6 @@ std::ostream& operator <<(std::ostream& os, const Camera::FrameMap::List& l);
 std::ostream& operator <<(std::ostream& os, const Camera::FrameMap::Map& m);
 
 
-#define EIGER_CHIP_SIZE		256
-#define EIGER_BORDER_PIXELS	1
-#define EIGER_HALF_MODULE_CHIPS	4
 #define EIGER_PACKET_DATA_LEN	(4 * 1024)
 
 class Eiger : public Camera::Model
@@ -438,9 +435,13 @@ class Eiger : public Camera::Model
 				      char *dptr, int dsize, Mutex& lock, 
 				      char *bptr);
 
-	void getRecvFrameDim(FrameDim& frame_dim, bool geom, bool raw);
+	void getRecvFrameDim(FrameDim& frame_dim, bool raw, bool geom);
 
  private:
+	static const int ChipSize;
+	static const int ChipGap;
+	static const int HalfModuleChips;
+
 	bool m_raw;
 	FrameDim m_recv_frame_dim;
 	int m_recv_half_frame_packets;
