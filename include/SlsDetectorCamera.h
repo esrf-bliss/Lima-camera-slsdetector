@@ -28,6 +28,8 @@
 #include "slsReceiverUsers.h"
 #include "receiver_defs.h"
 
+#include "processlib/LinkTask.h"
+
 #include "lima/SizeUtils.h"
 #include "lima/RegExUtils.h"
 #include "lima/ThreadUtils.h"
@@ -109,7 +111,7 @@ class Camera
 
 public:
 	enum Type {
-		GenericDet, EigerDet, JungfrauDet,
+		UnknownDet, GenericDet, EigerDet, JungfrauDet,
 	};
 	
 	class Model
@@ -122,6 +124,15 @@ public:
 		virtual void getFrameDim(FrameDim& frame_dim, 
 					 bool raw = false) = 0;
 		
+		Camera *getCamera()
+		{ return m_cam; }
+
+		Type getType()
+		{ return m_type; }
+
+		virtual std::string getName() = 0;
+		virtual void getPixelSize(double& x_size, double& y_size) = 0;
+
 	protected:
 		void putCmd(const std::string& s, int idx = -1);
 		std::string getCmd(const std::string& s, int idx = -1);
@@ -134,13 +145,10 @@ public:
 					      char *dptr, int dsize, 
 					      Mutex& lock, char *bptr) = 0;
 
-		virtual void reconstructFrame(int frame, void *bptr);
-
-		Camera *m_cam;
-		Type m_type;
-	
 	private:
 		friend class Camera;
+		Camera *m_cam;
+		Type m_type;
 	};
 
 	class FrameMap
@@ -199,8 +207,10 @@ public:
 	Camera(std::string config_fname);
 	virtual ~Camera();
 
-	Model& getModel()
-	{ return *m_model; }
+	Type getType();
+
+	Model *getModel()
+	{ return m_model; }
 
 	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr)
 	{ m_buffer_cb_mgr = buffer_cb_mgr; }
@@ -240,8 +250,6 @@ public:
 
 	const FrameMap& getRecvMap()
 	{ return m_recv_map; }
-
-	void reconstructFrame(int frame, void *bptr);
 
 private:
 	typedef RegEx::SingleMatchType SingleMatch;
@@ -354,6 +362,8 @@ private:
 
 	friend class Model;
 
+	void setModel(Model *model);
+
 	AutoMutex lock()
 	{ return AutoMutex(m_cond.mutex()); }
 
@@ -369,7 +379,7 @@ private:
 	void putCmd(const std::string& s, int idx = -1);
 	std::string getCmd(const std::string& s, int idx = -1);
 
-	AutoPtr<Model> m_model;
+	Model *m_model;
 	Cond m_cond;
 	AutoPtr<AppInputData> m_input_data;
 	RecvList m_recv_list;
@@ -427,9 +437,45 @@ class Eiger : public Camera::Model
 		} post;
 	};
 
+	class ChipBorderCorrBase
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::ChipBorderCorrBase", 
+				  "SlsDetector");
+	public:
+		ChipBorderCorrBase(Eiger *eiger);
+		virtual ~ChipBorderCorrBase();
+
+		virtual void correctFrame(int frame, void *ptr) = 0;
+	protected:
+		int m_nb_modules;
+		Size m_mod_size;
+		Size m_size;
+		std::vector<int> m_inter_lines;
+	};
+
+	class Correction : public LinkTask
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Correction", 
+				  "SlsDetector");
+	public:
+		Correction(Eiger *eiger);
+		virtual ~Correction();
+
+		virtual Data process(Data& data);
+	private:
+		bool m_raw;
+		AutoPtr<ChipBorderCorrBase> m_corr;
+	};
+
 	Eiger(Camera *cam);
 	
 	virtual void getFrameDim(FrameDim& frame_dim, bool raw = false);
+
+	virtual std::string getName();
+	virtual void getPixelSize(double& x_size, double& y_size);
+
+	// the returned object must be deleted by the caller
+	Correction *createCorrectionTask();
 
  protected:
 	virtual int getPacketLen();
@@ -440,42 +486,27 @@ class Eiger : public Camera::Model
 				      char *dptr, int dsize, Mutex& lock, 
 				      char *bptr);
 
-	virtual void reconstructFrame(int frame, void *bptr);
-
  private:
-	class ChipBorderCorrectBase
-	{
-	public:
-		ChipBorderCorrectBase(Eiger *eiger)
-			: m_eiger(eiger)
-		{
-			m_nb_modules = m_eiger->m_nb_det_modules / 2;
-			Size recv_size = m_eiger->m_recv_frame_dim.getSize();
-			m_mod_size = recv_size * Point(1, 2);
-			m_size = m_mod_size * Point(1, m_nb_modules);
-		}
-		virtual ~ChipBorderCorrectBase()
-		{}
-
-		virtual void correctFrame(void *ptr) = 0;
-
-	protected:
-		Eiger *m_eiger;
-		int m_nb_modules;
-		Size m_mod_size;
-		Size m_size;
-	};
+	friend class Correction;
 
 	template <class T>
-	class ChipBorderCorrect : public ChipBorderCorrectBase
+	class ChipBorderCorr : public ChipBorderCorrBase
 	{
 	public:
-		ChipBorderCorrect(Eiger *eiger)
-			: ChipBorderCorrectBase(eiger)
-		{}
+		ChipBorderCorr(Eiger *eiger)
+			: ChipBorderCorrBase(eiger)
+		{
+			m_f.resize(m_nb_modules);
+			std::vector<BorderFactor>::iterator it = m_f.begin();
+			for (int i = 0; i < m_nb_modules; ++i, ++it) {
+				it->resize(2);
+				(*it)[0] = eiger->getBorderCorrFactor(i, 0);
+				(*it)[1] = eiger->getBorderCorrFactor(i, 1);
+			}
+		}
 
 	protected:
-		virtual void correctFrame(void *ptr)
+		virtual void correctFrame(int frame, void *ptr)
 		{
 			correctBorderCols(ptr);
 			correctBorderRows(ptr);
@@ -484,6 +515,8 @@ class Eiger : public Camera::Model
 		}
 
 	private:
+		typedef std::vector<double> BorderFactor;
+
 		static void correctInterChipLine(T *d, int offset, int nb_iter, 
 						 int step) 
 		{
@@ -520,8 +553,9 @@ class Eiger : public Camera::Model
 				correctInterChipLine(d, -width, width, 1);
 				d += width;
 				correctInterChipLine(d, width, width, 1);
-				int inter_lines = m_eiger->getInterModuleGap(i);
-				p += (mod_height + inter_lines) * width;
+				if (i == m_nb_modules - 1)
+					continue;
+				p += (mod_height + m_inter_lines[i]) * width;
 			}
 		}
 
@@ -541,27 +575,27 @@ class Eiger : public Camera::Model
 			int mod_height = m_mod_size.getHeight();
 			T *p = static_cast<T *>(ptr);
 			for (int i = 0; i < m_nb_modules; ++i) {
-				double f0, f1;
-				f0 = m_eiger->getBorderCorrectFactor(i, 0);
-				f1 = m_eiger->getBorderCorrectFactor(i, 1);
-
+				double f0 = m_f[i][0], f1 = m_f[i][1];
 				T *d = p;
 				correctBorderLine(d, width, 1, f0);
 				d += width;
 				correctBorderLine(d, width, 1, f1);
-				d += (mod_height - 3) * width;
+				d += (mod_height - 1 - 2) * width;
 				correctBorderLine(d, width, 1, f1);
 				d += width;
 				correctBorderLine(d, width, 1, f0);
-				int inter_lines = m_eiger->getInterModuleGap(i);
-				p += (mod_height + inter_lines) * width;
+				p += (mod_height + m_inter_lines[i]) * width;
 			}
 		}
+
+		std::vector<BorderFactor> m_f;
 	};
 
 	void getRecvFrameDim(FrameDim& frame_dim, bool raw, bool geom);
 
-	double getBorderCorrectFactor(int det, int line);
+	ChipBorderCorrBase *createChipBorderCorr(ImageType image_type);
+
+	double getBorderCorrFactor(int det, int line);
 	int getInterModuleGap(int det);
 
 	static const int ChipSize;

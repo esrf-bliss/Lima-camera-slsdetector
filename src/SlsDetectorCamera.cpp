@@ -126,11 +126,16 @@ Camera::Model::Model(Camera *cam, Type type)
 {
 	DEB_CONSTRUCTOR();
 	DEB_PARAM() << DEB_VAR1(type);
+
+	m_cam->setModel(this);
 }
 
 Camera::Model::~Model()
 {
 	DEB_DESTRUCTOR();
+
+	if (m_cam)
+		m_cam->setModel(NULL);
 }
 
 void Camera::Model::putCmd(const string& s, int idx)
@@ -144,13 +149,6 @@ string Camera::Model::getCmd(const string& s, int idx)
 	DEB_MEMBER_FUNCT();
 	return m_cam->getCmd(s, idx);
 }
-
-void Camera::Model::reconstructFrame(int frame, void *bptr)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(frame);
-}
-
 
 Camera::AppInputData::AppInputData(string cfg_fname) 
 	: config_file_name(cfg_fname)
@@ -298,8 +296,9 @@ void Camera::FrameMap::frameItemFinished(int frame, int item)
 
 ostream& lima::SlsDetector::operator <<(ostream& os, Camera::Type type)
 {
-	const char *name = "Unknown";
+	const char *name = "Invalid";
 	switch (type) {
+	case Camera::UnknownDet:	name = "Unknown";	break;
 	case Camera::GenericDet:	name = "Generic";	break;
 	case Camera::EigerDet:		name = "Eiger";		break;
 	case Camera::JungfrauDet:	name = "Jungfrau";	break;
@@ -520,8 +519,6 @@ void Camera::AcqThread::threadFunction()
 bool Camera::AcqThread::newFrameReady(int frame)
 {
 	DEB_MEMBER_FUNCT();
-	if (!m_cam->m_save_raw)
-		m_cam->reconstructFrame(frame, m_cam->getFrameBufferPtr(frame));
 	HwFrameInfoType frame_info;
 	frame_info.acq_frame_nb = frame;
 	bool cont_acq = m_cam->m_buffer_cb_mgr->newFrameReady(frame_info);
@@ -529,7 +526,8 @@ bool Camera::AcqThread::newFrameReady(int frame)
 }
 
 Camera::Camera(string config_fname) 
-	: m_image_type(Bpp16), 
+	: m_model(NULL),
+	  m_image_type(Bpp16), 
 	  m_save_raw(false),
 	  m_state(Idle)
 {
@@ -549,14 +547,6 @@ Camera::Camera(string config_fname)
 	DEB_TRACE() << "Creating the multiSlsDetectorCommand";
 	m_cmd = new multiSlsDetectorCommand(m_det);
 
-	string type_str = getCmd("type", 0);
-	if (type_str == "Eiger") {
-		m_model = new Eiger(this);
-	} else {
-		THROW_HW_ERROR(NotSupported) << "Unknown detector type: "
-					     << type_str;
-	}
-
 	setNbFrames(1);
 	setExpTime(0.99);
 	setFramePeriod(1.0);
@@ -565,7 +555,43 @@ Camera::Camera(string config_fname)
 Camera::~Camera()
 {
 	DEB_DESTRUCTOR();
+
+	if (!m_model)
+		return;
+
 	stopAcq();
+	m_model->m_cam = NULL;
+}
+
+Camera::Type Camera::getType()
+{
+	DEB_MEMBER_FUNCT();
+	string type_str = getCmd("type", 0);
+	Type det_type = UnknownDet;
+	if (type_str == "Generic") {
+		det_type = GenericDet;
+	} else if (type_str == "Eiger") {
+		det_type = EigerDet;
+	} else if (type_str == "Jungfrau") {
+		det_type = JungfrauDet;
+	}
+	DEB_RETURN() << DEB_VAR1(det_type);
+	return det_type;
+}
+
+void Camera::setModel(Model *model)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(model, m_model);
+	
+	if (model && (model->getType() != getType()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR2(getType(), 
+							 model->getType());
+	if (m_model == model)
+		return;
+	if (m_model)
+		m_model->m_cam = NULL;
+	m_model = model;
 }
 
 char *Camera::getFrameBufferPtr(int frame_nb)
@@ -732,6 +758,8 @@ void Camera::prepareAcq()
 
 	if (!m_buffer_cb_mgr)
 		THROW_HW_ERROR(Error) << "No BufferCbMgr defined";
+	if (!m_model)
+		THROW_HW_ERROR(Error) << "No BufferCbMgr defined";
 
 	waitNotState(Stopping);
 	if (getState() != Idle)
@@ -777,13 +805,6 @@ void Camera::stopAcq()
 		THROW_HW_ERROR(Error) << "Camera not Idle";
 }
 
-void Camera::reconstructFrame(int frame, void *bptr)
-{
-	DEB_MEMBER_FUNCT();
-	if (m_model)
-		m_model->reconstructFrame(frame, bptr);
-}
-
 void Camera::receiverFrameFinished(int frame, Receiver *recv)
 {
 	DEB_MEMBER_FUNCT();
@@ -820,12 +841,67 @@ const int Eiger::ChipSize = 256;
 const int Eiger::ChipGap = 2;
 const int Eiger::HalfModuleChips = 4;
 
+Eiger::ChipBorderCorrBase::ChipBorderCorrBase(Eiger *eiger)
+{
+	DEB_CONSTRUCTOR();
+
+	m_nb_modules = eiger->m_nb_det_modules / 2;
+	Size recv_size = eiger->m_recv_frame_dim.getSize();
+	m_mod_size = recv_size * Point(1, 2);
+	m_size = m_mod_size * Point(1, m_nb_modules);
+	m_inter_lines.resize(m_nb_modules);
+	for (int i = 0; i < m_nb_modules - 1; ++i) {
+		m_inter_lines[i] = eiger->getInterModuleGap(i);
+		m_size += Point(0, m_inter_lines[i]);
+	}
+	m_inter_lines[m_nb_modules - 1] = 0;
+}
+
+Eiger::ChipBorderCorrBase::~ChipBorderCorrBase()
+{
+	DEB_DESTRUCTOR();
+}
+
+Eiger::Correction::Correction(Eiger *eiger)
+{
+	DEB_CONSTRUCTOR();
+
+	eiger->getCamera()->getSaveRaw(m_raw);
+	ImageType image_type = eiger->getCamera()->getImageType();
+	m_corr = eiger->createChipBorderCorr(image_type);
+}
+
+Eiger::Correction::~Correction()
+{
+	DEB_DESTRUCTOR();
+}
+
+Data Eiger::Correction::process(Data& data)
+{
+	DEB_MEMBER_FUNCT();
+
+	Data ret = data;
+
+	if (!_processingInPlaceFlag) {
+		int size = data.size();
+		Buffer *buffer = new Buffer(size);
+		memcpy(buffer->data, data.data(), size);
+		ret.setBuffer(buffer);
+		buffer->unref();
+	}
+
+	if (!m_raw) 
+		m_corr->correctFrame(ret.frameNumber, ret.data());
+		
+	return ret;
+}
+
 Eiger::Eiger(Camera *cam)
 	: Camera::Model(cam, Camera::EigerDet)
 {
 	DEB_CONSTRUCTOR();
 
-	m_nb_det_modules = m_cam->getNbDetModules();
+	m_nb_det_modules = getCamera()->getNbDetModules();
 	DEB_TRACE() << "Using Eiger detector, " << DEB_VAR1(m_nb_det_modules);
 }
 
@@ -869,7 +945,7 @@ void Eiger::getRecvFrameDim(FrameDim& frame_dim, bool raw, bool geom)
 		frame_dim.setImageType(Bpp8);
 		frame_dim.setSize(Size(getPacketLen(), getRecvFramePackets()));
 	} else {
-		frame_dim.setImageType(m_cam->getImageType());
+		frame_dim.setImageType(getCamera()->getImageType());
 		Size size(ChipSize, ChipSize);
 		size *= Point(HalfModuleChips, 2);
 		if (geom)
@@ -877,6 +953,30 @@ void Eiger::getRecvFrameDim(FrameDim& frame_dim, bool raw, bool geom)
 		frame_dim.setSize(size / Point(1, 2));
 	}
 	DEB_RETURN() << DEB_VAR1(frame_dim);
+}
+
+string Eiger::getName()
+{
+	DEB_MEMBER_FUNCT();
+	ostringstream os;
+	os << "PSI/Eiger-";
+	if (m_nb_det_modules == 1) {
+		os << "500K";
+	} else if (m_nb_det_modules == 8) {
+		os << "2M";
+	} else {
+		os << m_nb_det_modules << "-Modules";
+	}
+	string name = os.str();
+	DEB_RETURN() << DEB_VAR1(name);
+	return name;
+}
+
+void Eiger::getPixelSize(double& x_size, double& y_size)
+{
+	DEB_MEMBER_FUNCT();
+	x_size = y_size = 75e-6;
+	DEB_RETURN() << DEB_VAR2(x_size, y_size);
 }
 
 int Eiger::processRecvStart(int recv_idx, int dsize)
@@ -887,7 +987,7 @@ int Eiger::processRecvStart(int recv_idx, int dsize)
 		DEB_WARNING() << "!!!! Warning !!!! " 
 			      << DEB_VAR2(dsize, getPacketLen());
 
-	m_cam->getSaveRaw(m_raw);
+	getCamera()->getSaveRaw(m_raw);
 	getRecvFrameDim(m_recv_frame_dim, m_raw, true);
 	m_recv_half_frame_packets = getRecvFramePackets() / 2;
 
@@ -949,36 +1049,37 @@ int Eiger::processRecvPacket(int recv_idx, int frame, char *dptr, int dsize,
 	return packet_idx;
 }
 
-void Eiger::reconstructFrame(int frame, void *bptr)
+Eiger::Correction *Eiger::createCorrectionTask()
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(frame);
+	return new Correction(this);
+}
 
-	DEB_ALWAYS() << DEB_VAR1(frame);
+Eiger::ChipBorderCorrBase *Eiger::createChipBorderCorr(ImageType image_type)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(image_type);
 
-	AutoPtr<ChipBorderCorrectBase> corr;
-	ImageType image_type = m_recv_frame_dim.getImageType();
+	ChipBorderCorrBase *corr;
 	switch (image_type) {
 	case Bpp8:
-		corr = new ChipBorderCorrect<Byte>(this);
+		corr = new ChipBorderCorr<Byte>(this);
 		break;
 	case Bpp16:
-		corr = new ChipBorderCorrect<Word>(this);
+		corr = new ChipBorderCorr<Word>(this);
 		break;
 	case Bpp32:
-		corr = new ChipBorderCorrect<Long>(this);
+		corr = new ChipBorderCorr<Long>(this);
 		break;
 	default:
 		THROW_HW_ERROR(NotSupported) 
-			<< "Eiger reconstruction not supported for " 
-			<< image_type;
+			<< "Eiger correction not supported for " << image_type;
 	}
 
-	corr->correctFrame(bptr);
-
+	return corr;
 }
 
-double Eiger::getBorderCorrectFactor(int det, int line)
+double Eiger::getBorderCorrFactor(int det, int line)
 {
 	DEB_MEMBER_FUNCT();
 	switch (line) {
@@ -990,5 +1091,9 @@ double Eiger::getBorderCorrectFactor(int det, int line)
 
 int Eiger::getInterModuleGap(int det)
 {
+	DEB_MEMBER_FUNCT();
+	if (det >= m_nb_det_modules - 1)
+		THROW_HW_ERROR(InvalidValue) << "Invalid " << DEB_VAR1(det);
 	return 25;
 }
+

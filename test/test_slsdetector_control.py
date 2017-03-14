@@ -106,6 +106,14 @@ class SlsDetectorAcq:
         self.m_cam           = SlsDetector.Camera(config_fname)
         self.m_hw_inter      = SlsDetector.Interface(self.m_cam)
         self.m_acq_state     = Core.AcqState()
+
+        self.m_corr = None
+        if self.m_cam.getType() == SlsDetector.Camera.EigerDet:
+            self.m_eiger = SlsDetector.Eiger(self.m_cam)
+            self.m_corr = self.m_eiger.createCorrectionTask()
+        else:
+            deb.Warning("Non-supported type: %s" % self.m_cam.getType())
+
         self.m_ct            = Core.CtControl(self.m_hw_inter)
         self.m_ct_acq        = self.m_ct.acquisition()
         self.m_ct_saving     = self.m_ct.saving()
@@ -117,6 +125,9 @@ class SlsDetectorAcq:
         self.m_print_time    = print_time
         self.m_sleep_time    = sleep_time
         
+        if self.m_corr:
+            self.m_ct.setReconstructionTask(self.m_corr)
+
         if self.m_use_events:
             cb = ImageStatusCallback(self.m_ct, self.m_acq_state, print_time,
                                      sleep_time, all_frames)
@@ -134,6 +145,8 @@ class SlsDetectorAcq:
             
         del self.m_ct_buffer, self.m_ct_image, self.m_ct_saving, self.m_ct_acq
         del self.m_ct;			gc.collect()
+        del self.m_corr;		gc.collect()
+        del self.m_eiger;		gc.collect()
         del self.m_acq_state;		gc.collect()
         del self.m_hw_inter;		gc.collect()
         del self.m_cam;			gc.collect()

@@ -39,6 +39,39 @@ class Camera
 %End
 
 public:
+	enum Type {
+		GenericDet, EigerDet, JungfrauDet,
+	};
+
+	class Model
+	{
+	public:
+		Model(SlsDetector::Camera *cam, SlsDetector::Camera::Type type);
+		virtual ~Model();
+
+		virtual void getFrameDim(FrameDim& frame_dim /Out/,
+					 bool raw = false) = 0;
+
+		SlsDetector::Camera *getCamera();
+		SlsDetector::Camera::Type getType();
+
+		virtual std::string getName() = 0;
+		virtual void getPixelSize(double& x_size /Out/,
+					  double& y_size /Out/) = 0;
+
+	protected:
+		void putCmd(const std::string& s, int idx = -1);
+		std::string getCmd(const std::string& s, int idx = -1);
+
+		virtual int getPacketLen() = 0;
+		virtual int getRecvFramePackets() = 0;
+
+		virtual int processRecvStart(int recv_idx, int dsize) = 0;
+		virtual int processRecvPacket(int recv_idx, int frame,
+					      char *dptr, int dsize,
+					      Mutex& lock, char *bptr) = 0;
+	};
+
 	class FrameMap
 	{
 	public:
@@ -75,6 +108,9 @@ public:
 	Camera(std::string config_fname);
 	virtual ~Camera();
 
+	SlsDetector::Camera::Type getType();
+	SlsDetector::Camera::Model *getModel();
+
 	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr);
 
 	void setSaveRaw(bool  save_raw);
@@ -105,5 +141,41 @@ public:
 	const SlsDetector::Camera::FrameMap& getRecvMap();
 };
 
+
+class Eiger : public SlsDetector::Camera::Model
+{
+
+%TypeHeaderCode
+#include "SlsDetectorCamera.h"
+%End
+
+ public:
+	class Correction : public LinkTask
+	{
+	public:
+		Correction(SlsDetector::Eiger *eiger);
+		virtual ~Correction();
+
+		virtual Data process(Data& data);
+	};
+
+
+	Eiger(SlsDetector::Camera *cam);
+
+	virtual void getFrameDim(FrameDim& frame_dim /Out/, bool raw = false);
+	SlsDetector::Eiger::Correction *createCorrectionTask() /Factory/;
+
+	virtual std::string getName();
+	virtual void getPixelSize(double& x_size /Out/, double& y_size /Out/);
+
+ protected:
+	virtual int getPacketLen();
+	virtual int getRecvFramePackets();
+
+	virtual int processRecvStart(int recv_idx, int dsize);
+	virtual int processRecvPacket(int recv_idx, int frame,
+				      char *dptr, int dsize, Mutex& lock,
+				      char *bptr);
+};
 
 }; // namespace SlsDetector

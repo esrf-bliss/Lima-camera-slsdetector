@@ -115,7 +115,7 @@ void DetInfoCtrlObj::setCurrImageType(ImageType curr_image_type)
 void DetInfoCtrlObj::getPixelSize(double& x_size, double& y_size)
 {
 	DEB_MEMBER_FUNCT();
-	x_size = y_size = 75e-6;
+	m_cam.getModel()->getPixelSize(x_size, y_size);
 	DEB_RETURN() << DEB_VAR2(x_size, y_size);
 }
 
@@ -129,22 +129,7 @@ void DetInfoCtrlObj::getDetectorType(string& det_type)
 void DetInfoCtrlObj::getDetectorModel(string& det_model)
 {
 	DEB_MEMBER_FUNCT();
-	FrameDim max_frame_dim;
-	bool raw;
-	m_cam.getSaveRaw(raw);
-	m_cam.getFrameDim(max_frame_dim, raw);
-	Size image_size = max_frame_dim.getSize();
-	int nb_pixels = image_size.getWidth() * image_size.getHeight();
-	ostringstream os;
-	os << "PSI/Eiger-";
-	if (nb_pixels == 500 * 1024) {
-		os << "500K";
-	} else if (nb_pixels == 2 * 1024 * 1024) {
-		os << "2M";
-	} else {
-		os << m_cam.getNbDetModules() << "-Modules";
-	}
-	det_model = os.str();
+	det_model = m_cam.getModel()->getName();
 	DEB_RETURN() << DEB_VAR1(det_model);
 }
 

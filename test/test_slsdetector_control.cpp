@@ -128,7 +128,12 @@ private:
 	Interface		m_hw_inter;
 	AcqState		m_acq_state;
 
-	CtControl		*m_ct;
+	AutoPtr<Eiger>		m_eiger;
+	AutoPtr<Eiger::Correction> m_corr;
+
+	AutoPtr<ImageStatusCallback> m_img_status_cb;
+
+	AutoPtr<CtControl>	m_ct;
 	CtAcquisition		*m_ct_acq;
 	CtSaving		*m_ct_saving;
 	CtImage			*m_ct_image;
@@ -136,46 +141,49 @@ private:
 #ifdef WITH_SPS_IMAGE
 	CtSpsImage		*m_ct_display;
 #endif
-
-	ImageStatusCallback	*m_img_status_cb;
 };
 
 SlsDetectorAcq::SlsDetectorAcq(string config_fname)
-	: m_cam(config_fname), m_hw_inter(m_cam),
-	  m_ct(NULL), m_img_status_cb(NULL)
+	: m_cam(config_fname), m_hw_inter(m_cam)
 {
 	DEB_CONSTRUCTOR();
 
-	AutoPtr<CtControl> ct = new CtControl(&m_hw_inter);
+	switch (m_cam.getType()) {
+	case Camera::EigerDet:
+		m_eiger = new Eiger(&m_cam);
+		m_corr = new Eiger::Correction(m_eiger);
+		break;
+	default:
+		DEB_WARNING() << "Non-supported type: " << m_cam.getType();
+	}
 
-	m_ct_acq     = ct->acquisition();
-	m_ct_saving  = ct->saving();
-	m_ct_image   = ct->image();
-	m_ct_buffer  = ct->buffer();
+	m_ct = new CtControl(&m_hw_inter);
+
+	m_ct_acq     = m_ct->acquisition();
+	m_ct_saving  = m_ct->saving();
+	m_ct_image   = m_ct->image();
+	m_ct_buffer  = m_ct->buffer();
 #ifdef WITH_SPS_IMAGE
-	m_ct_display = ct->display();
+	m_ct_display = m_ct->display();
 #endif
 
 	printDefaults();
 
-	AutoPtr<ImageStatusCallback> img_status_cb;
-	img_status_cb = new ImageStatusCallback(*ct, m_acq_state);
-	ct->registerImageStatusCallback(*img_status_cb);
+	if (m_corr)
+		m_ct->setReconstructionTask(m_corr);
+
+	m_img_status_cb = new ImageStatusCallback(*m_ct, m_acq_state);
+	m_ct->registerImageStatusCallback(*m_img_status_cb);
 #ifdef WITH_SPS_IMAGE
 	m_ct_display->setNames("_ccd_ds_", "slsdetector_live");
 	m_ct_display->setActive(true);
 #endif
 	DEB_TRACE() << "All is OK!";
-	m_ct = ct.forget();
-	m_img_status_cb = img_status_cb.forget();
 }
 
 SlsDetectorAcq::~SlsDetectorAcq()
 {
 	DEB_DESTRUCTOR();
-
-	delete m_img_status_cb;
-	delete m_ct;
 }
 
 void SlsDetectorAcq::printDefaults()
