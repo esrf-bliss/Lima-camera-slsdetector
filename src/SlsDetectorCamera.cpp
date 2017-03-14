@@ -566,7 +566,15 @@ Camera::~Camera()
 Camera::Type Camera::getType()
 {
 	DEB_MEMBER_FUNCT();
-	string type_str = getCmd("type", 0);
+	string type_resp = getCmd("type");
+	ostringstream os;
+	os << "(([^+]+)\\+){" << getNbDetModules() << "}";
+	DEB_TRACE() << DEB_VAR1(os.str());
+	RegEx re(os.str());
+	FullMatch full_match;
+	if (!re.match(type_resp, full_match))
+		THROW_HW_ERROR(Error) << "Invalid type response: " << type_resp;
+	string type_str = full_match[2];
 	Type det_type = UnknownDet;
 	if (type_str == "Generic") {
 		det_type = GenericDet;
