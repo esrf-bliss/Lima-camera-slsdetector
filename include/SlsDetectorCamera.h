@@ -221,20 +221,9 @@ public:
 	void getSaveRaw(bool& save_raw)
 	{ save_raw = m_save_raw; }
 
-	void setNbFrames(int  nb_frames);
-	void getNbFrames(int& nb_frames);
-	void setExpTime(double  exp_time);
-	void getExpTime(double& exp_time);
-	void setFramePeriod(double  frame_period);
-	void getFramePeriod(double& frame_period);
-
 	State getState();
 	void waitState(State state);
 	State waitNotState(State state);
-
-	void prepareAcq();
-	void startAcq();
-	void stopAcq();
 
 	int getNbDetModules()
 	{ return m_input_data->host_name_list.size(); }
@@ -245,11 +234,30 @@ public:
 	void getFrameDim(FrameDim& frame_dim, bool raw = false)
 	{ m_model->getFrameDim(frame_dim, raw); }
 
+	const FrameMap& getRecvMap()
+	{ return m_recv_map; }
+
+	void putCmd(const std::string& s, int idx = -1);
+	std::string getCmd(const std::string& s, int idx = -1);
+
 	int getFramesCaught();
 	std::string getStatus();
 
-	const FrameMap& getRecvMap()
-	{ return m_recv_map; }
+	void setNbFrames(int  nb_frames);
+	void getNbFrames(int& nb_frames);
+	void setExpTime(double  exp_time);
+	void getExpTime(double& exp_time);
+	void setFramePeriod(double  frame_period);
+	void getFramePeriod(double& frame_period);
+
+	void setHighVoltage(int  hvolt);
+	void getHighVoltage(int& hvolt);
+	void setEnergyThreshold(int  thres);
+	void getEnergyThreshold(int& thres);
+
+	void prepareAcq();
+	void startAcq();
+	void stopAcq();
 
 private:
 	typedef RegEx::SingleMatchType SingleMatch;
@@ -376,8 +384,23 @@ private:
 	void receiverFrameFinished(int frame, Receiver *recv);
 	void frameFinished(int frame);
 
-	void putCmd(const std::string& s, int idx = -1);
-	std::string getCmd(const std::string& s, int idx = -1);
+	template <class T>
+	void putNbCmd(const std::string& cmd, T val, int idx = -1)
+	{
+		std::ostringstream os;
+		os << cmd << " " << val;
+		putCmd(os.str(), idx);
+	}
+
+	template <class T>
+	T getNbCmd(const std::string& cmd, int idx = -1)
+	{
+		std::string ans = getCmd(cmd, idx);
+		std::istringstream is(ans);
+		T val;
+		is >> val;
+		return val;
+	}
 
 	Model *m_model;
 	Cond m_cond;

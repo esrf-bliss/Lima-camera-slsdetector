@@ -679,9 +679,7 @@ void Camera::setNbFrames(int nb_frames)
 {
 	DEB_MEMBER_FUNCT();
 	putCmd("timing auto");
-	ostringstream os;
-	os << "frames " << nb_frames;
-	putCmd(os.str());
+	putNbCmd<int>("frames", nb_frames);
 	m_nb_frames = nb_frames;
 }
 
@@ -694,9 +692,7 @@ void Camera::getNbFrames(int& nb_frames)
 void Camera::setExpTime(double exp_time)
 {
 	DEB_MEMBER_FUNCT();
-	ostringstream os;
-	os << "exptime " << exp_time;
-	putCmd(os.str());
+	putNbCmd<double>("exptime", exp_time);
 	m_exp_time = exp_time;
 }
 
@@ -709,9 +705,7 @@ void Camera::getExpTime(double& exp_time)
 void Camera::setFramePeriod(double frame_period)
 {
 	DEB_MEMBER_FUNCT();
-	ostringstream os;
-	os << "period " << frame_period;
-	putCmd(os.str());
+	putNbCmd<double>("period", frame_period);
 	m_frame_period = frame_period;
 }
 
@@ -832,10 +826,8 @@ void Camera::frameFinished(int frame)
 int Camera::getFramesCaught()
 {
 	DEB_MEMBER_FUNCT();
-	int frames_caught;
-	string ans = getCmd("framescaught");
-	istringstream is(ans);
-	is >> frames_caught;
+	int frames_caught = getNbCmd<int>("framescaught");
+	DEB_RETURN() << DEB_VAR1(frames_caught);
 	return frames_caught;
 }
 
@@ -843,6 +835,34 @@ string Camera::getStatus()
 {
 	DEB_MEMBER_FUNCT();
 	return getCmd("status");
+}
+
+void Camera::setHighVoltage(int hvolt)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(hvolt);
+	putNbCmd<int>("vhighvoltage", hvolt);
+}
+
+void Camera::getHighVoltage(int& hvolt)
+{
+	DEB_MEMBER_FUNCT();
+	hvolt = getNbCmd<int>("vhighvoltage");
+	DEB_RETURN() << DEB_VAR1(hvolt);
+}
+
+void Camera::setEnergyThreshold(int thres)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(thres);
+	putNbCmd<int>("threshold", thres);
+}
+
+void Camera::getEnergyThreshold(int& thres)
+{
+	DEB_MEMBER_FUNCT();
+	thres = getNbCmd<int>("threshold");
+	DEB_RETURN() << DEB_VAR1(thres);
 }
 
 const int Eiger::ChipSize = 256;

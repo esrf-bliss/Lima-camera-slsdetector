@@ -116,6 +116,22 @@ public:
 	void setSaveRaw(bool  save_raw);
 	void getSaveRaw(bool& save_raw /Out/);
 
+	SlsDetector::State getState();
+	void waitState(SlsDetector::State state);
+	SlsDetector::State waitNotState(SlsDetector::State state);
+
+	int getNbDetModules();
+
+	void getFrameDim(FrameDim& frame_dim, bool raw = false);
+
+	const SlsDetector::Camera::FrameMap& getRecvMap();
+
+	void putCmd(const std::string& s, int idx = -1);
+	std::string getCmd(const std::string& s, int idx = -1);
+
+	int getFramesCaught();
+	std::string getStatus();
+
 	void setNbFrames(int  nb_frames);
 	void getNbFrames(int& nb_frames /Out/);
 	void setExpTime(double  exp_time);
@@ -123,22 +139,14 @@ public:
 	void setFramePeriod(double  frame_period);
 	void getFramePeriod(double& frame_period /Out/);
 
-	SlsDetector::State getState();
-	void waitState(SlsDetector::State state);
-	SlsDetector::State waitNotState(SlsDetector::State state);
+	void setHighVoltage(int  hvolt);
+	void getHighVoltage(int& hvolt /Out/);
+	void setEnergyThreshold(int  thres);
+	void getEnergyThreshold(int& thres /Out/);
 
 	void prepareAcq();
 	void startAcq();
 	void stopAcq();
-
-	int getNbDetModules();
-
-	void getFrameDim(FrameDim& frame_dim, bool raw = false);
-
-	int getFramesCaught();
-	std::string getStatus();
-
-	const SlsDetector::Camera::FrameMap& getRecvMap();
 };
 
 
