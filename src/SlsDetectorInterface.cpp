@@ -70,7 +70,7 @@ void DetInfoCtrlObj::getMaxImageSize(Size& max_image_size)
 	m_cam.getSaveRaw(raw);
 	m_cam.getFrameDim(max_frame_dim, raw);
 	max_image_size = max_frame_dim.getSize();
-
+	DEB_RETURN() << DEB_VAR1(max_image_size);
 }
 
 void DetInfoCtrlObj::getDetectorImageSize(Size& det_image_size)
@@ -81,16 +81,14 @@ void DetInfoCtrlObj::getDetectorImageSize(Size& det_image_size)
 	m_cam.getSaveRaw(raw);
 	m_cam.getFrameDim(frame_dim, raw);
 	det_image_size = frame_dim.getSize();
+	DEB_RETURN() << DEB_VAR1(det_image_size);
 }
 
 void DetInfoCtrlObj::getDefImageType(ImageType& def_image_type)
 {
 	DEB_MEMBER_FUNCT();
-	FrameDim frame_dim;
-	bool raw;
-	m_cam.getSaveRaw(raw);
-	m_cam.getFrameDim(frame_dim, raw);
-	def_image_type = frame_dim.getImageType();
+	def_image_type = Bpp16;
+	DEB_RETURN() << DEB_VAR1(def_image_type);
 }
 
 void DetInfoCtrlObj::getCurrImageType(ImageType& curr_image_type)
@@ -115,7 +113,11 @@ void DetInfoCtrlObj::setCurrImageType(ImageType curr_image_type)
 void DetInfoCtrlObj::getPixelSize(double& x_size, double& y_size)
 {
 	DEB_MEMBER_FUNCT();
-	m_cam.getModel()->getPixelSize(x_size, y_size);
+	Camera::Model *model = m_cam.getModel();
+	if (model)
+		model->getPixelSize(x_size, y_size);
+	else
+		x_size = y_size = 0;
 	DEB_RETURN() << DEB_VAR2(x_size, y_size);
 }
 
@@ -129,7 +131,15 @@ void DetInfoCtrlObj::getDetectorType(string& det_type)
 void DetInfoCtrlObj::getDetectorModel(string& det_model)
 {
 	DEB_MEMBER_FUNCT();
-	det_model = m_cam.getModel()->getName();
+	Camera::Model *model = m_cam.getModel();
+	if (model) {
+		det_model = model->getName();
+	} else {
+		ostringstream os;
+		os << "PSI/" << m_cam.getType() << " - " 
+		   << m_cam.getNbDetModules() << " Modules";
+		det_model = os.str();
+	}
 	DEB_RETURN() << DEB_VAR1(det_model);
 }
 
