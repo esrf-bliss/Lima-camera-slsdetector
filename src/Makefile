@@ -19,18 +19,14 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, see <http://www.gnu.org/licenses/>.
 ############################################################################
-include ../../../config.inc
+LIMA_DIR := $(shell pwd)/../../..
+
+include $(LIMA_DIR)/config.inc
+include $(LIMA_DIR)/control/control.inc
 
 SLS_DETECTORS_BIN = $(SLS_DETECTORS_DIR)/bin
 SLS_DETECTORS_SW = $(SLS_DETECTORS_DIR)/slsDetectorSoftware
 SLS_DETECTORS_RECV = $(SLS_DETECTORS_DIR)/slsReceiverSoftware
-
-LIMA_INCL_FLAGS = -I../../../hardware/include -I../../../common/include \
-		  -I../../../control/include/ \
-		  -I../../../control/software_operation/include/ \
-		  -I../../../third-party/Processlib/core/include \
-		  -I../../../third-party/Processlib/tasks/include \
-		  -I../../../third-party/Sps/Include
 
 SLS_DETECTORS_INCL_FLAGS = -I$(SLS_DETECTORS_SW)/include \
 			   -I$(SLS_DETECTORS_SW)/commonFiles \
@@ -41,9 +37,8 @@ SLS_DETECTORS_INCL_FLAGS = -I$(SLS_DETECTORS_SW)/include \
 			   -I$(SLS_DETECTORS_SW)/slsReceiverInterface \
 			   -I$(SLS_DETECTORS_RECV)/include
 
-
-CXXFLAGS = -I../include $(LIMA_INCL_FLAGS) $(SLS_DETECTORS_INCL_FLAGS) \
-	   -Wall -pthread -fPIC -g
+CPPFLAGS = $(CT_CPPFLAGS) $(SLS_DETECTORS_INCL_FLAGS)
+CXXFLAGS = -I../include $(CT_CXXFLAGS)
 
 slsdetector-objs = SlsDetectorInterface.o SlsDetectorCamera.o
 
@@ -58,7 +53,7 @@ clean:
 	rm -f *.o *.P
 
 %.o : %.cpp
-	$(COMPILE.cpp) -MD $(CXXFLAGS) -o $@ $<
+	$(COMPILE.cpp) $(CPPFLAGS) -MD $(CXXFLAGS) -o $@ $<
 	@cp $*.d $*.P; \
 	sed -e 's/#.*//' -e 's/^[^:]*: *//' -e 's/ *\\$$//' \
 	-e '/^$$/ d' -e 's/$$/ :/' < $*.d >> $*.P; \
@@ -68,4 +63,4 @@ clean:
 
 .PHONY: check-syntax
 check-syntax:
-	$(CXX) -Wall -Wextra -fsyntax-only $(CXXFLAGS) $(CHK_SOURCES)
+	$(CXX) $(CPPFLAGS) -Wextra -fsyntax-only $(CXXFLAGS) $(CHK_SOURCES)

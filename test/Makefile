@@ -30,19 +30,6 @@ SLS_DETECTORS_BIN = $(SLS_DETECTORS_DIR)/bin
 SLS_DETECTORS_SW = $(SLS_DETECTORS_DIR)/slsDetectorSoftware
 SLS_DETECTORS_RECV = $(SLS_DETECTORS_DIR)/slsReceiverSoftware
 
-LDFLAGS = -pthread -L$(LIMA_DIR)/build
-LDLIBS = -llimaslsdetector -llimacore
-
-ifneq ($(COMPILE_CBF_SAVING), 0)
-LDFLAGS += -L$(LIMA_DIR)/third-party/CBFLib/lib
-LDLIBS += -lcbf
-endif
-
-ifneq ($(COMPILE_CONFIG), 0)
-LDFLAGS += -L$(LIMA_DIR)/third-party/libconfig/lib/.libs
-LDLIBS += -lconfig++
-endif
-
 SLS_DETECTORS_INCL_FLAGS = -I$(SLS_DETECTORS_SW)/include \
 			   -I$(SLS_DETECTORS_SW)/commonFiles \
 			   -I$(SLS_DETECTORS_SW)/slsDetector \
@@ -52,9 +39,13 @@ SLS_DETECTORS_INCL_FLAGS = -I$(SLS_DETECTORS_SW)/include \
 			   -I$(SLS_DETECTORS_RECV)/include \
 			   -I$(SLS_DETECTORS_SW)/slsReceiverInterface
 
+CPPFLAGS = -I../include $(CT_CPPFLAGS) $(SLS_DETECTORS_INCL_FLAGS)
 
+DEPLIBS = $(CT_DEPLIBS) \
+          $(LIMA_DIR)/build,limacore $(LIMA_DIR)/build,limaslsdetector
+LDFLAGS = $(CT_LDFLAGS) $(call lib-depflags,$(DEPLIBS))
+LDLIBS = $(CT_LDLIBS) $(call lib-deplibs,$(DEPLIBS))
 
-CXXFLAGS = -I../include $(CT_CXXFLAGS) $(SLS_DETECTORS_INCL_FLAGS)
 
 test-progs = test_slsdetector test_slsdetector_control
 old-progs  = 
@@ -75,7 +66,7 @@ test_slsdetector.o:		test_slsdetector.cpp test_slsdetector.h
 test_slsdetector_control.o:	test_slsdetector_control.cpp
 
 %.o : %.cpp
-	$(COMPILE.cpp) -MD $(CXXFLAGS) -o $@ $<
+	$(COMPILE.cpp) $(CPPFLAGS) -MD $(CXXFLAGS) -o $@ $<
 	@cp $*.d $*.P; \
 	sed -e 's/#.*//' -e 's/^[^:]*: *//' -e 's/ *\\$$//' \
 	-e '/^$$/ d' -e 's/$$/ :/' < $*.d >> $*.P; \
