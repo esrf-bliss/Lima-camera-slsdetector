@@ -468,8 +468,13 @@ class Eiger : public Camera::Model
 		ChipBorderCorrBase(Eiger *eiger);
 		virtual ~ChipBorderCorrBase();
 
+		virtual void prepareAcq();
 		virtual void correctFrame(int frame, void *ptr) = 0;
+
 	protected:
+		friend class Eiger;
+
+		Eiger *m_eiger;
 		int m_nb_modules;
 		Size m_mod_size;
 		Size m_size;
@@ -491,6 +496,7 @@ class Eiger : public Camera::Model
 	};
 
 	Eiger(Camera *cam);
+	~Eiger();
 	
 	virtual void getFrameDim(FrameDim& frame_dim, bool raw = false);
 
@@ -511,6 +517,7 @@ class Eiger : public Camera::Model
 
  private:
 	friend class Correction;
+	friend class ChipBorderCorrBase;
 
 	template <class T>
 	class ChipBorderCorr : public ChipBorderCorrBase
@@ -518,17 +525,21 @@ class Eiger : public Camera::Model
 	public:
 		ChipBorderCorr(Eiger *eiger)
 			: ChipBorderCorrBase(eiger)
+		{}
+		
+		virtual void prepareAcq()
 		{
+			ChipBorderCorrBase::prepareAcq();
+
 			m_f.resize(m_nb_modules);
 			std::vector<BorderFactor>::iterator it = m_f.begin();
 			for (int i = 0; i < m_nb_modules; ++i, ++it) {
 				it->resize(2);
-				(*it)[0] = eiger->getBorderCorrFactor(i, 0);
-				(*it)[1] = eiger->getBorderCorrFactor(i, 1);
+				(*it)[0] = m_eiger->getBorderCorrFactor(i, 0);
+				(*it)[1] = m_eiger->getBorderCorrFactor(i, 1);
 			}
 		}
 
-	protected:
 		virtual void correctFrame(int frame, void *ptr)
 		{
 			correctBorderCols(ptr);
@@ -629,6 +640,7 @@ class Eiger : public Camera::Model
 	bool m_raw;
 	FrameDim m_recv_frame_dim;
 	int m_recv_half_frame_packets;
+	ChipBorderCorrBase *m_corr;
 };
 
 

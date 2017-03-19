@@ -609,11 +609,7 @@ char *Camera::getFrameBufferPtr(int frame_nb)
 	StdBufferCbMgr *cb_mgr = m_buffer_cb_mgr;
 	if (!cb_mgr)
 		THROW_HW_ERROR(InvalidValue) << "No BufferCbMgr defined";
-	int nb_buffers, concat_frames;
-	cb_mgr->getNbBuffers(nb_buffers);
-	cb_mgr->getNbConcatFrames(concat_frames);
-	int buffer_nb = frame_nb / concat_frames % nb_buffers;
-	void *ptr = cb_mgr->getBufferPtr(buffer_nb, frame_nb % concat_frames);
+	void *ptr = cb_mgr->getFrameBufferPtr(frame_nb);
 	return static_cast<char *>(ptr);
 }
 
@@ -870,16 +866,22 @@ const int Eiger::ChipGap = 2;
 const int Eiger::HalfModuleChips = 4;
 
 Eiger::ChipBorderCorrBase::ChipBorderCorrBase(Eiger *eiger)
+	: m_eiger(eiger)
 {
 	DEB_CONSTRUCTOR();
+}
 
-	m_nb_modules = eiger->m_nb_det_modules / 2;
-	Size recv_size = eiger->m_recv_frame_dim.getSize();
+void Eiger::ChipBorderCorrBase::prepareAcq()
+{
+	DEB_MEMBER_FUNCT();
+
+	m_nb_modules = m_eiger->m_nb_det_modules / 2;
+	Size recv_size = m_eiger->m_recv_frame_dim.getSize();
 	m_mod_size = recv_size * Point(1, 2);
 	m_size = m_mod_size * Point(1, m_nb_modules);
 	m_inter_lines.resize(m_nb_modules);
 	for (int i = 0; i < m_nb_modules - 1; ++i) {
-		m_inter_lines[i] = eiger->getInterModuleGap(i);
+		m_inter_lines[i] = m_eiger->getInterModuleGap(i);
 		m_size += Point(0, m_inter_lines[i]);
 	}
 	m_inter_lines[m_nb_modules - 1] = 0;
@@ -888,6 +890,8 @@ Eiger::ChipBorderCorrBase::ChipBorderCorrBase(Eiger *eiger)
 Eiger::ChipBorderCorrBase::~ChipBorderCorrBase()
 {
 	DEB_DESTRUCTOR();
+	if (m_eiger)
+		m_eiger->m_corr = NULL;
 }
 
 Eiger::Correction::Correction(Eiger *eiger)
@@ -907,7 +911,9 @@ Eiger::Correction::~Correction()
 Data Eiger::Correction::process(Data& data)
 {
 	DEB_MEMBER_FUNCT();
-
+	DEB_PARAM() << DEB_VAR4(data.frameNumber, m_raw, 
+				_processingInPlaceFlag, data.data());
+	
 	Data ret = data;
 
 	if (!_processingInPlaceFlag) {
@@ -918,19 +924,26 @@ Data Eiger::Correction::process(Data& data)
 		buffer->unref();
 	}
 
-	if (!m_raw) 
+	if (!m_raw)
 		m_corr->correctFrame(ret.frameNumber, ret.data());
-		
+
 	return ret;
 }
 
 Eiger::Eiger(Camera *cam)
-	: Camera::Model(cam, Camera::EigerDet)
+	: Camera::Model(cam, Camera::EigerDet), m_corr(NULL)
 {
 	DEB_CONSTRUCTOR();
 
 	m_nb_det_modules = getCamera()->getNbDetModules();
 	DEB_TRACE() << "Using Eiger detector, " << DEB_VAR1(m_nb_det_modules);
+}
+
+Eiger::~Eiger()
+{
+	DEB_DESTRUCTOR();
+	if (m_corr)
+		m_corr->m_eiger = NULL;
 }
 
 int Eiger::getPacketLen()
@@ -1015,12 +1028,17 @@ int Eiger::processRecvStart(int recv_idx, int dsize)
 		DEB_WARNING() << "!!!! Warning !!!! " 
 			      << DEB_VAR2(dsize, getPacketLen());
 
-	getCamera()->getSaveRaw(m_raw);
-	getRecvFrameDim(m_recv_frame_dim, m_raw, true);
-	m_recv_half_frame_packets = getRecvFramePackets() / 2;
+	if (recv_idx == 0) {
+		getCamera()->getSaveRaw(m_raw);
+		getRecvFrameDim(m_recv_frame_dim, m_raw, true);
+		m_recv_half_frame_packets = getRecvFramePackets() / 2;
 
-	DEB_TRACE() << DEB_VAR3(m_raw, m_recv_frame_dim, 
-				m_recv_half_frame_packets);
+		DEB_TRACE() << DEB_VAR3(m_raw, m_recv_frame_dim, 
+					m_recv_half_frame_packets);
+
+		if (m_corr)
+			m_corr->prepareAcq();
+	}
 
 	return DO_NOTHING;
 }
@@ -1103,6 +1121,10 @@ Eiger::ChipBorderCorrBase *Eiger::createChipBorderCorr(ImageType image_type)
 		THROW_HW_ERROR(NotSupported) 
 			<< "Eiger correction not supported for " << image_type;
 	}
+
+	if (m_corr)
+		m_corr->m_eiger = NULL;
+	m_corr = corr;
 
 	return corr;
 }
