@@ -431,7 +431,7 @@ void Camera::Receiver::frameCallback(int frame, char *dptr, int dsize, FILE *f,
 	DEB_MEMBER_FUNCT();
 
 	Model *model = m_cam->m_model;
-	if (!model)
+	if (!model || (m_cam->getState() == Stopping))
 		return;
 
 	char *bptr = m_cam->getFrameBufferPtr(frame);
@@ -769,7 +769,7 @@ void Camera::prepareAcq()
 		for (it = m_recv_list.begin(); it != end; ++it)
 			(*it)->prepareAcq();
 		m_recv_map.clear();
-		DEB_ALWAYS() << DEB_VAR1(m_frame_queue.size());
+		DEB_TRACE() << DEB_VAR1(m_frame_queue.size());
 		while (!m_frame_queue.empty())
 			m_frame_queue.pop();
 	}
