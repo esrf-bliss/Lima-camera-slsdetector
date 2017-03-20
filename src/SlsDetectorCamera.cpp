@@ -438,10 +438,7 @@ void Camera::Receiver::frameCallback(int frame, char *dptr, int dsize, FILE *f,
 	Mutex& lock = m_cam->m_cond.mutex();
 	int packet_idx = model->processRecvPacket(m_idx, frame, dptr, dsize, 
 						  lock, bptr);
-	{
-		AutoMutex l(lock);
-		m_packet_map.frameItemFinished(frame, packet_idx);
-	}
+	m_packet_map.frameItemFinished(frame, packet_idx);
 }
 
 Camera::FrameFinishedCallback::FrameFinishedCallback(Camera *cam)
@@ -807,6 +804,7 @@ void Camera::receiverFrameFinished(int frame, Receiver *recv)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_RECV_FRAME() << DEB_VAR2(frame, recv->m_idx);
+	AutoMutex l = lock();
 	m_recv_map.frameItemFinished(frame, recv->m_idx);
 }
 
