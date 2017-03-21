@@ -722,6 +722,29 @@ void Camera::getFramePeriod(double& frame_period)
 	frame_period = m_frame_period;
 }
 
+void Camera::setSaveRaw(bool save_raw)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(save_raw);
+
+	if (save_raw == m_save_raw)
+		return;
+	m_save_raw = save_raw;
+
+	FrameDim frame_dim;
+	getFrameDim(frame_dim, m_save_raw);
+	DEB_TRACE() << "MaxImageSizeChanged: " << DEB_VAR1(frame_dim);
+	maxImageSizeChanged(frame_dim.getSize(), frame_dim.getImageType());
+}
+
+void Camera::getSaveRaw(bool& save_raw)
+{
+	DEB_MEMBER_FUNCT();
+	save_raw = m_save_raw; 
+	DEB_RETURN() << DEB_VAR1(save_raw);
+}
+
+
 State Camera::getState()
 {
 	DEB_MEMBER_FUNCT();
@@ -784,6 +807,8 @@ void Camera::prepareAcq()
 		while (!m_frame_queue.empty())
 			m_frame_queue.pop();
 	}
+
+	m_model->prepareAcq();
 
 	putCmd("resetframescaught");
 }
@@ -883,6 +908,15 @@ Eiger::ChipBorderCorrBase::ChipBorderCorrBase(Eiger *eiger)
 	DEB_CONSTRUCTOR();
 }
 
+bool Eiger::ChipBorderCorrBase::getRaw()
+{
+	DEB_MEMBER_FUNCT();
+	bool raw;
+	m_eiger->getCamera()->getSaveRaw(raw);
+	DEB_RETURN() << DEB_VAR1(raw);
+	return raw; 
+}
+
 void Eiger::ChipBorderCorrBase::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
@@ -910,7 +944,6 @@ Eiger::Correction::Correction(Eiger *eiger)
 {
 	DEB_CONSTRUCTOR();
 
-	eiger->getCamera()->getSaveRaw(m_raw);
 	ImageType image_type = eiger->getCamera()->getImageType();
 	m_corr = eiger->createChipBorderCorr(image_type);
 }
@@ -923,7 +956,9 @@ Eiger::Correction::~Correction()
 Data Eiger::Correction::process(Data& data)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR4(data.frameNumber, m_raw, 
+
+	bool raw = m_corr->getRaw();
+	DEB_PARAM() << DEB_VAR4(data.frameNumber, raw, 
 				_processingInPlaceFlag, data.data());
 	
 	Data ret = data;
@@ -936,10 +971,102 @@ Data Eiger::Correction::process(Data& data)
 		buffer->unref();
 	}
 
-	if (!m_raw)
+	if (!raw)
 		m_corr->correctFrame(ret.frameNumber, ret.data());
 
 	return ret;
+}
+
+Eiger::RecvPacketGeometry::RecvPacketGeometry(Eiger *eiger, int recv_idx)
+	: m_eiger(eiger), m_recv_idx(recv_idx)
+{
+	DEB_CONSTRUCTOR();
+	DEB_PARAM() << DEB_VAR1(m_recv_idx);
+	m_top_half_recv = (m_recv_idx % 2 == 0);
+}
+
+void Eiger::RecvPacketGeometry::prepareAcq()
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(m_recv_idx);
+
+	const FrameDim& frame_dim = m_eiger->m_recv_frame_dim;
+	const Size& size = frame_dim.getSize();
+	int depth = frame_dim.getDepth();
+	m_dlw = size.getWidth() * depth;
+	int recv_size = frame_dim.getMemSize();
+	m_recv_offset = recv_size * m_recv_idx;	
+
+	m_eiger->getCamera()->getSaveRaw(m_raw);
+	if (m_raw) {
+		m_packet_offset = m_dlw;
+		return;
+	}
+
+	int mod_idx = m_recv_idx / 2;
+	for (int i = 0; i < mod_idx; ++i)
+		m_recv_offset += m_eiger->getInterModuleGap(i) * m_dlw;
+
+	m_gap_size = 0;
+	int last_mod = m_eiger->m_nb_det_modules / 2 - 1;
+	if (!m_top_half_recv && (mod_idx < last_mod))
+		m_gap_size = m_eiger->getInterModuleGap(mod_idx) * m_dlw;
+
+	if (m_top_half_recv) {
+		m_recv_offset += (ChipSize - 1) * m_dlw;
+		m_dlw *= -1;
+	} else {
+		m_recv_offset += (ChipGap / 2) * m_dlw;
+	}
+
+	m_plw = ChipSize * depth;
+	m_pchips = HalfModuleChips / 2;
+	m_plines = sizeof(Packet::data) / m_plw / m_pchips;
+	m_packet_offset = m_plines * m_dlw;
+	m_clw = m_plw + ChipGap * depth;
+	m_right_offset = m_pchips * m_clw;
+}
+
+void Eiger::RecvPacketGeometry::processRecvStart(int dsize)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_CAMERA_START() << DEB_VAR2(m_recv_idx, dsize);
+}
+
+int Eiger::RecvPacketGeometry::processRecvPacket(int frame, Packet *p, 
+						 char *bptr)
+{
+	DEB_MEMBER_FUNCT();
+
+	bool second_half = p->pre.flags & 0x20;
+	int half_packet_idx = p->pre.idx;
+	int packet_idx = second_half ? m_eiger->m_recv_half_frame_packets : 0;
+	packet_idx += half_packet_idx;
+
+	DEB_RECV_PACKET() << DEB_VAR3(frame, m_recv_idx, packet_idx);
+
+	char *dest = bptr + m_recv_offset;	
+	if (m_raw) {
+		dest += m_packet_offset * packet_idx;
+		memcpy(dest, p, m_dlw);
+		return packet_idx;
+	}
+	
+	dest += m_packet_offset * half_packet_idx;
+	int right_idx = (second_half == m_top_half_recv) ? 1 : 0;
+	dest += m_right_offset * right_idx;
+	char *src = p->data;
+	for (int i = 0; i < m_plines; ++i, dest += m_dlw) {
+		char *d = dest;
+		for (int j = 0; j < m_pchips; ++j, src += m_plw, d += m_clw)
+			memcpy(d, src, m_plw);
+	}
+
+	int last_packet = 2 * m_eiger->m_recv_half_frame_packets - 1;
+	if (m_gap_size && (packet_idx == last_packet))
+		memset(dest, 0, m_gap_size);
+
+	return packet_idx;
 }
 
 Eiger::Eiger(Camera *cam)
@@ -949,6 +1076,11 @@ Eiger::Eiger(Camera *cam)
 
 	m_nb_det_modules = getCamera()->getNbDetModules();
 	DEB_TRACE() << "Using Eiger detector, " << DEB_VAR1(m_nb_det_modules);
+
+	for (int i = 0; i < m_nb_det_modules; ++i) {
+		RecvPacketGeometry *g = new RecvPacketGeometry(this, i);
+		m_recv_geom_list.push_back(g);
+	}
 }
 
 Eiger::~Eiger()
@@ -1032,6 +1164,25 @@ void Eiger::getPixelSize(double& x_size, double& y_size)
 	DEB_RETURN() << DEB_VAR2(x_size, y_size);
 }
 
+void Eiger::prepareAcq()
+{
+	DEB_MEMBER_FUNCT();
+
+	bool raw;
+	getCamera()->getSaveRaw(raw);
+	getRecvFrameDim(m_recv_frame_dim, raw, true);
+	m_recv_half_frame_packets = getRecvFramePackets() / 2;
+	
+	DEB_TRACE() << DEB_VAR3(raw, m_recv_frame_dim, 
+				m_recv_half_frame_packets);
+
+	for (int i = 0; i < m_nb_det_modules; ++i)
+		m_recv_geom_list[i]->prepareAcq();
+
+	if (m_corr)
+		m_corr->prepareAcq();
+}
+
 int Eiger::processRecvStart(int recv_idx, int dsize)
 {
 	DEB_MEMBER_FUNCT();
@@ -1039,19 +1190,7 @@ int Eiger::processRecvStart(int recv_idx, int dsize)
 	if (dsize != getPacketLen())
 		DEB_WARNING() << "!!!! Warning !!!! " 
 			      << DEB_VAR2(dsize, getPacketLen());
-
-	if (recv_idx == 0) {
-		getCamera()->getSaveRaw(m_raw);
-		getRecvFrameDim(m_recv_frame_dim, m_raw, true);
-		m_recv_half_frame_packets = getRecvFramePackets() / 2;
-
-		DEB_TRACE() << DEB_VAR3(m_raw, m_recv_frame_dim, 
-					m_recv_half_frame_packets);
-
-		if (m_corr)
-			m_corr->prepareAcq();
-	}
-
+	m_recv_geom_list[recv_idx]->processRecvStart(dsize);
 	return DO_NOTHING;
 }
 
@@ -1061,50 +1200,7 @@ int Eiger::processRecvPacket(int recv_idx, int frame, char *dptr, int dsize,
 	DEB_MEMBER_FUNCT();
 
 	Packet *p = static_cast<Packet *>(static_cast<void *>(dptr));
-	bool second_half = p->pre.flags & 0x20;
-	int half_packet_idx = p->pre.idx;
-	int packet_idx = second_half ? m_recv_half_frame_packets : 0;
-	packet_idx += half_packet_idx;
-	bool top_half_recv = (recv_idx % 2 == 0);
-
-	DEB_RECV_PACKET() << DEB_VAR4(frame, dsize, recv_idx, packet_idx);
-
-	const FrameDim& frame_dim = m_recv_frame_dim;
-	const Size& size = frame_dim.getSize();
-	int depth = frame_dim.getDepth();
-	int dlw = size.getWidth() * depth;		// dest line width
-	int recv_size = frame_dim.getMemSize();
-	char *dest = bptr + recv_size * recv_idx;	
-
-	if (m_raw) {
-		dest += dlw * packet_idx;
-		memcpy(dest, dptr, dlw);
-	} else {
-		int mod_idx = recv_idx / 2;
-		for (int i = 0; i < mod_idx; ++i)
-			dest += getInterModuleGap(i) * dlw;
-		int plw = ChipSize * depth;		// packet line width
-		int pchips = HalfModuleChips / 2;
-		int plines = sizeof(p->data) / plw / pchips;
-		if (top_half_recv) {
-			dest += (ChipSize - 1) * dlw;
-			dlw *= -1;
-		} else {
-			dest += dlw * (ChipGap / 2);
-		}
-		dest += half_packet_idx * plines * dlw;
-		int clw = plw + ChipGap * depth;	// chip line width
-		bool right_side = (second_half == top_half_recv);
-		dest += right_side ? pchips * clw : 0;
-		char *src = p->data;
-		for (int i = 0; i < plines; ++i, dest += dlw) {
-			char *d = dest;
-			for (int j = 0; j < pchips; ++j, src += plw, d += clw)
-				memcpy(d, src, plw);
-		}
-	}
-
-	return packet_idx;
+	return m_recv_geom_list[recv_idx]->processRecvPacket(frame, p, bptr);
 }
 
 Eiger::Correction *Eiger::createCorrectionTask()
@@ -1154,7 +1250,7 @@ double Eiger::getBorderCorrFactor(int det, int line)
 int Eiger::getInterModuleGap(int det)
 {
 	DEB_MEMBER_FUNCT();
-	if (det >= m_nb_det_modules - 1)
+	if (det >= (m_nb_det_modules / 2) - 1)
 		THROW_HW_ERROR(InvalidValue) << "Invalid " << DEB_VAR1(det);
 	return 35;
 }

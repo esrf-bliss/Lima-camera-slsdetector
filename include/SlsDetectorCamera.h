@@ -35,6 +35,7 @@
 #include "lima/ThreadUtils.h"
 #include "lima/MemUtils.h"
 #include "lima/HwBufferMgr.h"
+#include "lima/HwMaxImageSizeCallback.h"
 
 #include <iostream>
 #include <string>
@@ -105,7 +106,7 @@ enum State {
 std::ostream& operator <<(std::ostream& os, State state);
 
 
-class Camera
+class Camera : public HwMaxImageSizeCallbackGen
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "Camera", "SlsDetector");
 
@@ -140,6 +141,7 @@ public:
 		virtual int getPacketLen() = 0;
 		virtual int getRecvFramePackets() = 0;
 	
+		virtual void prepareAcq() = 0;
 		virtual int processRecvStart(int recv_idx, int dsize) = 0;
 		virtual int processRecvPacket(int recv_idx, int frame, 
 					      char *dptr, int dsize, 
@@ -216,11 +218,8 @@ public:
 	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr)
 	{ m_buffer_cb_mgr = buffer_cb_mgr; }
 
-	void setSaveRaw(bool  save_raw)
-	{ m_save_raw = save_raw; }
-
-	void getSaveRaw(bool& save_raw)
-	{ save_raw = m_save_raw; }
+	void setSaveRaw(bool  save_raw);
+	void getSaveRaw(bool& save_raw);
 
 	State getState();
 	void waitState(State state);
@@ -469,6 +468,8 @@ class Eiger : public Camera::Model
 		ChipBorderCorrBase(Eiger *eiger);
 		virtual ~ChipBorderCorrBase();
 
+		bool getRaw();
+
 		virtual void prepareAcq();
 		virtual void correctFrame(int frame, void *ptr) = 0;
 
@@ -492,7 +493,6 @@ class Eiger : public Camera::Model
 
 		virtual Data process(Data& data);
 	private:
-		bool m_raw;
 		AutoPtr<ChipBorderCorrBase> m_corr;
 	};
 
@@ -511,6 +511,7 @@ class Eiger : public Camera::Model
 	virtual int getPacketLen();
 	virtual int getRecvFramePackets();
 
+	virtual void prepareAcq();
 	virtual int processRecvStart(int recv_idx, int dsize);
 	virtual int processRecvPacket(int recv_idx, int frame, 
 				      char *dptr, int dsize, Mutex& lock, 
@@ -519,6 +520,34 @@ class Eiger : public Camera::Model
  private:
 	friend class Correction;
 	friend class ChipBorderCorrBase;
+
+	class RecvPacketGeometry
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::RecvPacketGeometry", 
+				  "SlsDetector");
+	public:
+		RecvPacketGeometry(Eiger *eiger, int recv_idx);
+
+		void prepareAcq();
+		void processRecvStart(int dsize);
+		int processRecvPacket(int frame, Packet *p, char *bptr);
+	private:
+		Eiger *m_eiger;
+		bool m_top_half_recv;
+		bool m_raw;
+		int m_recv_idx;
+		int m_recv_offset;
+		int m_packet_offset;
+		int m_right_offset;
+		int m_dlw;			// dest line width
+		int m_plw;			// packet line width
+		int m_clw;			// chip line width
+		int m_pchips;
+		int m_plines;
+		int m_gap_size;
+	};
+
+	typedef std::vector<AutoPtr<RecvPacketGeometry> > RecvGeometryList;
 
 	template <class T>
 	class ChipBorderCorr : public ChipBorderCorrBase
@@ -638,10 +667,10 @@ class Eiger : public Camera::Model
 	static const int HalfModuleChips;
 
 	int m_nb_det_modules;
-	bool m_raw;
 	FrameDim m_recv_frame_dim;
 	int m_recv_half_frame_packets;
 	ChipBorderCorrBase *m_corr;
+	RecvGeometryList m_recv_geom_list;
 };
 
 

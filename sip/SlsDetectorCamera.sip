@@ -31,7 +31,7 @@ enum State {
 	Idle, Init, Starting, Running, StopReq, Stopping, Stopped,
 };
 
-class Camera
+class Camera : public HwMaxImageSizeCallbackGen
 {
 
 %TypeHeaderCode
@@ -66,6 +66,7 @@ public:
 		virtual int getPacketLen() = 0;
 		virtual int getRecvFramePackets() = 0;
 
+		virtual void prepareAcq() = 0;
 		virtual int processRecvStart(int recv_idx, int dsize) = 0;
 		virtual int processRecvPacket(int recv_idx, int frame,
 					      char *dptr, int dsize,
@@ -180,6 +181,7 @@ class Eiger : public SlsDetector::Camera::Model
 	virtual int getPacketLen();
 	virtual int getRecvFramePackets();
 
+	virtual void prepareAcq();
 	virtual int processRecvStart(int recv_idx, int dsize);
 	virtual int processRecvPacket(int recv_idx, int frame,
 				      char *dptr, int dsize, Mutex& lock,

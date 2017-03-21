@@ -147,13 +147,14 @@ void DetInfoCtrlObj::registerMaxImageSizeCallback(
 					HwMaxImageSizeCallback& cb)
 {
 	DEB_MEMBER_FUNCT();
-	
+	m_cam.registerMaxImageSizeCallback(cb);
 }
 
 void DetInfoCtrlObj::unregisterMaxImageSizeCallback(
 					HwMaxImageSizeCallback& cb)
 {
 	DEB_MEMBER_FUNCT();
+	m_cam.unregisterMaxImageSizeCallback(cb);
 }
 
 
