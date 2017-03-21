@@ -215,8 +215,9 @@ Camera::FrameMap::Callback::~Callback()
 		m_map->m_cb = NULL;
 }
 
-Camera::FrameMap::FrameMap()
-	: m_nb_items(0), m_last_seq_finished_frame(-1), m_cb(NULL)
+Camera::FrameMap::FrameMap(bool debug)
+	: m_nb_items(0), m_last_seq_finished_frame(-1), m_cb(NULL),
+	  m_debug(debug)
 {
 	DEB_CONSTRUCTOR();
 }
@@ -262,25 +263,38 @@ void Camera::FrameMap::frameItemFinished(int frame, int item)
 		THROW_HW_ERROR(InvalidValue) << DEB_VAR2(item, m_nb_items);
 	Map::iterator mit = m_map.find(frame);
 	if (mit == m_map.end()) {
-		for (int i = 0; i < m_nb_items; ++i)
-			if (i != item)
-				m_map[frame].insert(i);
+		if (m_debug) {
+			for (int i = 0; i < m_nb_items; ++i)
+				if (i != item)
+					m_map[frame].insert(i);
+		} else {
+			m_map[frame].insert(1);
+		}
 		return;
 	}
 
 	List& item_list = mit->second;
-	List::iterator lit = item_list.find(item);
-	if (lit == item_list.end())
-		THROW_HW_ERROR(Error) << "item " << item << " already finished "
-				      << "for frame " << frame;
-
-	item_list.erase(lit);
-	if (!item_list.empty())
-		return;
+	if (m_debug) {
+		List::iterator lit = item_list.find(item);
+		if (lit == item_list.end())
+			THROW_HW_ERROR(Error) << "item " << item << " already "
+					      << "finished for frame " << frame;
+		item_list.erase(lit);
+		if (!item_list.empty())
+			return;
+	} else {
+		List::iterator lit = item_list.begin();
+		int nb_items = *lit + 1;
+		item_list.erase(lit);
+		item_list.insert(nb_items);
+		if (nb_items != m_nb_items)
+			return;
+	}
 	m_map.erase(mit);
 
 	int &last = m_last_seq_finished_frame;
 	List &waiting = m_non_seq_finished_frames;
+	List::iterator lit;
 	if (frame == last + 1) {
 		++last;
 		while ((lit = waiting.find(last + 1)) != waiting.end()) {

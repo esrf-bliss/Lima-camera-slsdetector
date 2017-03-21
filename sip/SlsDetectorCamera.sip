@@ -87,7 +87,7 @@ public:
 			virtual void frameFinished(int frame) = 0;
 		};
 
-		FrameMap();
+		FrameMap(bool debug = false);
 		~FrameMap();
 		
 		void setCallback(Callback *cb);

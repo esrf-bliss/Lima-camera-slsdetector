@@ -176,7 +176,7 @@ public:
 			FrameMap *m_map;
 		};
 
-		FrameMap();
+		FrameMap(bool debug = false);
 		~FrameMap();
 		
 		void setCallback(Callback *cb);
@@ -202,6 +202,7 @@ public:
 		List m_non_seq_finished_frames;
 		int m_last_seq_finished_frame;
 		Callback *m_cb;
+		bool m_debug;
 	};
 
 	Camera(std::string config_fname);
