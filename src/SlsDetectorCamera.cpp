@@ -320,6 +320,20 @@ ostream& lima::SlsDetector::operator <<(ostream& os, Camera::Type type)
 	return os << name;
 }
 
+ostream& lima::SlsDetector::operator <<(ostream& os, Camera::TrigMode trig_mode)
+{
+	const char *name = "Invalid";
+	switch (trig_mode) {
+	case Camera::Auto:		name = "Auto";			break;
+	case Camera::TriggerExposure:	name = "TriggerExposure";	break;
+	case Camera::TriggerReadout:	name = "TriggerReadout";	break;
+	case Camera::Gating:		name = "Gating";		break;
+	case Camera::TriggeredGating:	name = "TriggeredGating";	break;
+	case Camera::BurstTrigger:	name = "BurstTrigger";		break;
+	}
+	return os << name;
+}
+
 ostream& lima::SlsDetector::operator <<(ostream& os, 
 					const Camera::FrameMap& m)
 {
@@ -558,6 +572,7 @@ Camera::Camera(string config_fname)
 	DEB_TRACE() << "Creating the multiSlsDetectorCommand";
 	m_cmd = new multiSlsDetectorCommand(m_det);
 
+	setTrigMode(Auto);
 	setNbFrames(1);
 	setExpTime(0.99);
 	setFramePeriod(1.0);
@@ -682,11 +697,33 @@ string Camera::getCmd(const string& s, int idx)
 	return r;
 }
 
+void Camera::setTrigMode(TrigMode trig_mode)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(trig_mode);
+	typedef slsDetectorDefs::externalCommunicationMode ExtComMode;
+	ExtComMode mode = static_cast<ExtComMode>(trig_mode);
+	m_det->setExternalCommunicationMode(mode);
+	m_trig_mode = trig_mode;
+	setNbFrames(m_nb_frames);
+}
+
+void Camera::getTrigMode(TrigMode& trig_mode)
+{
+	DEB_MEMBER_FUNCT();
+	trig_mode = m_trig_mode;
+	DEB_RETURN() << DEB_VAR1(trig_mode);
+}
+
 void Camera::setNbFrames(int nb_frames)
 {
 	DEB_MEMBER_FUNCT();
-	putCmd("timing auto");
-	putNbCmd<int>("frames", nb_frames);
+	DEB_PARAM() << DEB_VAR1(nb_frames);
+	bool trig_exp = (m_trig_mode == TriggerExposure);
+	int cam_frames = trig_exp ? 1 : nb_frames;
+	int cam_triggers = trig_exp ? nb_frames : 1;
+	m_det->setNumberOfFrames(cam_frames);
+	m_det->setNumberOfCycles(cam_triggers);
 	m_nb_frames = nb_frames;
 }
 
@@ -694,12 +731,14 @@ void Camera::getNbFrames(int& nb_frames)
 {
 	DEB_MEMBER_FUNCT();
 	nb_frames = m_nb_frames;
+	DEB_RETURN() << DEB_VAR1(nb_frames);
 }
 
 void Camera::setExpTime(double exp_time)
 {
 	DEB_MEMBER_FUNCT();
-	putNbCmd<double>("exptime", exp_time);
+	DEB_PARAM() << DEB_VAR1(exp_time);
+	m_det->setExposureTime(NSec(exp_time));
 	m_exp_time = exp_time;
 }
 
@@ -707,12 +746,14 @@ void Camera::getExpTime(double& exp_time)
 { 
 	DEB_MEMBER_FUNCT();
 	exp_time = m_exp_time;
+	DEB_RETURN() << DEB_VAR1(exp_time);
 }
 
 void Camera::setFramePeriod(double frame_period)
 {
 	DEB_MEMBER_FUNCT();
-	putNbCmd<double>("period", frame_period);
+	DEB_PARAM() << DEB_VAR1(frame_period);
+	m_det->setExposurePeriod(NSec(frame_period));
 	m_frame_period = frame_period;
 }
 
@@ -720,6 +761,7 @@ void Camera::getFramePeriod(double& frame_period)
 {
 	DEB_MEMBER_FUNCT();
 	frame_period = m_frame_period;
+	DEB_RETURN() << DEB_VAR1(frame_period);
 }
 
 void Camera::setSaveRaw(bool save_raw)

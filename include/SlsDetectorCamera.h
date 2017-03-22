@@ -113,6 +113,15 @@ public:
 		UnknownDet, GenericDet, EigerDet, JungfrauDet,
 	};
 
+	enum TrigMode {
+		Auto            = slsDetectorDefs::AUTO_TIMING, 
+		TriggerExposure = slsDetectorDefs::TRIGGER_EXPOSURE, 
+		TriggerReadout  = slsDetectorDefs::TRIGGER_READOUT,
+		Gating          = slsDetectorDefs::GATE_FIX_NUMBER, 
+		TriggeredGating = slsDetectorDefs::GATE_WITH_START_TRIGGER,
+		BurstTrigger    = slsDetectorDefs::BURST_TRIGGER,
+	};
+
 	class Model
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Camera::Model", "SlsDetector");
@@ -241,6 +250,8 @@ public:
 	int getFramesCaught();
 	std::string getStatus();
 
+	void setTrigMode(TrigMode  trig_mode);
+	void getTrigMode(TrigMode& trig_mode);
 	void setNbFrames(int  nb_frames);
 	void getNbFrames(int& nb_frames);
 	void setExpTime(double  exp_time);
@@ -373,6 +384,9 @@ private:
 	AutoMutex lock()
 	{ return AutoMutex(m_cond.mutex()); }
 
+	int64_t NSec(double x)
+	{ return int64_t(x * 1e9); }
+
 	State getEffectiveState();
 
 	char *getFrameBufferPtr(int frame_nb);
@@ -407,6 +421,7 @@ private:
 	AutoPtr<multiSlsDetector> m_det;
 	AutoPtr<multiSlsDetectorCommand> m_cmd;
 	Mutex m_cmd_mutex;
+	TrigMode m_trig_mode;
 	int m_nb_frames;
 	double m_exp_time;
 	double m_frame_period;
@@ -422,6 +437,7 @@ private:
 
 std::ostream& operator <<(std::ostream& os, Camera::State state);
 std::ostream& operator <<(std::ostream& os, Camera::Type type);
+std::ostream& operator <<(std::ostream& os, Camera::TrigMode trig_mode);
 
 std::ostream& operator <<(std::ostream& os, const Camera::FrameMap& m);
 std::ostream& operator <<(std::ostream& os, const Camera::FrameMap::List& l);

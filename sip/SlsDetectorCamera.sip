@@ -43,6 +43,15 @@ public:
 		GenericDet, EigerDet, JungfrauDet,
 	};
 
+	enum TrigMode {
+		Auto = AUTO_TIMING,
+		TriggerExposure = TRIGGER_EXPOSURE,
+		TriggerReadout = TRIGGER_READOUT,
+		Gating = GATE_FIX_NUMBER,
+		TriggeredGating = GATE_WITH_START_TRIGGER,
+		BurstTrigger = BURST_TRIGGER,
+	};
+
 	class Model
 	{
 	public:
@@ -134,6 +143,8 @@ public:
 	int getFramesCaught();
 	std::string getStatus();
 
+	void setTrigMode(SlsDetector::Camera::TrigMode  trig_mode);
+	void getTrigMode(SlsDetector::Camera::TrigMode& trig_mode /Out/);
 	void setNbFrames(int  nb_frames);
 	void getNbFrames(int& nb_frames /Out/);
 	void setExpTime(double  exp_time);

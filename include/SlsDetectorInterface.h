@@ -116,6 +116,9 @@ class SyncCtrlObj : public HwSyncCtrlObj
 
 	virtual void getValidRanges(ValidRangesType& valid_ranges);
 
+	typedef std::map<TrigMode, Camera::TrigMode> TrigModeMap;
+	static TrigModeMap Lima2CamTrigModeMap;
+
  private:
 	Camera& m_cam;
 };

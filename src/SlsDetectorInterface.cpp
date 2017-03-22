@@ -20,6 +20,7 @@
 // along with this program; if not, see <http://www.gnu.org/licenses/>.
 //###########################################################################
 #include "SlsDetectorInterface.h"
+#include "lima/MiscUtils.h"
 
 using namespace lima;
 using namespace lima::SlsDetector;
@@ -162,6 +163,16 @@ void DetInfoCtrlObj::unregisterMaxImageSizeCallback(
  * \brief SyncCtrlObj constructor
  *******************************************************************/
 
+typedef pair<TrigMode, Camera::TrigMode> TrigPair;
+static const TrigPair Lima2CamTrigModeCList[] = {
+	TrigPair(IntTrig,	Camera::Auto),
+	TrigPair(ExtTrigSingle, Camera::BurstTrigger),
+	TrigPair(ExtTrigMult,	Camera::TriggerExposure),
+	TrigPair(ExtGate,	Camera::Gating),
+};
+SyncCtrlObj::TrigModeMap
+SyncCtrlObj::Lima2CamTrigModeMap(C_LIST_ITERS(Lima2CamTrigModeCList));
+
 SyncCtrlObj::SyncCtrlObj(Camera& cam)
 	: m_cam(cam)
 {
@@ -177,17 +188,8 @@ bool SyncCtrlObj::checkTrigMode(TrigMode trig_mode)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(trig_mode);
-
-	bool valid_mode;
-	switch (trig_mode) {
-	case IntTrig:
-		valid_mode = true;
-		break;
-
-	default:
-		valid_mode = false;
-	}
-
+	TrigModeMap::iterator it = Lima2CamTrigModeMap.find(trig_mode);
+	bool valid_mode = (it != Lima2CamTrigModeMap.end());
 	DEB_RETURN() << DEB_VAR1(valid_mode);
 	return valid_mode;
 }
@@ -195,16 +197,27 @@ bool SyncCtrlObj::checkTrigMode(TrigMode trig_mode)
 void SyncCtrlObj::setTrigMode(TrigMode trig_mode)
 {
 	DEB_MEMBER_FUNCT();
-
+	DEB_PARAM() << DEB_VAR1(trig_mode);
 	if (!checkTrigMode(trig_mode))
 		THROW_HW_ERROR(InvalidValue) << "Invalid " 
 					     << DEB_VAR1(trig_mode);
+	Camera::TrigMode cam_mode = Lima2CamTrigModeMap[trig_mode];
+	m_cam.setTrigMode(cam_mode);
 }
 
 void SyncCtrlObj::getTrigMode(TrigMode& trig_mode)
 {
 	DEB_MEMBER_FUNCT();
-	trig_mode = IntTrig;
+	Camera::TrigMode cam_mode;
+	m_cam.getTrigMode(cam_mode);
+	typedef TrigModeMap::const_iterator MapConstIt;
+	MapConstIt it = FindMapValue(Lima2CamTrigModeMap, cam_mode);
+	if (it == Lima2CamTrigModeMap.end())
+		THROW_HW_ERROR(NotSupported) << "Non-supported Camera TrigMode "
+					     << DEB_VAR2(cam_mode,
+							 int(cam_mode));
+	trig_mode = it->first;
+	DEB_PARAM() << DEB_VAR1(trig_mode);
 }
 
 void SyncCtrlObj::setExpTime(double exp_time)
