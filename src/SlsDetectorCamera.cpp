@@ -902,13 +902,21 @@ const int Eiger::ChipSize = 256;
 const int Eiger::ChipGap = 2;
 const int Eiger::HalfModuleChips = 4;
 
-Eiger::ChipBorderCorrBase::ChipBorderCorrBase(Eiger *eiger)
-	: m_eiger(eiger)
+Eiger::CorrBase::CorrBase(Eiger *eiger, CorrType type)
+	: m_eiger(eiger), m_type(type)
 {
 	DEB_CONSTRUCTOR();
+	m_nb_modules = m_eiger->m_nb_det_modules / 2;
 }
 
-bool Eiger::ChipBorderCorrBase::getRaw()
+Eiger::CorrBase::~CorrBase()
+{
+	DEB_DESTRUCTOR();
+	if (m_eiger)
+		m_eiger->removeCorr(this);
+}
+
+bool Eiger::CorrBase::getRaw()
 {
 	DEB_MEMBER_FUNCT();
 	bool raw;
@@ -917,47 +925,83 @@ bool Eiger::ChipBorderCorrBase::getRaw()
 	return raw; 
 }
 
-void Eiger::ChipBorderCorrBase::prepareAcq()
+void Eiger::CorrBase::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
 
-	m_nb_modules = m_eiger->m_nb_det_modules / 2;
-	Size recv_size = m_eiger->m_recv_frame_dim.getSize();
-	m_mod_size = recv_size * Point(1, 2);
-	m_size = m_mod_size * Point(1, m_nb_modules);
+	if (!m_eiger)
+		THROW_HW_ERROR(InvalidValue) << "Correction already removed";
+
+	FrameDim& recv_dim = m_eiger->m_recv_frame_dim;
+	m_mod_frame_dim = recv_dim * Point(1, 2);
+	m_frame_size = m_mod_frame_dim.getSize() * Point(1, m_nb_modules);
 	m_inter_lines.resize(m_nb_modules);
 	for (int i = 0; i < m_nb_modules - 1; ++i) {
 		m_inter_lines[i] = m_eiger->getInterModuleGap(i);
-		m_size += Point(0, m_inter_lines[i]);
+		m_frame_size += Point(0, m_inter_lines[i]);
 	}
 	m_inter_lines[m_nb_modules - 1] = 0;
 }
 
-Eiger::ChipBorderCorrBase::~ChipBorderCorrBase()
+Eiger::InterModGapCorr::InterModGapCorr(Eiger *eiger)
+	: CorrBase(eiger, Gap)
 {
-	DEB_DESTRUCTOR();
-	if (m_eiger)
-		m_eiger->m_corr = NULL;
+	DEB_CONSTRUCTOR();
+}
+
+void Eiger::InterModGapCorr::prepareAcq()
+{
+	DEB_MEMBER_FUNCT();
+
+	CorrBase::prepareAcq();
+
+	m_gap_list.clear();
+
+	int mod_size = m_mod_frame_dim.getMemSize();
+	int width = m_mod_frame_dim.getSize().getWidth();
+	int dlw = width * m_mod_frame_dim.getDepth();
+	for (int i = 0, start = 0; i < m_nb_modules - 1; ++i) {
+		start += mod_size;
+		int size = m_inter_lines[i] * dlw;
+		m_gap_list.push_back(Block(start, size));
+		start += size;
+	}
+}
+
+void Eiger::InterModGapCorr::correctFrame(int frame, void *ptr)
+{
+	DEB_MEMBER_FUNCT();
+	
+	char *dest = static_cast<char *>(ptr);
+	BlockList::const_iterator it, end = m_gap_list.end();
+	for (it = m_gap_list.begin(); it != end; ++it) {
+		int start = it->first;
+		int size = it->second;
+		memset(dest + start, 0, size);
+	}
 }
 
 Eiger::Correction::Correction(Eiger *eiger)
 {
 	DEB_CONSTRUCTOR();
 
+	CorrBase *corr;
 	ImageType image_type = eiger->getCamera()->getImageType();
-	m_corr = eiger->createChipBorderCorr(image_type);
-}
+	corr = eiger->createChipBorderCorr(image_type);
+	m_corr_list.push_back(corr);
 
-Eiger::Correction::~Correction()
-{
-	DEB_DESTRUCTOR();
+	if (corr->getNbModules() > 1) {
+		corr = eiger->createInterModGapCorr();
+		m_corr_list.push_back(corr);
+	}
 }
 
 Data Eiger::Correction::process(Data& data)
 {
 	DEB_MEMBER_FUNCT();
 
-	bool raw = m_corr->getRaw();
+	CorrBase *corr = m_corr_list[0];
+	bool raw = corr->getRaw();
 	DEB_PARAM() << DEB_VAR4(data.frameNumber, raw, 
 				_processingInPlaceFlag, data.data());
 	
@@ -971,9 +1015,13 @@ Data Eiger::Correction::process(Data& data)
 		buffer->unref();
 	}
 
-	if (!raw)
-		m_corr->correctFrame(ret.frameNumber, ret.data());
-
+	if (!raw) {
+		int frame = ret.frameNumber;
+		void *ptr = ret.data();
+		CorrList::iterator it, end = m_corr_list.end();
+		for (it = m_corr_list.begin(); it != end; ++it)
+			(*it)->correctFrame(frame, ptr);
+	}
 	return ret;
 }
 
@@ -1006,11 +1054,6 @@ void Eiger::RecvPacketGeometry::prepareAcq()
 	int mod_idx = m_recv_idx / 2;
 	for (int i = 0; i < mod_idx; ++i)
 		m_recv_offset += m_eiger->getInterModuleGap(i) * m_dlw;
-
-	m_gap_size = 0;
-	int last_mod = m_eiger->m_nb_det_modules / 2 - 1;
-	if (!m_top_half_recv && (mod_idx < last_mod))
-		m_gap_size = m_eiger->getInterModuleGap(mod_idx) * m_dlw;
 
 	if (m_top_half_recv) {
 		m_recv_offset += (ChipSize - 1) * m_dlw;
@@ -1062,15 +1105,11 @@ int Eiger::RecvPacketGeometry::processRecvPacket(int frame, Packet *p,
 			memcpy(d, src, m_plw);
 	}
 
-	int last_packet = 2 * m_eiger->m_recv_half_frame_packets - 1;
-	if (m_gap_size && (packet_idx == last_packet))
-		memset(dest, 0, m_gap_size);
-
 	return packet_idx;
 }
 
 Eiger::Eiger(Camera *cam)
-	: Camera::Model(cam, Camera::EigerDet), m_corr(NULL)
+	: Camera::Model(cam, Camera::EigerDet)
 {
 	DEB_CONSTRUCTOR();
 
@@ -1086,8 +1125,9 @@ Eiger::Eiger(Camera *cam)
 Eiger::~Eiger()
 {
 	DEB_DESTRUCTOR();
-	if (m_corr)
-		m_corr->m_eiger = NULL;
+	CorrMap::iterator it, end = m_corr_map.end();
+	for (it = m_corr_map.begin(); it != end; ++it)
+		removeCorr(it->second);
 }
 
 int Eiger::getPacketLen()
@@ -1179,8 +1219,11 @@ void Eiger::prepareAcq()
 	for (int i = 0; i < m_nb_det_modules; ++i)
 		m_recv_geom_list[i]->prepareAcq();
 
-	if (m_corr)
-		m_corr->prepareAcq();
+	CorrMap::iterator it, end = m_corr_map.end();
+	for (it = m_corr_map.begin(); it != end; ++it) {
+		CorrBase *corr = it->second;
+		corr->prepareAcq();
+	}
 }
 
 int Eiger::processRecvStart(int recv_idx, int dsize)
@@ -1209,32 +1252,66 @@ Eiger::Correction *Eiger::createCorrectionTask()
 	return new Correction(this);
 }
 
-Eiger::ChipBorderCorrBase *Eiger::createChipBorderCorr(ImageType image_type)
+Eiger::CorrBase *Eiger::createChipBorderCorr(ImageType image_type)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(image_type);
 
-	ChipBorderCorrBase *corr;
+	CorrBase *border_corr;
 	switch (image_type) {
 	case Bpp8:
-		corr = new ChipBorderCorr<Byte>(this);
+		border_corr = new ChipBorderCorr<Byte>(this);
 		break;
 	case Bpp16:
-		corr = new ChipBorderCorr<Word>(this);
+		border_corr = new ChipBorderCorr<Word>(this);
 		break;
 	case Bpp32:
-		corr = new ChipBorderCorr<Long>(this);
+		border_corr = new ChipBorderCorr<Long>(this);
 		break;
 	default:
 		THROW_HW_ERROR(NotSupported) 
 			<< "Eiger correction not supported for " << image_type;
 	}
 
-	if (m_corr)
-		m_corr->m_eiger = NULL;
-	m_corr = corr;
+	addCorr(border_corr);
 
-	return corr;
+	DEB_RETURN() << DEB_VAR1(border_corr);
+	return border_corr;
+}
+
+Eiger::CorrBase *Eiger::createInterModGapCorr()
+{
+	DEB_MEMBER_FUNCT();
+	CorrBase *gap_corr = new InterModGapCorr(this);
+	addCorr(gap_corr);
+	DEB_RETURN() << DEB_VAR1(gap_corr);
+	return gap_corr;
+}
+
+void Eiger::addCorr(CorrBase *corr)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(corr);
+
+	CorrMap::iterator it = m_corr_map.find(corr->m_type);
+	if (it != m_corr_map.end())
+		removeCorr(it->second);
+	m_corr_map[corr->m_type] = corr;
+}
+
+void Eiger::removeCorr(CorrBase *corr)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(corr);
+
+	CorrMap::iterator it = m_corr_map.find(corr->m_type);
+	if (it == m_corr_map.end()) {
+		DEB_WARNING() << DEB_VAR1(corr) << " already removed";
+		return;
+	}
+
+	corr->m_eiger = NULL;
+	m_corr_map.erase(it);
 }
 
 double Eiger::getBorderCorrFactor(int det, int line)

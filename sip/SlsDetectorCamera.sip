@@ -163,7 +163,6 @@ class Eiger : public SlsDetector::Camera::Model
 	{
 	public:
 		Correction(SlsDetector::Eiger *eiger);
-		virtual ~Correction();
 
 		virtual Data process(Data& data);
 	};
