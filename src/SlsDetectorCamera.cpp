@@ -106,21 +106,6 @@ void Args::update_argc_argv()
 	m_argv[m_argc] = NULL;
 }
 
-ostream& lima::SlsDetector::operator <<(ostream& os, State state)
-{
-	const char *name = "Unknown";
-	switch (state) {
-	case Idle:		name = "Idle";		break;
-	case Init:		name = "Init";		break;
-	case Starting:		name = "Starting";	break;
-	case Running:		name = "Running";	break;
-	case StopReq:		name = "StopReq";	break;
-	case Stopping:		name = "Stopping";	break;
-	case Stopped:		name = "Stopped";	break;
-	}
-	return os << name;
-}
-
 Camera::Model::Model(Camera *cam, Type type)
 	: m_cam(cam), m_type(type)
 {
@@ -306,6 +291,21 @@ void Camera::FrameMap::frameItemFinished(int frame, int item)
 	}
 	if (m_cb)
 		m_cb->frameFinished(frame);
+}
+
+ostream& lima::SlsDetector::operator <<(ostream& os, Camera::State state)
+{
+	const char *name = "Unknown";
+	switch (state) {
+	case Camera::Idle:	name = "Idle";		break;
+	case Camera::Init:	name = "Init";		break;
+	case Camera::Starting:	name = "Starting";	break;
+	case Camera::Running:	name = "Running";	break;
+	case Camera::StopReq:	name = "StopReq";	break;
+	case Camera::Stopping:	name = "Stopping";	break;
+	case Camera::Stopped:	name = "Stopped";	break;
+	}
+	return os << name;
 }
 
 ostream& lima::SlsDetector::operator <<(ostream& os, Camera::Type type)
@@ -745,7 +745,7 @@ void Camera::getSaveRaw(bool& save_raw)
 }
 
 
-State Camera::getState()
+Camera::State Camera::getState()
 {
 	DEB_MEMBER_FUNCT();
 	AutoMutex l = lock();
@@ -754,7 +754,7 @@ State Camera::getState()
 	return state;
 }
 
-State Camera::getEffectiveState()
+Camera::State Camera::getEffectiveState()
 {
 	if (m_state == Stopped) {
 		m_acq_thread = NULL;
@@ -772,7 +772,7 @@ void Camera::waitState(State state)
 		m_cond.wait();
 }
 
-State Camera::waitNotState(State state)
+Camera::State Camera::waitNotState(State state)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(state);

@@ -99,22 +99,20 @@ private:
 	AutoPtr<char *, true> m_argv;
 };
 
-enum State {
-	Idle, Init, Starting, Running, StopReq, Stopping, Stopped,
-};
-
-std::ostream& operator <<(std::ostream& os, State state);
-
 
 class Camera : public HwMaxImageSizeCallbackGen
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "Camera", "SlsDetector");
 
 public:
+	enum State {
+		Idle, Init, Starting, Running, StopReq, Stopping, Stopped,
+	};
+
 	enum Type {
 		UnknownDet, GenericDet, EigerDet, JungfrauDet,
 	};
-	
+
 	class Model
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Camera::Model", "SlsDetector");
@@ -422,6 +420,7 @@ private:
 	FrameQueue m_frame_queue;
 };
 
+std::ostream& operator <<(std::ostream& os, Camera::State state);
 std::ostream& operator <<(std::ostream& os, Camera::Type type);
 
 std::ostream& operator <<(std::ostream& os, const Camera::FrameMap& m);

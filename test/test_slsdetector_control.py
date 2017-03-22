@@ -196,7 +196,7 @@ class SlsDetectorAcq:
 
                 time.sleep(self.m_sleep_time)
 
-        self.m_cam.waitState(SlsDetector.Idle);
+        self.m_cam.waitState(SlsDetector.Camera.Idle);
         deb.Trace("Camera finished");
 
         pool_thread_mgr = processlib.PoolThreadMgr.get()

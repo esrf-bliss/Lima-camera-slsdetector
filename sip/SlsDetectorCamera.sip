@@ -27,10 +27,6 @@ namespace SlsDetector
 #include "SlsDetectorCamera.h"
 %End
 
-enum State {
-	Idle, Init, Starting, Running, StopReq, Stopping, Stopped,
-};
-
 class Camera : public HwMaxImageSizeCallbackGen
 {
 
@@ -39,6 +35,10 @@ class Camera : public HwMaxImageSizeCallbackGen
 %End
 
 public:
+	enum State {
+		Idle, Init, Starting, Running, StopReq, Stopping, Stopped,
+	};
+
 	enum Type {
 		GenericDet, EigerDet, JungfrauDet,
 	};
@@ -117,9 +117,10 @@ public:
 	void setSaveRaw(bool  save_raw);
 	void getSaveRaw(bool& save_raw /Out/);
 
-	SlsDetector::State getState();
-	void waitState(SlsDetector::State state);
-	SlsDetector::State waitNotState(SlsDetector::State state);
+	SlsDetector::Camera::State getState();
+	void waitState(SlsDetector::Camera::State state);
+	SlsDetector::Camera::State waitNotState(
+				   SlsDetector::Camera::State state);
 
 	int getNbDetModules();
 

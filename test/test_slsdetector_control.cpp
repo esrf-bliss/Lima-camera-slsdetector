@@ -239,7 +239,7 @@ void SlsDetectorAcq::wait()
 	DEB_MEMBER_FUNCT();
 	m_acq_state.waitNot(AcqState::Acquiring | AcqState::Saving);
 	DEB_TRACE() << "Acquisition finished";
-	m_cam.waitState(Idle);
+	m_cam.waitState(Camera::Idle);
 	DEB_TRACE() << "Camera finished";
 
 }

@@ -368,8 +368,8 @@ void Interface::getStatus(StatusType& status)
 {
 	DEB_MEMBER_FUNCT();
 
-	State state = m_cam.getState();
-	status.acq = (state == Idle) ? AcqReady : AcqRunning;
+	Camera::State state = m_cam.getState();
+	status.acq = (state == Camera::Idle) ? AcqReady : AcqRunning;
 	status.det = DetIdle;
 
 	DEB_RETURN() << DEB_VAR1(status);
