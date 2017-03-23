@@ -912,31 +912,50 @@ string Camera::getStatus()
 	return getCmd("status");
 }
 
+void Camera::setDAC(int dac_idx, int val, bool milli_volt)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR3(dac_idx, val, milli_volt);
+	typedef slsDetectorDefs::dacIndex DacIdx;
+	DacIdx idx = static_cast<DacIdx>(dac_idx);
+	m_det->setDAC(val, idx, milli_volt);
+}
+
+void Camera::getDAC(int dac_idx, int& val, bool milli_volt)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(dac_idx, milli_volt);
+	typedef slsDetectorDefs::dacIndex DacIdx;
+	DacIdx idx = static_cast<DacIdx>(dac_idx);
+	val = m_det->setDAC(-1, idx, milli_volt);
+	DEB_RETURN() << DEB_VAR1(val);
+}
+
 void Camera::setHighVoltage(int hvolt)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(hvolt);
-	putNbCmd<int>("vhighvoltage", hvolt);
+	setDAC(slsDetectorDefs::HV_POT, hvolt);
 }
 
 void Camera::getHighVoltage(int& hvolt)
 {
 	DEB_MEMBER_FUNCT();
-	hvolt = getNbCmd<int>("vhighvoltage");
+	getDAC(slsDetectorDefs::HV_POT, hvolt);
 	DEB_RETURN() << DEB_VAR1(hvolt);
 }
 
-void Camera::setEnergyThreshold(int thres)
+void Camera::setThresholdEnergy(int thres)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(thres);
-	putNbCmd<int>("threshold", thres);
+	m_det->setThresholdEnergy(thres);
 }
 
-void Camera::getEnergyThreshold(int& thres)
+void Camera::getThresholdEnergy(int& thres)
 {
 	DEB_MEMBER_FUNCT();
-	thres = getNbCmd<int>("threshold");
+	thres = m_det->getThresholdEnergy();
 	DEB_RETURN() << DEB_VAR1(thres);
 }
 

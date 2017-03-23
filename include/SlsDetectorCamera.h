@@ -259,10 +259,13 @@ public:
 	void setFramePeriod(double  frame_period);
 	void getFramePeriod(double& frame_period);
 
+	// dat_idx -> slsDetectorDefs::dacIndex
+	void setDAC(int dac_idx, int  val, bool milli_volt = false);
+	void getDAC(int dac_idx, int& val, bool milli_volt = false);
 	void setHighVoltage(int  hvolt);
 	void getHighVoltage(int& hvolt);
-	void setEnergyThreshold(int  thres);
-	void getEnergyThreshold(int& thres);
+	void setThresholdEnergy(int  thres);
+	void getThresholdEnergy(int& thres);
 
 	void prepareAcq();
 	void startAcq();
