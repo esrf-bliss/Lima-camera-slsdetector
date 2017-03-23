@@ -505,11 +505,13 @@ void Camera::AcqThread::threadFunction()
 {
 	DEB_MEMBER_FUNCT();
 
+	multiSlsDetector *det = m_cam->m_det;
+
 	AutoMutex l = m_cam->lock();
 	{
 		AutoMutexUnlock u(l);
-		m_cam->putCmd("receiver start");
-		m_cam->putCmd("status start");
+		det->startReceiver();
+		det->startAcquisition();
 	}
 	m_state = Running;
 	m_cond.broadcast();
@@ -534,8 +536,9 @@ void Camera::AcqThread::threadFunction()
 	m_state = Stopping;
 	{
 		AutoMutexUnlock u(l);
-		m_cam->putCmd("status stop");
-		m_cam->putCmd("receiver stop");
+		det->stopAcquisition();
+		det->startReceiverReadout();
+		det->stopReceiver();
 	}
 	m_state = Stopped;
 	m_cond.broadcast();
@@ -852,7 +855,8 @@ void Camera::prepareAcq()
 
 	m_model->prepareAcq();
 
-	putCmd("resetframescaught");
+	// recv->resetAcquisitionCount()
+	m_det->resetFramesCaught();
 }
 
 void Camera::startAcq()
@@ -901,7 +905,8 @@ void Camera::frameFinished(int frame)
 int Camera::getFramesCaught()
 {
 	DEB_MEMBER_FUNCT();
-	int frames_caught = getNbCmd<int>("framescaught");
+	// recv->getTotalFramesCaught()
+	int frames_caught = m_det->getFramesCaughtByReceiver();
 	DEB_RETURN() << DEB_VAR1(frames_caught);
 	return frames_caught;
 }
