@@ -27,7 +27,7 @@ namespace SlsDetector
 #include "SlsDetectorCamera.h"
 %End
 
-class Camera : public HwMaxImageSizeCallbackGen
+class Camera : public HwMaxImageSizeCallbackGen, public EventCallbackGen
 {
 
 %TypeHeaderCode
@@ -126,7 +126,9 @@ public:
 		void setNbItems(int nb_items);
 		void clear();
 
-		void frameItemFinished(unsigned long frame, int item);
+		void checkFinishedFrameItem(unsigned long frame, int item);
+		void frameItemFinished(unsigned long frame, int item, 
+				       bool no_check = false);
 		
 		unsigned long getLastSeqFinishedFrame() const;
 
@@ -135,6 +137,8 @@ public:
 
 		const SlsDetector::Camera::FrameMap::Map&
 		      getFramePendingItemsMap() const;
+
+		bool isValidFrame(unsigned long frame);
 	};
 
 	Camera(std::string config_fname);

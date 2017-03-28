@@ -38,6 +38,7 @@
 #include "lima/MemUtils.h"
 #include "lima/HwBufferMgr.h"
 #include "lima/HwMaxImageSizeCallback.h"
+#include "lima/Event.h"
 
 #include <iostream>
 #include <string>
@@ -52,7 +53,7 @@ namespace lima
 namespace SlsDetector
 {
 
-class Camera : public HwMaxImageSizeCallbackGen
+class Camera : public HwMaxImageSizeCallbackGen, public EventCallbackGen
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "Camera", "SlsDetector");
 
@@ -169,7 +170,9 @@ public:
 		void setNbItems(int nb_items);
 		void clear();
 
-		void frameItemFinished(FrameType frame, int item);
+		void checkFinishedFrameItem(FrameType frame, int item);
+		void frameItemFinished(FrameType frame, int item, 
+				       bool no_check = false);
 		
 		FrameType getLastSeqFinishedFrame() const
 		{ return m_last_seq_finished_frame; }
@@ -179,6 +182,9 @@ public:
 
 		const Map& getFramePendingItemsMap() const
 		{ return m_map; }
+
+		bool isValidFrame(FrameType frame)
+		{ return (frame != -1); }
 
 	private:
 		friend class Callback;

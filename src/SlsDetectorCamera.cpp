@@ -160,7 +160,7 @@ void Camera::FrameMap::setCallback(Callback *cb)
 		m_cb->m_map = this;
 }
 
-void Camera::FrameMap::frameItemFinished(FrameType frame, int item)
+void Camera::FrameMap::checkFinishedFrameItem(FrameType frame, int item)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -168,6 +168,33 @@ void Camera::FrameMap::frameItemFinished(FrameType frame, int item)
 		THROW_HW_ERROR(InvalidValue) << "No items defined";
 	else if ((item < 0) || (item >= m_nb_items))
 		THROW_HW_ERROR(InvalidValue) << DEB_VAR2(item, m_nb_items);
+
+	FrameType &last = m_last_seq_finished_frame;
+	List &waiting = m_non_seq_finished_frames;
+	bool frame_finished = (isValidFrame(last) && (frame <= last));
+	bool frame_waiting = (waiting.find(frame) != waiting.end());
+	if (frame_finished || frame_waiting)
+		THROW_HW_ERROR(Error) << DEB_VAR1(frame) << " finished already";
+
+	Map::iterator mit = m_map.find(frame);
+	if ((mit == m_map.end()) || !m_debug)
+		return;
+
+	List& item_list = mit->second;
+	List::iterator lit = item_list.find(item);
+	if (lit == item_list.end())
+		THROW_HW_ERROR(Error) << "item " << item << " already "
+				      << "finished for frame " << frame;
+}
+
+void Camera::FrameMap::frameItemFinished(FrameType frame, int item, 
+					 bool no_check)
+{
+	DEB_MEMBER_FUNCT();
+
+	if (!no_check)
+		checkFinishedFrameItem(frame, item);
+
 	Map::iterator mit = m_map.find(frame);
 	if (mit == m_map.end()) {
 		if (m_debug) {
@@ -181,32 +208,30 @@ void Camera::FrameMap::frameItemFinished(FrameType frame, int item)
 	}
 
 	List& item_list = mit->second;
+	bool last_item;
 	if (m_debug) {
 		List::iterator lit = item_list.find(item);
-		if (lit == item_list.end())
-			THROW_HW_ERROR(Error) << "item " << item << " already "
-					      << "finished for frame " << frame;
 		item_list.erase(lit);
-		if (!item_list.empty())
-			return;
+		last_item = item_list.empty();
 	} else {
 		List::iterator lit = item_list.begin();
 		int nb_items = *lit + 1;
 		item_list.erase(lit);
 		item_list.insert(nb_items);
-		if (nb_items != m_nb_items)
-			return;
+		last_item = (nb_items == m_nb_items);
 	}
+	if (!last_item)
+		return
 	m_map.erase(mit);
 
 	FrameType &last = m_last_seq_finished_frame;
 	List &waiting = m_non_seq_finished_frames;
-	List::iterator lit;
 	if (frame == last + 1) {
-		++last;
-		while ((lit = waiting.find(last + 1)) != waiting.end()) {
+		FrameType next = ++last + 1;
+		List::iterator lit;
+		while (!waiting.empty() && (*(lit = waiting.begin()) == next)) {
 			waiting.erase(lit);
-			++last;
+			last = next++;
 		}
 	} else {
 		waiting.insert(frame);
@@ -284,7 +309,8 @@ ostream& lima::SlsDetector::operator <<(ostream& os,
 					const Camera::FrameMap& m)
 {
 	os << "<";
-	os << "LastSeqFinishedFrame=" << m.getLastSeqFinishedFrame() << ", "
+	long last_seq_finished_frame = m.getLastSeqFinishedFrame();
+	os << "LastSeqFinishedFrame=" << last_seq_finished_frame << ", "
 	   << "NonSeqFinishedFrames=" << m.getNonSeqFinishedFrames() << ", "
 	   << "FramePendingItemsMap=" << m.getFramePendingItemsMap();
 	return os << ">";
@@ -425,9 +451,24 @@ void Camera::Receiver::portCallback(FrameType frame, int port, char *dptr,
 
 	char *bptr = m_cam->getFrameBufferPtr(frame);
 	Mutex& lock = m_cam->m_cond.mutex();
-	model->processRecvPort(m_idx, frame, port, dptr, dsize, lock, bptr);
-	AutoMutex l(lock);
-	m_port_map.frameItemFinished(frame, port);
+	try {
+		AutoMutex l(lock);
+		m_port_map.checkFinishedFrameItem(frame, port);
+		{
+			AutoMutexUnlock u(l);
+			model->processRecvPort(m_idx, frame, port, dptr, dsize,
+					       lock, bptr);
+		}
+		m_port_map.frameItemFinished(frame, port, true);
+	} catch (Exception& e) {
+		ostringstream err_msg;
+		err_msg << "Receiver::frameCallback: " << e;
+		Event::Code err_code = Event::CamOverrun;
+		Event *event = new Event(Hardware, Event::Error, Event::Camera, 
+					 err_code, err_msg.str());
+		DEB_EVENT(*event) << DEB_VAR1(*event);
+		m_cam->reportEvent(event);
+	}
 }
 
 Camera::FrameFinishedCallback::FrameFinishedCallback(Camera *cam)
