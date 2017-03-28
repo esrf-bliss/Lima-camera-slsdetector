@@ -466,7 +466,17 @@ void Camera::Receiver::frameCallback(int frame, char *dptr, int dsize, FILE *f,
 	Mutex& lock = m_cam->m_cond.mutex();
 	int packet_idx = model->processRecvPacket(m_idx, frame, dptr, dsize, 
 						  lock, bptr);
-	m_packet_map.frameItemFinished(frame, packet_idx);
+	try {
+		m_packet_map.frameItemFinished(frame, packet_idx);
+	} catch (Exception& e) {
+		ostringstream err_msg;
+		err_msg << "Receiver::frameCallback: " << e;
+		Event::Code err_code = Event::CamOverrun;
+		Event *event = new Event(Hardware, Event::Error, Event::Camera, 
+					 err_code, err_msg.str());
+		DEB_EVENT(*event) << DEB_VAR1(*event);
+		m_cam->reportEvent(event);
+	}
 }
 
 Camera::FrameFinishedCallback::FrameFinishedCallback(Camera *cam)

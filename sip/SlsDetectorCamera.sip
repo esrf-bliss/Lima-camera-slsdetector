@@ -27,7 +27,7 @@ namespace SlsDetector
 #include "SlsDetectorCamera.h"
 %End
 
-class Camera : public HwMaxImageSizeCallbackGen
+class Camera : public HwMaxImageSizeCallbackGen, public EventCallbackGen
 {
 
 %TypeHeaderCode

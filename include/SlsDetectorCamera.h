@@ -36,6 +36,7 @@
 #include "lima/MemUtils.h"
 #include "lima/HwBufferMgr.h"
 #include "lima/HwMaxImageSizeCallback.h"
+#include "lima/Event.h"
 
 #include <iostream>
 #include <string>
@@ -100,7 +101,7 @@ private:
 };
 
 
-class Camera : public HwMaxImageSizeCallbackGen
+class Camera : public HwMaxImageSizeCallbackGen, public EventCallbackGen
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "Camera", "SlsDetector");
 
