@@ -44,18 +44,6 @@
 #include <set>
 
 
-#define DebTypeCameraStart	DebType(1 << 16)
-#define DebTypeCameraMap	DebType(1 << 17)
-#define DebTypeCameraFrame	DebType(1 << 18)
-#define DebTypeRecvFrame	DebType(1 << 19)
-#define DebTypeRecvPacket	DebType(1 << 20)
-
-#define DEB_CAMERA_START()	DEB_MSG(DebTypeCameraStart)
-#define DEB_CAMERA_MAP()	DEB_MSG(DebTypeCameraMap)
-#define DEB_CAMERA_FRAME()	DEB_MSG(DebTypeCameraFrame)
-#define DEB_RECV_FRAME()	DEB_MSG(DebTypeRecvFrame)
-#define DEB_RECV_PACKET()	DEB_MSG(DebTypeRecvPacket)
-
 namespace lima 
 {
 
@@ -122,6 +110,8 @@ public:
 		BurstTrigger    = slsDetectorDefs::BURST_TRIGGER,
 	};
 
+	typedef uint64_t FrameType;
+
 	class Model
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Camera::Model", "SlsDetector");
@@ -145,14 +135,16 @@ public:
 		void putCmd(const std::string& s, int idx = -1);
 		std::string getCmd(const std::string& s, int idx = -1);
 
-		virtual int getPacketLen() = 0;
-		virtual int getRecvFramePackets() = 0;
-	
+		virtual int getRecvPorts() = 0;
+
 		virtual void prepareAcq() = 0;
-		virtual int processRecvStart(int recv_idx, int dsize) = 0;
-		virtual int processRecvPacket(int recv_idx, int frame, 
-					      char *dptr, int dsize, 
-					      Mutex& lock, char *bptr) = 0;
+		virtual void processRecvFileStart(int recv_idx,
+						  uint32_t dsize) = 0;
+		// TODO: add file finished callback
+		virtual void processRecvPort(int recv_idx, FrameType frame, 
+					     int port, char *dptr, 
+					     uint32_t dsize, 
+					     Mutex& lock, char *bptr) = 0;
 
 	private:
 		friend class Camera;
@@ -167,7 +159,7 @@ public:
 
 	public:
 		typedef std::set<int> List;
-		typedef std::map<int, List> Map;
+		typedef std::map<FrameType, List> Map;
 
 		class Callback
 		{
@@ -179,7 +171,7 @@ public:
 			Callback();
 			virtual ~Callback();
 		protected:
-			virtual void frameFinished(int frame) = 0;
+			virtual void frameFinished(FrameType frame) = 0;
 		private:
 			friend class FrameMap;
 			FrameMap *m_map;
@@ -192,9 +184,9 @@ public:
 		void setNbItems(int nb_items);
 		void clear();
 
-		void frameItemFinished(int frame, int item);
+		void frameItemFinished(FrameType frame, int item);
 		
-		int getLastSeqFinishedFrame() const
+		FrameType getLastSeqFinishedFrame() const
 		{ return m_last_seq_finished_frame; }
 
 		const List& getNonSeqFinishedFrames() const
@@ -209,7 +201,7 @@ public:
 		int m_nb_items;
 		Map m_map;
 		List m_non_seq_finished_frames;
-		int m_last_seq_finished_frame;
+		FrameType m_last_seq_finished_frame;
 		Callback *m_cb;
 		bool m_debug;
 	};
@@ -252,8 +244,8 @@ public:
 
 	void setTrigMode(TrigMode  trig_mode);
 	void getTrigMode(TrigMode& trig_mode);
-	void setNbFrames(int  nb_frames);
-	void getNbFrames(int& nb_frames);
+	void setNbFrames(FrameType  nb_frames);
+	void getNbFrames(FrameType& nb_frames);
 	void setExpTime(double  exp_time);
 	void getExpTime(double& exp_time);
 	void setFramePeriod(double  frame_period);
@@ -302,7 +294,7 @@ private:
 				  "SlsDetector");
 
 	public:
-		Receiver(Camera *cam, int idx, int rx_port, int mode);
+		Receiver(Camera *cam, int idx, int rx_port);
 		~Receiver();
 		void start();
 
@@ -318,7 +310,7 @@ private:
 		public:
 			FrameFinishedCallback(Receiver *r);
 		protected:
-			virtual void frameFinished(int frame);
+			virtual void frameFinished(FrameType frame);
 		private:
 			Receiver *m_recv;
 		};
@@ -326,22 +318,33 @@ private:
 		friend class Camera;
 		friend class FrameFinishedCallback;
 
-		static int startCallback(char *fpath, char *fname, int fidx, 
-					 int dsize, void *priv);
+		static int fileStartCallback(char *fpath, char *fname, 
+					 FrameType fidx, uint32_t dsize, 
+					 void *priv);
 
-		static void frameCallback(int frame, char *dptr, int dsize, 
-					  FILE *f, char *guidptr, void *priv);
-
-		int startCallback(char *fpath, char *fname, int fidx, 
-				  int dsize);
-		void frameCallback(int frame, char *dptr, int dsize, FILE *f, 
-				   char *guidptr);
+		static void portCallback(FrameType frame, 
+					 uint32_t exp_len,
+					 uint32_t recv_packets,
+					 uint64_t bunch_id,
+					 uint64_t timestamp,
+					 uint16_t mod_id,
+					 uint16_t x, uint16_t y, uint16_t z,
+					 uint32_t debug,
+					 uint16_t rr_nb,
+					 uint8_t det_type,
+					 uint8_t cb_version,
+					 char *dptr, 
+					 uint32_t dsize, 
+					 void *priv);
+		int fileStartCallback(char *fpath, char *fname, uint64_t fidx, 
+				      uint32_t dsize);
+		void portCallback(FrameType frame, int port, char *dptr, 
+				  uint32_t dsize);
 
 		Camera *m_cam;
 		int m_idx;
 		int m_rx_port;
-		int m_mode;
-		FrameMap m_packet_map;
+		FrameMap m_port_map;
 		Args m_args;
 		AutoPtr<slsReceiverUsers> m_recv;
 		AutoPtr<FrameFinishedCallback> m_cb;
@@ -359,7 +362,7 @@ private:
 	protected:
 		virtual void threadFunction();
 	private:
-		bool newFrameReady(int frame);
+		bool newFrameReady(FrameType frame);
 
 		Camera *m_cam;
 		Cond& m_cond;
@@ -375,7 +378,7 @@ private:
 	public:
 		FrameFinishedCallback(Camera *cam);
 	protected:
-		virtual void frameFinished(int frame);
+		virtual void frameFinished(FrameType frame);
 	private:
 		Camera *m_cam;
 	};
@@ -392,12 +395,12 @@ private:
 
 	State getEffectiveState();
 
-	char *getFrameBufferPtr(int frame_nb);
+	char *getFrameBufferPtr(FrameType frame_nb);
 	void removeSharedMem();
 	void createReceivers();
 
-	void receiverFrameFinished(int frame, Receiver *recv);
-	void frameFinished(int frame);
+	void receiverFrameFinished(FrameType frame, Receiver *recv);
+	void frameFinished(FrameType frame);
 
 	template <class T>
 	void putNbCmd(const std::string& cmd, T val, int idx = -1)
@@ -425,7 +428,7 @@ private:
 	AutoPtr<multiSlsDetectorCommand> m_cmd;
 	Mutex m_cmd_mutex;
 	TrigMode m_trig_mode;
-	int m_nb_frames;
+	FrameType m_nb_frames;
 	double m_exp_time;
 	double m_frame_period;
 	FrameMap m_recv_map;
@@ -458,25 +461,7 @@ class Eiger : public Camera::Model
 	typedef unsigned short Word;
 	typedef unsigned int Long;
 
-	struct Packet 
-	{
-		struct pre 
-		{
-			Long frame;	
-			Byte code;	// 0x6b=first, 0x69=others
-			Byte len;	// 0x80
-			Byte flags;	// 0x00=1st-half, 0x20=2nd-half
-			Byte idx;	// 32-bit
-		} pre;
-		char data[EIGER_PACKET_DATA_LEN];
-		struct post 
-		{
-			Long frame;
-			Byte res_1[2];	// 0x00
-			Byte next;	// 32-bit
-			Byte res_2;     // 0x00
-		} post;
-	};
+	typedef Camera::FrameType FrameType;
 
 	enum CorrType {
 		ChipBorder, Gap,
@@ -495,7 +480,7 @@ class Eiger : public Camera::Model
 		{ return m_nb_modules; }
 
 		virtual void prepareAcq();
-		virtual void correctFrame(int frame, void *ptr) = 0;
+		virtual void correctFrame(FrameType frame, void *ptr) = 0;
 
 	protected:
 		friend class Eiger;
@@ -517,7 +502,7 @@ class Eiger : public Camera::Model
 		InterModGapCorr(Eiger *eiger);
 
 		virtual void prepareAcq();
-		virtual void correctFrame(int frame, void *ptr);
+		virtual void correctFrame(FrameType frame, void *ptr);
 
 	protected:
 		typedef std::pair<int, int> Block;
@@ -550,45 +535,43 @@ class Eiger : public Camera::Model
 	Correction *createCorrectionTask();
 
  protected:
-	virtual int getPacketLen();
-	virtual int getRecvFramePackets();
+	virtual int getRecvPorts();
 
 	virtual void prepareAcq();
-	virtual int processRecvStart(int recv_idx, int dsize);
-	virtual int processRecvPacket(int recv_idx, int frame, 
-				      char *dptr, int dsize, Mutex& lock, 
-				      char *bptr);
+	virtual void processRecvFileStart(int recv_idx, uint32_t dsize);
+	virtual void processRecvPort(int recv_idx, FrameType frame, int port,
+				     char *dptr, uint32_t dsize, Mutex& lock, 
+				     char *bptr);
 
  private:
 	friend class Correction;
 	friend class CorrBase;
 
-	class RecvPacketGeometry
+	class RecvPortGeometry
 	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::RecvPacketGeometry", 
+		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::RecvPortGeometry", 
 				  "SlsDetector");
 	public:
-		RecvPacketGeometry(Eiger *eiger, int recv_idx);
+		RecvPortGeometry(Eiger *eiger, int recv_idx, int port);
 
 		void prepareAcq();
-		void processRecvStart(int dsize);
-		int processRecvPacket(int frame, Packet *p, char *bptr);
+		void processRecvFileStart(uint32_t dsize);
+		void processRecvPort(FrameType frame, char *dptr, char *bptr);
 	private:
 		Eiger *m_eiger;
+		int m_port;
 		bool m_top_half_recv;
+		bool m_port_idx;
 		bool m_raw;
 		int m_recv_idx;
-		int m_recv_offset;
-		int m_packet_offset;
-		int m_right_offset;
+		int m_port_offset;
 		int m_dlw;			// dest line width
 		int m_plw;			// packet line width
 		int m_clw;			// chip line width
 		int m_pchips;
-		int m_plines;
 	};
 
-	typedef std::vector<AutoPtr<RecvPacketGeometry> > RecvGeometryList;
+	typedef std::vector<AutoPtr<RecvPortGeometry> > PortGeometryList;
 
 	template <class T>
 	class ChipBorderCorr : public CorrBase
@@ -611,7 +594,7 @@ class Eiger : public Camera::Model
 			}
 		}
 
-		virtual void correctFrame(int frame, void *ptr)
+		virtual void correctFrame(FrameType frame, void *ptr)
 		{
 			correctBorderCols(ptr);
 			correctBorderRows(ptr);
@@ -698,6 +681,9 @@ class Eiger : public Camera::Model
 
 	void getRecvFrameDim(FrameDim& frame_dim, bool raw, bool geom);
 
+	int getPortIndex(int recv_idx, int port)
+	{ return recv_idx * RecvPorts + port; }
+
 	CorrBase *createChipBorderCorr(ImageType image_type);
 	CorrBase *createInterModGapCorr();
 
@@ -710,12 +696,12 @@ class Eiger : public Camera::Model
 	static const int ChipSize;
 	static const int ChipGap;
 	static const int HalfModuleChips;
+	static const int RecvPorts;
 
 	int m_nb_det_modules;
 	FrameDim m_recv_frame_dim;
-	int m_recv_half_frame_packets;
 	CorrMap m_corr_map;
-	RecvGeometryList m_recv_geom_list;
+	PortGeometryList m_port_geom_list;
 };
 
 

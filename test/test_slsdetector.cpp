@@ -195,7 +195,7 @@ bool TestApp::newFrameReady(const HwFrameInfoType& frame_info)
 		int finished_frames = recv_map.getLastSeqFinishedFrame() + 1;
 		DEB_ALWAYS() << DEB_VAR3(frame_info.acq_frame_nb, 
 					 frames_caught, finished_frames);
-		DEB_CAMERA_MAP() << DEB_VAR1(recv_map);
+		DEB_PARAM() << DEB_VAR1(recv_map);
 		m_last_msg_timestamp = timestamp;
 	}
 

@@ -72,21 +72,22 @@ public:
 		void putCmd(const std::string& s, int idx = -1);
 		std::string getCmd(const std::string& s, int idx = -1);
 
-		virtual int getPacketLen() = 0;
-		virtual int getRecvFramePackets() = 0;
+		virtual int getRecvPorts() = 0;
 
 		virtual void prepareAcq() = 0;
-		virtual int processRecvStart(int recv_idx, int dsize) = 0;
-		virtual int processRecvPacket(int recv_idx, int frame,
-					      char *dptr, int dsize,
-					      Mutex& lock, char *bptr) = 0;
+		virtual void processRecvFileStart(int recv_idx, 
+						  unsigned int dsize) = 0;
+		virtual void processRecvPort(int recv_idx, unsigned long frame,
+					     int port, char *dptr, 
+					     unsigned int dsize,
+					     Mutex& lock, char *bptr) = 0;
 	};
 
 	class FrameMap
 	{
 	public:
 		typedef std::set<int> List;
-		typedef std::map<int, std::set<int> > Map;
+		typedef std::map<unsigned long, std::set<int> > Map;
 
 		class Callback
 		{
@@ -94,7 +95,7 @@ public:
 			Callback();
 			virtual ~Callback();
 		protected:
-			virtual void frameFinished(int frame) = 0;
+			virtual void frameFinished(unsigned long frame) = 0;
 		};
 
 		FrameMap(bool debug = false);
@@ -104,9 +105,9 @@ public:
 		void setNbItems(int nb_items);
 		void clear();
 
-		void frameItemFinished(int frame, int item);
+		void frameItemFinished(unsigned long frame, int item);
 		
-		int getLastSeqFinishedFrame() const;
+		unsigned long getLastSeqFinishedFrame() const;
 
 		const SlsDetector::Camera::FrameMap::List& 
 		      getNonSeqFinishedFrames() const;
@@ -145,8 +146,8 @@ public:
 
 	void setTrigMode(SlsDetector::Camera::TrigMode  trig_mode);
 	void getTrigMode(SlsDetector::Camera::TrigMode& trig_mode /Out/);
-	void setNbFrames(int  nb_frames);
-	void getNbFrames(int& nb_frames /Out/);
+	void setNbFrames(unsigned long  nb_frames);
+	void getNbFrames(unsigned long& nb_frames /Out/);
 	void setExpTime(double  exp_time);
 	void getExpTime(double& exp_time /Out/);
 	void setFramePeriod(double  frame_period);
@@ -192,14 +193,13 @@ class Eiger : public SlsDetector::Camera::Model
 	virtual void getPixelSize(double& x_size /Out/, double& y_size /Out/);
 
  protected:
-	virtual int getPacketLen();
-	virtual int getRecvFramePackets();
+	virtual int getRecvPorts();
 
 	virtual void prepareAcq();
-	virtual int processRecvStart(int recv_idx, int dsize);
-	virtual int processRecvPacket(int recv_idx, int frame,
-				      char *dptr, int dsize, Mutex& lock,
-				      char *bptr);
+	virtual void processRecvFileStart(int recv_idx, unsigned int dsize);
+	virtual void processRecvPort(int recv_idx, unsigned long frame, int port,
+				    char *dptr, unsigned int dsize, Mutex& lock,
+				    char *bptr);
 };
 
 }; // namespace SlsDetector

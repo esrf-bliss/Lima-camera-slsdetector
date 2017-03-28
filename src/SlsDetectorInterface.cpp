@@ -262,7 +262,10 @@ void SyncCtrlObj::setNbHwFrames(int nb_frames)
 void SyncCtrlObj::getNbHwFrames(int& nb_frames)
 {
 	DEB_MEMBER_FUNCT();
-	m_cam.getNbFrames(nb_frames);
+	Camera::FrameType cam_frames;
+	m_cam.getNbFrames(cam_frames);
+	nb_frames = cam_frames;
+	DEB_RETURN() << DEB_VAR1(nb_frames);
 }
 
 void SyncCtrlObj::getValidRanges(ValidRangesType& valid_ranges)

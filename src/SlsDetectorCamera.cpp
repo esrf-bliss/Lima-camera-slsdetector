@@ -238,7 +238,7 @@ void Camera::FrameMap::setCallback(Callback *cb)
 		m_cb->m_map = this;
 }
 
-void Camera::FrameMap::frameItemFinished(int frame, int item)
+void Camera::FrameMap::frameItemFinished(FrameType frame, int item)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -277,7 +277,7 @@ void Camera::FrameMap::frameItemFinished(int frame, int item)
 	}
 	m_map.erase(mit);
 
-	int &last = m_last_seq_finished_frame;
+	FrameType &last = m_last_seq_finished_frame;
 	List &waiting = m_non_seq_finished_frames;
 	List::iterator lit;
 	if (frame == last + 1) {
@@ -374,32 +374,31 @@ Camera::Receiver::FrameFinishedCallback::FrameFinishedCallback(Receiver *r)
 	DEB_CONSTRUCTOR();
 }
 
-void Camera::Receiver::FrameFinishedCallback::frameFinished(int frame) 
+void Camera::Receiver::FrameFinishedCallback::frameFinished(FrameType frame) 
 {
 	DEB_MEMBER_FUNCT();
-	DEB_RECV_FRAME() << DEB_VAR2(frame, m_recv->m_idx); 
+	DEB_PARAM() << DEB_VAR2(frame, m_recv->m_idx); 
 	m_recv->m_cam->receiverFrameFinished(frame, m_recv);
 }
 
-Camera::Receiver::Receiver(Camera *cam, int idx, int rx_port, int mode)
-	: m_cam(cam), m_idx(idx), m_rx_port(rx_port), 
-	  m_mode(mode)
+Camera::Receiver::Receiver(Camera *cam, int idx, int rx_port)
+	: m_cam(cam), m_idx(idx), m_rx_port(rx_port)
 {
 	DEB_CONSTRUCTOR();
 
 	m_cb = new FrameFinishedCallback(this);
 
-	m_packet_map.setCallback(m_cb);
+	m_port_map.setCallback(m_cb);
 
 	ostringstream os;
 	os << "slsReceiver"
-	   << " --rx_tcpport " << m_rx_port << " --mode " << m_mode;
+	   << " --rx_tcpport " << m_rx_port;
 	m_args.set(os.str());
 
 	start();
 
-	m_recv->registerCallBackStartAcquisition(startCallback, this);
-	m_recv->registerCallBackRawDataReady(frameCallback, this);
+	m_recv->registerCallBackStartAcquisition(fileStartCallback, this);
+	m_recv->registerCallBackRawDataReady(portCallback, this);
 }
 
 Camera::Receiver::~Receiver()
@@ -422,39 +421,55 @@ void Camera::Receiver::start()
 void Camera::Receiver::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
-	int nb_packets = m_cam->m_model->getRecvFramePackets();
-	m_packet_map.setNbItems(nb_packets);
-	m_packet_map.clear();
+	int recv_ports = m_cam->m_model->getRecvPorts();
+	m_port_map.setNbItems(recv_ports);
+	m_port_map.clear();
 }
 
-int Camera::Receiver::startCallback(char *fpath, char *fname, 
-				    int fidx, int dsize, void *priv)
+int Camera::Receiver::fileStartCallback(char *fpath, char *fname, 
+					uint64_t fidx, uint32_t dsize, 
+					void *priv)
 {
 	DEB_STATIC_FUNCT();
 	Receiver *recv = static_cast<Receiver *>(priv);
-	return recv->startCallback(fpath, fname, fidx, dsize);
+	return recv->fileStartCallback(fpath, fname, fidx, dsize);
 }
 
-void Camera::Receiver::frameCallback(int frame, char *dptr, int dsize, FILE *f, 
-				     char *guidptr, void *priv)
+void Camera::Receiver::portCallback(FrameType frame, 
+				    uint32_t exp_len,
+				    uint32_t recv_packets,
+				    uint64_t bunch_id,
+				    uint64_t timestamp,
+				    uint16_t mod_id,
+				    uint16_t x, uint16_t y, uint16_t z,
+				    uint32_t debug,
+				    uint16_t rr_nb,
+				    uint8_t det_type,
+				    uint8_t cb_version,
+				    char *dptr, 
+				    uint32_t dsize, 
+				    void *priv)
 {
 	DEB_STATIC_FUNCT();
 	Receiver *recv = static_cast<Receiver *>(priv);
-	recv->frameCallback(frame, dptr, dsize, f, guidptr);
+	int port = (x % 2);
+	FrameType lima_frame = frame - 1;
+	DEB_PARAM() << DEB_VAR2(frame, lima_frame);
+	recv->portCallback(lima_frame, port, dptr, dsize);
 }
 
-int Camera::Receiver::startCallback(char *fpath, char *fname, 
-				    int fidx, int dsize)
+int Camera::Receiver::fileStartCallback(char *fpath, char *fname, 
+					uint64_t fidx, uint32_t dsize)
 {
 	DEB_MEMBER_FUNCT();
 	Model *model = m_cam->m_model;
-	if (!model)
-		return DO_NOTHING;
-	return model->processRecvStart(m_idx, dsize);
+	if (model)
+		model->processRecvFileStart(m_idx, dsize);
+	return 0;
 }
 
-void Camera::Receiver::frameCallback(int frame, char *dptr, int dsize, FILE *f, 
-				     char *guidptr)
+void Camera::Receiver::portCallback(FrameType frame, int port, char *dptr, 
+				    uint32_t dsize)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -464,9 +479,9 @@ void Camera::Receiver::frameCallback(int frame, char *dptr, int dsize, FILE *f,
 
 	char *bptr = m_cam->getFrameBufferPtr(frame);
 	Mutex& lock = m_cam->m_cond.mutex();
-	int packet_idx = model->processRecvPacket(m_idx, frame, dptr, dsize, 
-						  lock, bptr);
-	m_packet_map.frameItemFinished(frame, packet_idx);
+	model->processRecvPort(m_idx, frame, port, dptr, dsize, lock, bptr);
+	AutoMutex l(lock);
+	m_port_map.frameItemFinished(frame, port);
 }
 
 Camera::FrameFinishedCallback::FrameFinishedCallback(Camera *cam)
@@ -475,7 +490,7 @@ Camera::FrameFinishedCallback::FrameFinishedCallback(Camera *cam)
 	DEB_CONSTRUCTOR();
 }
 
-void Camera::FrameFinishedCallback::frameFinished(int frame)
+void Camera::FrameFinishedCallback::frameFinished(FrameType frame)
 {
 	DEB_MEMBER_FUNCT();
 	m_cam->frameFinished(frame);
@@ -510,7 +525,9 @@ void Camera::AcqThread::threadFunction()
 	AutoMutex l = m_cam->lock();
 	{
 		AutoMutexUnlock u(l);
+		DEB_TRACE() << "calling startReceiver";
 		det->startReceiver();
+		DEB_TRACE() << "calling startAcquisition";
 		det->startAcquisition();
 	}
 	m_state = Running;
@@ -520,7 +537,7 @@ void Camera::AcqThread::threadFunction()
 		while ((m_state != StopReq) && m_frame_queue.empty())
 			m_cond.wait();
 		if (!m_frame_queue.empty()) {
-			int frame = m_frame_queue.front();
+			FrameType frame = m_frame_queue.front();
 			m_frame_queue.pop();
 			bool cont_acq;
 			{
@@ -536,15 +553,16 @@ void Camera::AcqThread::threadFunction()
 	m_state = Stopping;
 	{
 		AutoMutexUnlock u(l);
+		DEB_TRACE() << "calling stopAcquisition";
 		det->stopAcquisition();
-		det->startReceiverReadout();
+		DEB_TRACE() << "calling stopReceiver";
 		det->stopReceiver();
 	}
 	m_state = Stopped;
 	m_cond.broadcast();
 }
 
-bool Camera::AcqThread::newFrameReady(int frame)
+bool Camera::AcqThread::newFrameReady(FrameType frame)
 {
 	DEB_MEMBER_FUNCT();
 	HwFrameInfoType frame_info;
@@ -631,7 +649,7 @@ void Camera::setModel(Model *model)
 	m_model = model;
 }
 
-char *Camera::getFrameBufferPtr(int frame_nb)
+char *Camera::getFrameBufferPtr(FrameType frame_nb)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -666,12 +684,9 @@ void Camera::createReceivers()
 						     << "too high";
 		const string& host_name = m_input_data->host_name_list[id];
 		int rx_port = mit->second;
-		int mode = (id % 2);
-		DEB_TRACE() << "  " << host_name << ": " 
-			    << DEB_VAR2(rx_port, mode);
+		DEB_TRACE() << "  " << host_name << ": " << DEB_VAR1(rx_port);
 
-		AutoPtr<Receiver> recv_obj = new Receiver(this, idx, rx_port, 
-							  mode);
+		AutoPtr<Receiver> recv_obj = new Receiver(this, idx, rx_port);
 		m_recv_list.push_back(recv_obj);
 	}
 
@@ -718,7 +733,7 @@ void Camera::getTrigMode(TrigMode& trig_mode)
 	DEB_RETURN() << DEB_VAR1(trig_mode);
 }
 
-void Camera::setNbFrames(int nb_frames)
+void Camera::setNbFrames(FrameType nb_frames)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(nb_frames);
@@ -730,7 +745,7 @@ void Camera::setNbFrames(int nb_frames)
 	m_nb_frames = nb_frames;
 }
 
-void Camera::getNbFrames(int& nb_frames)
+void Camera::getNbFrames(FrameType& nb_frames)
 {
 	DEB_MEMBER_FUNCT();
 	nb_frames = m_nb_frames;
@@ -857,6 +872,7 @@ void Camera::prepareAcq()
 
 	// recv->resetAcquisitionCount()
 	m_det->resetFramesCaught();
+	m_det->enableWriteToFile(0);
 }
 
 void Camera::startAcq()
@@ -885,18 +901,17 @@ void Camera::stopAcq()
 		THROW_HW_ERROR(Error) << "Camera not Idle";
 }
 
-void Camera::receiverFrameFinished(int frame, Receiver *recv)
+void Camera::receiverFrameFinished(FrameType frame, Receiver *recv)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_RECV_FRAME() << DEB_VAR2(frame, recv->m_idx);
-	AutoMutex l = lock();
+	DEB_PARAM() << DEB_VAR2(frame, recv->m_idx);
 	m_recv_map.frameItemFinished(frame, recv->m_idx);
 }
 
-void Camera::frameFinished(int frame)
+void Camera::frameFinished(FrameType frame)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_CAMERA_FRAME() << DEB_VAR1(frame);
+	DEB_PARAM() << DEB_VAR1(frame);
 
 	m_frame_queue.push(frame);
 	m_cond.broadcast();
@@ -940,13 +955,13 @@ void Camera::setHighVoltage(int hvolt)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(hvolt);
-	setDAC(slsDetectorDefs::HV_POT, hvolt);
+	setDAC(slsDetectorDefs::HV_NEW, hvolt);
 }
 
 void Camera::getHighVoltage(int& hvolt)
 {
 	DEB_MEMBER_FUNCT();
-	getDAC(slsDetectorDefs::HV_POT, hvolt);
+	getDAC(slsDetectorDefs::HV_NEW, hvolt);
 	DEB_RETURN() << DEB_VAR1(hvolt);
 }
 
@@ -967,6 +982,7 @@ void Camera::getThresholdEnergy(int& thres)
 const int Eiger::ChipSize = 256;
 const int Eiger::ChipGap = 2;
 const int Eiger::HalfModuleChips = 4;
+const int Eiger::RecvPorts = 2;
 
 Eiger::CorrBase::CorrBase(Eiger *eiger, CorrType type)
 	: m_eiger(eiger), m_type(type)
@@ -1034,7 +1050,7 @@ void Eiger::InterModGapCorr::prepareAcq()
 	}
 }
 
-void Eiger::InterModGapCorr::correctFrame(int frame, void *ptr)
+void Eiger::InterModGapCorr::correctFrame(FrameType frame, void *ptr)
 {
 	DEB_MEMBER_FUNCT();
 	
@@ -1082,7 +1098,7 @@ Data Eiger::Correction::process(Data& data)
 	}
 
 	if (!raw) {
-		int frame = ret.frameNumber;
+		FrameType frame = ret.frameNumber;
 		void *ptr = ret.data();
 		CorrList::iterator it, end = m_corr_list.end();
 		for (it = m_corr_list.begin(); it != end; ++it)
@@ -1091,15 +1107,15 @@ Data Eiger::Correction::process(Data& data)
 	return ret;
 }
 
-Eiger::RecvPacketGeometry::RecvPacketGeometry(Eiger *eiger, int recv_idx)
-	: m_eiger(eiger), m_recv_idx(recv_idx)
+Eiger::RecvPortGeometry::RecvPortGeometry(Eiger *eiger, int recv_idx, int port)
+	: m_eiger(eiger), m_port(port), m_recv_idx(recv_idx)
 {
 	DEB_CONSTRUCTOR();
 	DEB_PARAM() << DEB_VAR1(m_recv_idx);
 	m_top_half_recv = (m_recv_idx % 2 == 0);
 }
 
-void Eiger::RecvPacketGeometry::prepareAcq()
+void Eiger::RecvPortGeometry::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(m_recv_idx);
@@ -1109,69 +1125,55 @@ void Eiger::RecvPacketGeometry::prepareAcq()
 	int depth = frame_dim.getDepth();
 	m_dlw = size.getWidth() * depth;
 	int recv_size = frame_dim.getMemSize();
-	m_recv_offset = recv_size * m_recv_idx;	
+	m_port_offset = recv_size * m_recv_idx;	
 
 	m_eiger->getCamera()->getSaveRaw(m_raw);
 	if (m_raw) {
-		m_packet_offset = m_dlw;
+		m_port_offset += ChipSize * m_dlw * m_port;
 		return;
 	}
 
 	int mod_idx = m_recv_idx / 2;
 	for (int i = 0; i < mod_idx; ++i)
-		m_recv_offset += m_eiger->getInterModuleGap(i) * m_dlw;
+		m_port_offset += m_eiger->getInterModuleGap(i) * m_dlw;
 
 	if (m_top_half_recv) {
-		m_recv_offset += (ChipSize - 1) * m_dlw;
+		m_port_offset += (ChipSize - 1) * m_dlw;
 		m_dlw *= -1;
 	} else {
-		m_recv_offset += (ChipGap / 2) * m_dlw;
+		m_port_offset += (ChipGap / 2) * m_dlw;
 	}
 
 	m_plw = ChipSize * depth;
-	m_pchips = HalfModuleChips / 2;
-	m_plines = sizeof(Packet::data) / m_plw / m_pchips;
-	m_packet_offset = m_plines * m_dlw;
+	m_pchips = HalfModuleChips / RecvPorts;
 	m_clw = m_plw + ChipGap * depth;
-	m_right_offset = m_pchips * m_clw;
+	m_port_offset += m_pchips * m_clw * m_port;
 }
 
-void Eiger::RecvPacketGeometry::processRecvStart(int dsize)
+void Eiger::RecvPortGeometry::processRecvFileStart(uint32_t dsize)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_CAMERA_START() << DEB_VAR2(m_recv_idx, dsize);
+	DEB_PARAM() << DEB_VAR2(m_recv_idx, dsize);
 }
 
-int Eiger::RecvPacketGeometry::processRecvPacket(int frame, Packet *p, 
-						 char *bptr)
+void Eiger::RecvPortGeometry::processRecvPort(FrameType frame, char *dptr,
+					      char *bptr)
 {
 	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR3(frame, m_recv_idx, m_port);
 
-	bool second_half = p->pre.flags & 0x20;
-	int half_packet_idx = p->pre.idx;
-	int packet_idx = second_half ? m_eiger->m_recv_half_frame_packets : 0;
-	packet_idx += half_packet_idx;
-
-	DEB_RECV_PACKET() << DEB_VAR3(frame, m_recv_idx, packet_idx);
-
-	char *dest = bptr + m_recv_offset;	
+	char *dest = bptr + m_port_offset;	
 	if (m_raw) {
-		dest += m_packet_offset * packet_idx;
-		memcpy(dest, p, m_dlw);
-		return packet_idx;
+		memcpy(dest, dptr, m_dlw * ChipSize);
+		return;
 	}
 	
-	dest += m_packet_offset * half_packet_idx;
-	int right_idx = (second_half == m_top_half_recv) ? 1 : 0;
-	dest += m_right_offset * right_idx;
-	char *src = p->data;
-	for (int i = 0; i < m_plines; ++i, dest += m_dlw) {
+	char *src = dptr;
+	for (int i = 0; i < ChipSize; ++i, dest += m_dlw) {
 		char *d = dest;
 		for (int j = 0; j < m_pchips; ++j, src += m_plw, d += m_clw)
 			memcpy(d, src, m_plw);
 	}
-
-	return packet_idx;
 }
 
 Eiger::Eiger(Camera *cam)
@@ -1183,8 +1185,10 @@ Eiger::Eiger(Camera *cam)
 	DEB_TRACE() << "Using Eiger detector, " << DEB_VAR1(m_nb_det_modules);
 
 	for (int i = 0; i < m_nb_det_modules; ++i) {
-		RecvPacketGeometry *g = new RecvPacketGeometry(this, i);
-		m_recv_geom_list.push_back(g);
+		for (int j = 0; j < RecvPorts; ++j) {
+			RecvPortGeometry *g = new RecvPortGeometry(this, i, j);
+			m_port_geom_list.push_back(g);
+		}
 	}
 }
 
@@ -1194,24 +1198,6 @@ Eiger::~Eiger()
 	CorrMap::iterator it, end = m_corr_map.end();
 	for (it = m_corr_map.begin(); it != end; ++it)
 		removeCorr(it->second);
-}
-
-int Eiger::getPacketLen()
-{
-	DEB_MEMBER_FUNCT();
-	int packet_len = sizeof(Packet);
-	DEB_RETURN() << DEB_VAR1(packet_len);
-	return packet_len;
-}
-
-int Eiger::getRecvFramePackets()
-{
-	DEB_MEMBER_FUNCT();
-	FrameDim frame_dim;
-	getRecvFrameDim(frame_dim, false, false);
-	int frame_packets = frame_dim.getMemSize() / sizeof(Packet::data);
-	DEB_RETURN() << DEB_VAR1(frame_packets);
-	return frame_packets;
 }
 
 void Eiger::getFrameDim(FrameDim& frame_dim, bool raw)
@@ -1232,13 +1218,13 @@ void Eiger::getRecvFrameDim(FrameDim& frame_dim, bool raw, bool geom)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(raw);
+	frame_dim.setImageType(getCamera()->getImageType());
+	Size chip_size(ChipSize, ChipSize);
 	if (raw) {
-		frame_dim.setImageType(Bpp8);
-		frame_dim.setSize(Size(getPacketLen(), getRecvFramePackets()));
+		int port_chips = HalfModuleChips / RecvPorts;
+		frame_dim.setSize(chip_size * Point(port_chips, RecvPorts));
 	} else {
-		frame_dim.setImageType(getCamera()->getImageType());
-		Size size(ChipSize, ChipSize);
-		size *= Point(HalfModuleChips, 2);
+		Size size = chip_size * Point(HalfModuleChips, 2);
 		if (geom)
 			size += Point(ChipGap, ChipGap) * Point(3, 1);
 		frame_dim.setSize(size / Point(1, 2));
@@ -1270,6 +1256,13 @@ void Eiger::getPixelSize(double& x_size, double& y_size)
 	DEB_RETURN() << DEB_VAR2(x_size, y_size);
 }
 
+int Eiger::getRecvPorts()
+{
+	DEB_MEMBER_FUNCT();
+	DEB_RETURN() << DEB_VAR1(RecvPorts);
+	return RecvPorts;
+}
+
 void Eiger::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
@@ -1277,13 +1270,11 @@ void Eiger::prepareAcq()
 	bool raw;
 	getCamera()->getSaveRaw(raw);
 	getRecvFrameDim(m_recv_frame_dim, raw, true);
-	m_recv_half_frame_packets = getRecvFramePackets() / 2;
 	
-	DEB_TRACE() << DEB_VAR3(raw, m_recv_frame_dim, 
-				m_recv_half_frame_packets);
+	DEB_TRACE() << DEB_VAR2(raw, m_recv_frame_dim);
 
-	for (int i = 0; i < m_nb_det_modules; ++i)
-		m_recv_geom_list[i]->prepareAcq();
+	for (int i = 0; i < m_nb_det_modules * RecvPorts; ++i)
+		m_port_geom_list[i]->prepareAcq();
 
 	CorrMap::iterator it, end = m_corr_map.end();
 	for (it = m_corr_map.begin(); it != end; ++it) {
@@ -1292,24 +1283,22 @@ void Eiger::prepareAcq()
 	}
 }
 
-int Eiger::processRecvStart(int recv_idx, int dsize)
+void Eiger::processRecvFileStart(int recv_idx, uint32_t dsize)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_CAMERA_START() << DEB_VAR2(recv_idx, dsize);
-	if (dsize != getPacketLen())
-		DEB_WARNING() << "!!!! Warning !!!! " 
-			      << DEB_VAR2(dsize, getPacketLen());
-	m_recv_geom_list[recv_idx]->processRecvStart(dsize);
-	return DO_NOTHING;
+	DEB_PARAM() << DEB_VAR2(recv_idx, dsize);
+	for (int i = 0; i < RecvPorts; ++i) {
+		int port_idx = getPortIndex(recv_idx, i);
+		m_port_geom_list[port_idx]->processRecvFileStart(dsize);
+	}
 }
 
-int Eiger::processRecvPacket(int recv_idx, int frame, char *dptr, int dsize,
-			     Mutex& lock, char *bptr)
+void Eiger::processRecvPort(int recv_idx, FrameType frame, int port, char *dptr, 
+			    uint32_t dsize, Mutex& lock, char *bptr)
 {
 	DEB_MEMBER_FUNCT();
-
-	Packet *p = static_cast<Packet *>(static_cast<void *>(dptr));
-	return m_recv_geom_list[recv_idx]->processRecvPacket(frame, p, bptr);
+	int port_idx = getPortIndex(recv_idx, port);
+	m_port_geom_list[port_idx]->processRecvPort(frame, dptr, bptr);
 }
 
 Eiger::Correction *Eiger::createCorrectionTask()
