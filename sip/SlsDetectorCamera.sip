@@ -52,6 +52,25 @@ public:
 		BurstTrigger = BURST_TRIGGER,
 	};
 
+	enum Settings {
+		Standard      = STANDARD,
+		Fast          = FAST,
+		HighGain      = HIGHGAIN,
+		DynamicGain   = DYNAMICGAIN,
+		LowGain       = LOWGAIN,
+		MediumGain    = MEDIUMGAIN,
+		VeryHighGain  = VERYHIGHGAIN,
+		LowNoise      = LOWNOISE,
+		DynamicHG0    = DYNAMICHG0,
+		FixGain1      = FIXGAIN1,
+		FixGain2      = FIXGAIN2,
+		ForceSwitchG1 = FORCESWITCHG1,
+		ForceSwitchG2 = FORCESWITCHG2,
+		VeryLowGain   = VERYLOWGAIN,
+		Undefined     = UNDEFINED,
+		Unitialized   = UNINITIALIZED,
+	};
+
 	class Model
 	{
 	public:
@@ -71,6 +90,8 @@ public:
 	protected:
 		void putCmd(const std::string& s, int idx = -1);
 		std::string getCmd(const std::string& s, int idx = -1);
+
+		virtual bool checkSettings(SlsDetector::Camera::Settings settings) = 0;
 
 		virtual int getRecvPorts() = 0;
 
@@ -158,6 +179,8 @@ public:
 	void getDAC(int dac_idx, int& val /Out/, bool milli_volt = false);
 	void setHighVoltage(int  hvolt);
 	void getHighVoltage(int& hvolt /Out/);
+	void setSettings(SlsDetector::Camera::Settings  settings);
+	void getSettings(SlsDetector::Camera::Settings& settings /Out/);
 	void setThresholdEnergy(int  thres);
 	void getThresholdEnergy(int& thres /Out/);
 
@@ -193,6 +216,8 @@ class Eiger : public SlsDetector::Camera::Model
 	virtual void getPixelSize(double& x_size /Out/, double& y_size /Out/);
 
  protected:
+	virtual bool checkSettings(SlsDetector::Camera::Settings settings);
+
 	virtual int getRecvPorts();
 
 	virtual void prepareAcq();

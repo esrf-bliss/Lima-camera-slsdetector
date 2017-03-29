@@ -110,6 +110,25 @@ public:
 		BurstTrigger    = slsDetectorDefs::BURST_TRIGGER,
 	};
 
+	enum Settings {
+		Standard      = slsDetectorDefs::STANDARD,
+		Fast          = slsDetectorDefs::FAST,
+		HighGain      = slsDetectorDefs::HIGHGAIN,
+		DynamicGain   = slsDetectorDefs::DYNAMICGAIN,
+		LowGain       = slsDetectorDefs::LOWGAIN,
+		MediumGain    = slsDetectorDefs::MEDIUMGAIN,
+		VeryHighGain  = slsDetectorDefs::VERYHIGHGAIN,
+		LowNoise      = slsDetectorDefs::LOWNOISE,
+		DynamicHG0    = slsDetectorDefs::DYNAMICHG0,
+		FixGain1      = slsDetectorDefs::FIXGAIN1,
+		FixGain2      = slsDetectorDefs::FIXGAIN2,
+		ForceSwitchG1 = slsDetectorDefs::FORCESWITCHG1,
+		ForceSwitchG2 = slsDetectorDefs::FORCESWITCHG2,
+		VeryLowGain   = slsDetectorDefs::VERYLOWGAIN,
+		Undefined     = slsDetectorDefs::UNDEFINED,
+		Unitialized   = slsDetectorDefs::UNINITIALIZED,
+	};
+
 	typedef uint64_t FrameType;
 
 	class Model
@@ -134,6 +153,8 @@ public:
 	protected:
 		void putCmd(const std::string& s, int idx = -1);
 		std::string getCmd(const std::string& s, int idx = -1);
+
+		virtual bool checkSettings(Settings settings) = 0;
 
 		virtual int getRecvPorts() = 0;
 
@@ -256,6 +277,8 @@ public:
 	void getDAC(int dac_idx, int& val, bool milli_volt = false);
 	void setHighVoltage(int  hvolt);
 	void getHighVoltage(int& hvolt);
+	void setSettings(Settings  settings);
+	void getSettings(Settings& settings);
 	void setThresholdEnergy(int  thres);
 	void getThresholdEnergy(int& thres);
 
@@ -431,6 +454,7 @@ private:
 	FrameType m_nb_frames;
 	double m_exp_time;
 	double m_frame_period;
+	Settings m_settings;
 	FrameMap m_recv_map;
 	AutoPtr<FrameFinishedCallback> m_frame_cb;
 	StdBufferCbMgr *m_buffer_cb_mgr;
@@ -444,6 +468,7 @@ private:
 std::ostream& operator <<(std::ostream& os, Camera::State state);
 std::ostream& operator <<(std::ostream& os, Camera::Type type);
 std::ostream& operator <<(std::ostream& os, Camera::TrigMode trig_mode);
+std::ostream& operator <<(std::ostream& os, Camera::Settings settings);
 
 std::ostream& operator <<(std::ostream& os, const Camera::FrameMap& m);
 std::ostream& operator <<(std::ostream& os, const Camera::FrameMap::List& l);
@@ -535,6 +560,8 @@ class Eiger : public Camera::Model
 	Correction *createCorrectionTask();
 
  protected:
+	virtual bool checkSettings(Camera::Settings settings);
+
 	virtual int getRecvPorts();
 
 	virtual void prepareAcq();

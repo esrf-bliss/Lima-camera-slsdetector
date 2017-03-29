@@ -334,6 +334,30 @@ ostream& lima::SlsDetector::operator <<(ostream& os, Camera::TrigMode trig_mode)
 	return os << name;
 }
 
+ostream& lima::SlsDetector::operator <<(ostream& os, Camera::Settings settings)
+{
+	const char *name = "Unknown";
+	switch (settings) {
+	case Camera::Standard:		name = "Standard";		break;
+	case Camera::Fast:		name = "Fast";			break;
+	case Camera::HighGain:		name = "HighGain";		break;
+	case Camera::DynamicGain:	name = "DynamicGain";		break;
+	case Camera::LowGain:		name = "LowGain";		break;
+	case Camera::MediumGain:	name = "MediumGain";		break;
+	case Camera::VeryHighGain:	name = "VeryHighGain";		break;
+	case Camera::LowNoise:		name = "LowNoise";		break;
+	case Camera::DynamicHG0:	name = "DynamicHG0";		break;
+	case Camera::FixGain1:		name = "FixGain1";		break;
+	case Camera::FixGain2:		name = "FixGain2";		break;
+	case Camera::ForceSwitchG1:	name = "ForceSwitchG1";		break;
+	case Camera::ForceSwitchG2:	name = "ForceSwitchG2";		break;
+	case Camera::VeryLowGain:	name = "VeryLowGain";		break;
+	case Camera::Undefined:		name = "Undefined";		break;
+	case Camera::Unitialized:	name = "Unitialized";		break;
+	}
+	return os << name;
+}
+
 ostream& lima::SlsDetector::operator <<(ostream& os, 
 					const Camera::FrameMap& m)
 {
@@ -593,6 +617,7 @@ Camera::Camera(string config_fname)
 	DEB_TRACE() << "Creating the multiSlsDetectorCommand";
 	m_cmd = new multiSlsDetectorCommand(m_det);
 
+	setSettings(Standard);
 	setTrigMode(Auto);
 	setNbFrames(1);
 	setExpTime(0.99);
@@ -868,6 +893,9 @@ void Camera::prepareAcq()
 			m_frame_queue.pop();
 	}
 
+
+	setSettings(m_settings);
+
 	m_model->prepareAcq();
 
 	// recv->resetAcquisitionCount()
@@ -948,6 +976,10 @@ void Camera::getDAC(int dac_idx, int& val, bool milli_volt)
 	typedef slsDetectorDefs::dacIndex DacIdx;
 	DacIdx idx = static_cast<DacIdx>(dac_idx);
 	val = m_det->setDAC(-1, idx, milli_volt);
+	if (val == -1) {
+		// TODO: get slsdetector object idx
+		// val = m_det->setDAC(-1, idx, milli_volt, 0);
+	}
 	DEB_RETURN() << DEB_VAR1(val);
 }
 
@@ -963,6 +995,27 @@ void Camera::getHighVoltage(int& hvolt)
 	DEB_MEMBER_FUNCT();
 	getDAC(slsDetectorDefs::HV_NEW, hvolt);
 	DEB_RETURN() << DEB_VAR1(hvolt);
+}
+
+void Camera::setSettings(Settings settings)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(settings);
+	if (m_model) {
+		if (!m_model->checkSettings(settings))
+			THROW_HW_ERROR(InvalidValue) << DEB_VAR1(settings);
+		typedef slsDetectorDefs::detectorSettings  DetSettings;
+		DetSettings cam_settings = DetSettings(settings);
+		m_det->setSettings(cam_settings);
+	}
+	m_settings = settings;
+}
+
+void Camera::getSettings(Settings& settings)
+{
+	DEB_MEMBER_FUNCT();
+	settings = m_settings;
+	DEB_RETURN() << DEB_VAR1(settings);
 }
 
 void Camera::setThresholdEnergy(int thres)
@@ -1254,6 +1307,23 @@ void Eiger::getPixelSize(double& x_size, double& y_size)
 	DEB_MEMBER_FUNCT();
 	x_size = y_size = 75e-6;
 	DEB_RETURN() << DEB_VAR2(x_size, y_size);
+}
+
+bool Eiger::checkSettings(Camera::Settings settings)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(settings);
+	bool ok;
+	switch (settings) {
+	case Camera::Standard:
+		ok = true;
+		break;
+	default:
+		ok = false;
+	}
+
+	DEB_RETURN() << DEB_VAR1(ok);
+	return ok;
 }
 
 int Eiger::getRecvPorts()
