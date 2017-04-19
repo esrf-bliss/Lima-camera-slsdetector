@@ -23,6 +23,8 @@
 #ifndef __SLS_DETECTOR_CAMERA_H
 #define __SLS_DETECTOR_CAMERA_H
 
+#include "SlsDetectorArgs.h"
+
 #include "multiSlsDetector.h"
 #include "multiSlsDetectorCommand.h"
 #include "slsReceiverUsers.h"
@@ -49,44 +51,6 @@ namespace lima
 
 namespace SlsDetector
 {
-
-class Args
-{
-	DEB_CLASS_NAMESPC(DebModCamera, "Args", "SlsDetector");
-
-public:
-	Args();
-	Args(unsigned int argc, char *argv[]);
-	Args(const std::string& s);
-	Args(const Args& o);
-
-	void set(const std::string& s);
-	void clear();
-
-	unsigned int size()
-	{ return m_argc; }
-	operator char **()
-	{ return m_argv; }
-	operator bool()
-	{ return bool(m_argc); }
-	char *operator[](int pos)
-	{ return m_argv[pos]; }
-
-	Args& operator =(const std::string& s);
-
-	string pop_front();
-	void erase(int pos);
-
-private:
-	typedef std::vector<std::string> StringList;
-
-	void update_argc_argv();
-	
-	StringList m_arg_list;
-	unsigned int m_argc;
-	AutoPtr<char *, true> m_argv;
-};
-
 
 class Camera : public HwMaxImageSizeCallbackGen
 {

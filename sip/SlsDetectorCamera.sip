@@ -44,12 +44,12 @@ public:
 	};
 
 	enum TrigMode {
-		Auto = AUTO_TIMING,
+		Auto            = AUTO_TIMING,
 		TriggerExposure = TRIGGER_EXPOSURE,
-		TriggerReadout = TRIGGER_READOUT,
-		Gating = GATE_FIX_NUMBER,
+		TriggerReadout  = TRIGGER_READOUT,
+		Gating          = GATE_FIX_NUMBER,
 		TriggeredGating = GATE_WITH_START_TRIGGER,
-		BurstTrigger = BURST_TRIGGER,
+		BurstTrigger    = BURST_TRIGGER,
 	};
 
 	enum Settings {
