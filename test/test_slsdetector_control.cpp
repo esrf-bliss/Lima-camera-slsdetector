@@ -20,6 +20,7 @@
 // along with this program; if not, see <http://www.gnu.org/licenses/>.
 //###########################################################################
 #include "SlsDetectorInterface.h"
+#include "SlsDetectorEiger.h"
 #include "lima/CtControl.h"
 #include "lima/CtAcquisition.h"
 #include "lima/CtImage.h"

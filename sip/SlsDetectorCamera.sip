@@ -43,34 +43,6 @@ public:
 		GenericDet, EigerDet, JungfrauDet,
 	};
 
-	enum TrigMode {
-		Auto            = AUTO_TIMING,
-		TriggerExposure = TRIGGER_EXPOSURE,
-		TriggerReadout  = TRIGGER_READOUT,
-		Gating          = GATE_FIX_NUMBER,
-		TriggeredGating = GATE_WITH_START_TRIGGER,
-		BurstTrigger    = BURST_TRIGGER,
-	};
-
-	enum Settings {
-		Standard      = STANDARD,
-		Fast          = FAST,
-		HighGain      = HIGHGAIN,
-		DynamicGain   = DYNAMICGAIN,
-		LowGain       = LOWGAIN,
-		MediumGain    = MEDIUMGAIN,
-		VeryHighGain  = VERYHIGHGAIN,
-		LowNoise      = LOWNOISE,
-		DynamicHG0    = DYNAMICHG0,
-		FixGain1      = FIXGAIN1,
-		FixGain2      = FIXGAIN2,
-		ForceSwitchG1 = FORCESWITCHG1,
-		ForceSwitchG2 = FORCESWITCHG2,
-		VeryLowGain   = VERYLOWGAIN,
-		Undefined     = UNDEFINED,
-		Unitialized   = UNINITIALIZED,
-	};
-
 	class Model
 	{
 	public:
@@ -91,7 +63,7 @@ public:
 		void putCmd(const std::string& s, int idx = -1);
 		std::string getCmd(const std::string& s, int idx = -1);
 
-		virtual bool checkSettings(SlsDetector::Camera::Settings settings) = 0;
+		virtual bool checkSettings(SlsDetector::Defs::Settings settings) = 0;
 
 		virtual int getRecvPorts() = 0;
 
@@ -169,8 +141,8 @@ public:
 	int getFramesCaught();
 	std::string getStatus();
 
-	void setTrigMode(SlsDetector::Camera::TrigMode  trig_mode);
-	void getTrigMode(SlsDetector::Camera::TrigMode& trig_mode /Out/);
+	void setTrigMode(SlsDetector::Defs::TrigMode  trig_mode);
+	void getTrigMode(SlsDetector::Defs::TrigMode& trig_mode /Out/);
 	void setNbFrames(unsigned long  nb_frames);
 	void getNbFrames(unsigned long& nb_frames /Out/);
 	void setExpTime(double  exp_time);
@@ -183,8 +155,8 @@ public:
 	void getDAC(int dac_idx, int& val /Out/, bool milli_volt = false);
 	void setHighVoltage(int  hvolt);
 	void getHighVoltage(int& hvolt /Out/);
-	void setSettings(SlsDetector::Camera::Settings  settings);
-	void getSettings(SlsDetector::Camera::Settings& settings /Out/);
+	void setSettings(SlsDetector::Defs::Settings  settings);
+	void getSettings(SlsDetector::Defs::Settings& settings /Out/);
 	void setThresholdEnergy(int  thres);
 	void getThresholdEnergy(int& thres /Out/);
 
@@ -193,42 +165,5 @@ public:
 	void stopAcq();
 };
 
-
-class Eiger : public SlsDetector::Camera::Model
-{
-
-%TypeHeaderCode
-#include "SlsDetectorCamera.h"
-%End
-
- public:
-	class Correction : public LinkTask
-	{
-	public:
-		Correction(SlsDetector::Eiger *eiger);
-
-		virtual Data process(Data& data);
-	};
-
-
-	Eiger(SlsDetector::Camera *cam);
-
-	virtual void getFrameDim(FrameDim& frame_dim /Out/, bool raw = false);
-	SlsDetector::Eiger::Correction *createCorrectionTask() /Factory/;
-
-	virtual std::string getName();
-	virtual void getPixelSize(double& x_size /Out/, double& y_size /Out/);
-
- protected:
-	virtual bool checkSettings(SlsDetector::Camera::Settings settings);
-
-	virtual int getRecvPorts();
-
-	virtual void prepareAcq();
-	virtual void processRecvFileStart(int recv_idx, unsigned int dsize);
-	virtual void processRecvPort(int recv_idx, unsigned long frame, int port,
-				    char *dptr, unsigned int dsize, Mutex& lock,
-				    char *bptr);
-};
 
 }; // namespace SlsDetector

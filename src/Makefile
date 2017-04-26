@@ -40,7 +40,11 @@ SLS_DETECTORS_INCL_FLAGS = -I$(SLS_DETECTORS_SW)/include \
 CPPFLAGS = $(CT_CPPFLAGS) $(SLS_DETECTORS_INCL_FLAGS)
 CXXFLAGS = -I../include $(CT_CXXFLAGS)
 
-slsdetector-objs = SlsDetectorInterface.o SlsDetectorCamera.o SlsDetectorArgs.o
+slsdetector-objs = SlsDetectorInterface.o \
+		   SlsDetectorEiger.o \
+		   SlsDetectorCamera.o \
+		   SlsDetectorArgs.o \
+		   SlsDetectorDefs.o
 
 SRCS = $(slsdetector-objs:.o=.cpp) 
 

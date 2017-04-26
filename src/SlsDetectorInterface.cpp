@@ -163,12 +163,12 @@ void DetInfoCtrlObj::unregisterMaxImageSizeCallback(
  * \brief SyncCtrlObj constructor
  *******************************************************************/
 
-typedef pair<TrigMode, Camera::TrigMode> TrigPair;
+typedef pair<TrigMode, Defs::TrigMode> TrigPair;
 static const TrigPair Lima2CamTrigModeCList[] = {
-	TrigPair(IntTrig,	Camera::Auto),
-	TrigPair(ExtTrigSingle, Camera::BurstTrigger),
-	TrigPair(ExtTrigMult,	Camera::TriggerExposure),
-	TrigPair(ExtGate,	Camera::Gating),
+	TrigPair(IntTrig,	Defs::Auto),
+	TrigPair(ExtTrigSingle, Defs::BurstTrigger),
+	TrigPair(ExtTrigMult,	Defs::TriggerExposure),
+	TrigPair(ExtGate,	Defs::Gating),
 };
 SyncCtrlObj::TrigModeMap
 SyncCtrlObj::Lima2CamTrigModeMap(C_LIST_ITERS(Lima2CamTrigModeCList));
@@ -201,14 +201,14 @@ void SyncCtrlObj::setTrigMode(TrigMode trig_mode)
 	if (!checkTrigMode(trig_mode))
 		THROW_HW_ERROR(InvalidValue) << "Invalid " 
 					     << DEB_VAR1(trig_mode);
-	Camera::TrigMode cam_mode = Lima2CamTrigModeMap[trig_mode];
+	Defs::TrigMode cam_mode = Lima2CamTrigModeMap[trig_mode];
 	m_cam.setTrigMode(cam_mode);
 }
 
 void SyncCtrlObj::getTrigMode(TrigMode& trig_mode)
 {
 	DEB_MEMBER_FUNCT();
-	Camera::TrigMode cam_mode;
+	Defs::TrigMode cam_mode;
 	m_cam.getTrigMode(cam_mode);
 	typedef TrigModeMap::const_iterator MapConstIt;
 	MapConstIt it = FindMapValue(Lima2CamTrigModeMap, cam_mode);
