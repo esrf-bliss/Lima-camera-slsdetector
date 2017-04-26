@@ -95,6 +95,7 @@ public:
 	};
 
 	typedef uint64_t FrameType;
+	typedef std::vector<std::string> HostnameList;
 
 	class Model
 	{
@@ -205,18 +206,21 @@ public:
 	Model *getModel()
 	{ return m_model; }
 
+	HostnameList getHostnameList()
+	{ return m_input_data->host_name_list; }
+
+	int getNbDetModules()
+	{ return m_input_data->host_name_list.size(); }
+
 	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr)
 	{ m_buffer_cb_mgr = buffer_cb_mgr; }
 
-	void setSaveRaw(bool  save_raw);
-	void getSaveRaw(bool& save_raw);
+	void setRawMode(bool  raw_mode);
+	void getRawMode(bool& raw_mode);
 
 	State getState();
 	void waitState(State state);
 	State waitNotState(State state);
-
-	int getNbDetModules()
-	{ return m_input_data->host_name_list.size(); }
 
 	ImageType getImageType() const
 	{ return m_image_type; }
@@ -263,7 +267,6 @@ private:
 	typedef MatchList::const_iterator MatchListIt;
 
 	typedef std::vector<std::string> StringList;
-	typedef StringList HostnameList;
 	typedef std::map<int, int> RecvPortMap;
 	typedef std::map<int, int> FrameRecvMap;
 
@@ -429,7 +432,7 @@ private:
 	AutoPtr<FrameFinishedCallback> m_frame_cb;
 	StdBufferCbMgr *m_buffer_cb_mgr;
 	ImageType m_image_type;
-	bool m_save_raw;
+	bool m_raw_mode;
 	AutoPtr<AcqThread> m_acq_thread;
 	volatile State m_state;
 	FrameQueue m_frame_queue;

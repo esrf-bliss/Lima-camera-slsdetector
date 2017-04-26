@@ -49,7 +49,7 @@ void TestApp::Pars::loadDefaults()
 	nb_frames = 10;
 	exp_time = 2.0e-3;
 	frame_period = 2.5e-3;
-	save_raw = false;
+	raw_mode = false;
 	debug_type_flags = 0;
 	out_dir = "/tmp";
 }
@@ -76,7 +76,7 @@ void TestApp::Pars::loadOpts()
 			       "frame period");
 	m_opt_list.insert(o);
 
-	o = new ArgOpt<bool>(save_raw, "-r", "--save-raw");
+	o = new ArgOpt<bool>(raw_mode, "-r", "--save-raw");
 	m_opt_list.insert(o);
 
 	o = new ArgOpt<int>(debug_type_flags, "-d", "--debug-type-flags", 
@@ -149,7 +149,7 @@ void TestApp::run()
 		m_cam->setNbFrames(m_pars.nb_frames);
 		m_cam->setExpTime(m_pars.exp_time);
 		m_cam->setFramePeriod(m_pars.frame_period);
-		m_cam->setSaveRaw(m_pars.save_raw);
+		m_cam->setRawMode(m_pars.raw_mode);
 
 		FrameDim frame_dim;
 		m_cam->getFrameDim(frame_dim);
@@ -167,7 +167,7 @@ void TestApp::run()
 
 		int first = max(0, m_pars.nb_frames - nb_buffers);
 		int save_frames = min(m_pars.nb_frames, nb_buffers);
-		if (m_pars.save_raw) {
+		if (m_pars.raw_mode) {
 			save_raw_data(first, save_frames);
 		} else {
 			save_edf_data(first, save_frames);

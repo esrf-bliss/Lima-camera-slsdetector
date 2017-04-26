@@ -47,7 +47,7 @@ class TestApp
 		int nb_frames;
 		double exp_time;
 		double frame_period;
-		bool save_raw;
+		bool raw_mode;
 		int debug_type_flags;
 		std::string out_dir;
 

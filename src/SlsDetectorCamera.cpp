@@ -561,7 +561,7 @@ bool Camera::AcqThread::newFrameReady(FrameType frame)
 Camera::Camera(string config_fname) 
 	: m_model(NULL),
 	  m_image_type(Bpp16), 
-	  m_save_raw(false),
+	  m_raw_mode(false),
 	  m_state(Idle)
 {
 	DEB_CONSTRUCTOR();
@@ -770,26 +770,26 @@ void Camera::getFramePeriod(double& frame_period)
 	DEB_RETURN() << DEB_VAR1(frame_period);
 }
 
-void Camera::setSaveRaw(bool save_raw)
+void Camera::setRawMode(bool raw_mode)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(save_raw);
+	DEB_PARAM() << DEB_VAR1(raw_mode);
 
-	if (save_raw == m_save_raw)
+	if (raw_mode == m_raw_mode)
 		return;
-	m_save_raw = save_raw;
+	m_raw_mode = raw_mode;
 
 	FrameDim frame_dim;
-	getFrameDim(frame_dim, m_save_raw);
+	getFrameDim(frame_dim, m_raw_mode);
 	DEB_TRACE() << "MaxImageSizeChanged: " << DEB_VAR1(frame_dim);
 	maxImageSizeChanged(frame_dim.getSize(), frame_dim.getImageType());
 }
 
-void Camera::getSaveRaw(bool& save_raw)
+void Camera::getRawMode(bool& raw_mode)
 {
 	DEB_MEMBER_FUNCT();
-	save_raw = m_save_raw; 
-	DEB_RETURN() << DEB_VAR1(save_raw);
+	raw_mode = m_raw_mode; 
+	DEB_RETURN() << DEB_VAR1(raw_mode);
 }
 
 
@@ -1018,7 +1018,7 @@ bool Eiger::CorrBase::getRaw()
 {
 	DEB_MEMBER_FUNCT();
 	bool raw;
-	m_eiger->getCamera()->getSaveRaw(raw);
+	m_eiger->getCamera()->getRawMode(raw);
 	DEB_RETURN() << DEB_VAR1(raw);
 	return raw; 
 }
@@ -1143,7 +1143,7 @@ void Eiger::RecvPortGeometry::prepareAcq()
 	int recv_size = frame_dim.getMemSize();
 	m_port_offset = recv_size * m_recv_idx;	
 
-	m_eiger->getCamera()->getSaveRaw(m_raw);
+	m_eiger->getCamera()->getRawMode(m_raw);
 	if (m_raw) {
 		m_port_offset += ChipSize * m_dlw * m_port;
 		return;
@@ -1253,12 +1253,13 @@ string Eiger::getName()
 	DEB_MEMBER_FUNCT();
 	ostringstream os;
 	os << "PSI/Eiger-";
-	if (m_nb_det_modules == 1) {
-		os << "500K";
-	} else if (m_nb_det_modules == 8) {
+	int nb_modules = m_nb_det_modules / 2;
+	if (nb_modules == 1) {
+		os << "500k";
+	} else if (nb_modules == 4) {
 		os << "2M";
 	} else {
-		os << m_nb_det_modules << "-Modules";
+		os << nb_modules << "-Modules";
 	}
 	string name = os.str();
 	DEB_RETURN() << DEB_VAR1(name);
@@ -1301,7 +1302,7 @@ void Eiger::prepareAcq()
 	DEB_MEMBER_FUNCT();
 
 	bool raw;
-	getCamera()->getSaveRaw(raw);
+	getCamera()->getRawMode(raw);
 	getRecvFrameDim(m_recv_frame_dim, raw, true);
 	
 	DEB_TRACE() << DEB_VAR2(raw, m_recv_frame_dim);

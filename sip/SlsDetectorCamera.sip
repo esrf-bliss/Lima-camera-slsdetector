@@ -146,18 +146,18 @@ public:
 
 	SlsDetector::Camera::Type getType();
 	SlsDetector::Camera::Model *getModel();
+	std::vector<std::string> getHostnameList();
+	int getNbDetModules();
 
 	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr);
 
-	void setSaveRaw(bool  save_raw);
-	void getSaveRaw(bool& save_raw /Out/);
+	void setRawMode(bool  raw_mode);
+	void getRawMode(bool& raw_mode /Out/);
 
 	SlsDetector::Camera::State getState();
 	void waitState(SlsDetector::Camera::State state);
 	SlsDetector::Camera::State waitNotState(
 				   SlsDetector::Camera::State state);
-
-	int getNbDetModules();
 
 	void getFrameDim(FrameDim& frame_dim, bool raw = false);
 
