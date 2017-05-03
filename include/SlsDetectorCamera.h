@@ -51,6 +51,8 @@ class Camera : public HwMaxImageSizeCallbackGen, public EventCallbackGen
 public:
 	typedef Defs::TrigMode TrigMode;
 	typedef Defs::Settings Settings;
+	typedef Defs::DACIndex DACIndex;
+	typedef Defs::ADCIndex ADCIndex;
 
 	enum State {
 		Idle, Init, Starting, Running, StopReq, Stopping, Stopped,
@@ -61,7 +63,8 @@ public:
 	};
 
 	typedef uint64_t FrameType;
-	typedef std::vector<std::string> HostnameList;
+	typedef std::vector<std::string> NameList;
+	typedef std::vector<int> IntList;
 
 	class Model
 	{
@@ -81,6 +84,11 @@ public:
 
 		virtual std::string getName() = 0;
 		virtual void getPixelSize(double& x_size, double& y_size) = 0;
+
+		virtual void getDACInfo(NameList& name_list, 
+					IntList& dac_idx_list) = 0;
+		virtual void getADCInfo(NameList& name_list, 
+					IntList& adc_idx_list) = 0;
 
 	protected:
 		void putCmd(const std::string& s, int idx = -1);
@@ -172,11 +180,14 @@ public:
 	Model *getModel()
 	{ return m_model; }
 
-	HostnameList getHostnameList()
+	NameList getHostnameList()
 	{ return m_input_data->host_name_list; }
 
 	int getNbDetModules()
 	{ return m_input_data->host_name_list.size(); }
+
+	int getNbDetSubModules()
+	{ return m_det->getNMods(); }
 
 	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr)
 	{ m_buffer_cb_mgr = buffer_cb_mgr; }
@@ -212,11 +223,17 @@ public:
 	void setFramePeriod(double  frame_period);
 	void getFramePeriod(double& frame_period);
 
-	// dat_idx -> slsDetectorDefs::dacIndex
-	void setDAC(int dac_idx, int  val, bool milli_volt = false);
-	void getDAC(int dac_idx, int& val, bool milli_volt = false);
-	void setHighVoltage(int  hvolt);
-	void getHighVoltage(int& hvolt);
+	// setDAC: sub_mod_idx: 0-N=sub_module, -1=all
+	void setDAC(int sub_mod_idx, DACIndex dac_idx, int  val, 
+		    bool milli_volt = false);
+	void getDAC(int sub_mod_idx, DACIndex dac_idx, int& val, 
+		    bool milli_volt = false);
+	void getDACList(DACIndex dac_idx, IntList& val_list,
+			bool milli_volt = false);
+
+	void getADC(int sub_mod_idx, ADCIndex adc_idx, int& val);
+	void getADCList(ADCIndex adc_idx, IntList& val_list);
+
 	void setSettings(Settings  settings);
 	void getSettings(Settings& settings);
 	void setThresholdEnergy(int  thres);
@@ -244,7 +261,7 @@ private:
 				  "SlsDetector");
 	public:
 		std::string config_file_name;
-		HostnameList host_name_list;
+		NameList host_name_list;
 		RecvPortMap recv_port_map;
 		AppInputData(std::string cfg_fname);
 		void parseConfigFile();

@@ -884,41 +884,78 @@ string Camera::getStatus()
 	return getCmd("status");
 }
 
-void Camera::setDAC(int dac_idx, int val, bool milli_volt)
+void Camera::setDAC(int sub_mod_idx, DACIndex dac_idx, int val, bool milli_volt)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR3(dac_idx, val, milli_volt);
-	typedef slsDetectorDefs::dacIndex DacIdx;
-	DacIdx idx = static_cast<DacIdx>(dac_idx);
-	m_det->setDAC(val, idx, milli_volt);
+	DEB_PARAM() << DEB_VAR4(sub_mod_idx, dac_idx, val, milli_volt);
+
+	if ((sub_mod_idx < -1) || (sub_mod_idx >= getNbDetSubModules()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(sub_mod_idx);
+
+	typedef slsDetectorDefs::dacIndex SlsDACIndex;
+	SlsDACIndex idx = static_cast<SlsDACIndex>(dac_idx);
+	dacs_t ret = m_det->setDAC(val, idx, milli_volt, sub_mod_idx);
+	if (ret == DACErr)
+		THROW_HW_ERROR(Error) << "Error setting DAC " << dac_idx 
+				      << " on (sub)module " << sub_mod_idx;
 }
 
-void Camera::getDAC(int dac_idx, int& val, bool milli_volt)
+void Camera::getDAC(int sub_mod_idx, DACIndex dac_idx, int& val, bool milli_volt)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(dac_idx, milli_volt);
-	typedef slsDetectorDefs::dacIndex DacIdx;
-	DacIdx idx = static_cast<DacIdx>(dac_idx);
-	val = m_det->setDAC(-1, idx, milli_volt);
-	if (val == -1) {
-		// TODO: get slsdetector object idx
-		// val = m_det->setDAC(-1, idx, milli_volt, 0);
-	}
+	DEB_PARAM() << DEB_VAR3(sub_mod_idx, dac_idx, milli_volt);
+
+	if ((sub_mod_idx < 0) || (sub_mod_idx >= getNbDetSubModules()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(sub_mod_idx);
+
+	typedef slsDetectorDefs::dacIndex SlsDACIndex;
+	SlsDACIndex idx = static_cast<SlsDACIndex>(dac_idx);
+	dacs_t ret = m_det->setDAC(-1, idx, milli_volt, sub_mod_idx);
+	if (ret == DACErr)
+		THROW_HW_ERROR(Error) << "Error getting DAC " << dac_idx 
+				      << " on (sub)module " << sub_mod_idx;
+	val = ret;
 	DEB_RETURN() << DEB_VAR1(val);
 }
 
-void Camera::setHighVoltage(int hvolt)
+void Camera::getDACList(DACIndex dac_idx, IntList& val_list, bool milli_volt)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(hvolt);
-	setDAC(slsDetectorDefs::HV_NEW, hvolt);
+	DEB_PARAM() << DEB_VAR2(dac_idx, milli_volt);
+
+	int nb_sub_modules = getNbDetSubModules();
+	val_list.resize(nb_sub_modules);
+	for (int i = 0; i < nb_sub_modules; ++i)
+		getDAC(i, dac_idx, val_list[i], milli_volt);
 }
 
-void Camera::getHighVoltage(int& hvolt)
+void Camera::getADC(int sub_mod_idx, ADCIndex adc_idx, int& val)
 {
 	DEB_MEMBER_FUNCT();
-	getDAC(slsDetectorDefs::HV_NEW, hvolt);
-	DEB_RETURN() << DEB_VAR1(hvolt);
+	DEB_PARAM() << DEB_VAR2(sub_mod_idx, adc_idx);
+
+	if ((sub_mod_idx < 0) || (sub_mod_idx >= getNbDetSubModules()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(sub_mod_idx);
+
+	typedef slsDetectorDefs::dacIndex SlsDACIndex;
+	SlsDACIndex idx = static_cast<SlsDACIndex>(adc_idx);
+	dacs_t ret = m_det->getADC(idx, sub_mod_idx);
+	if (ret == DACErr)
+		THROW_HW_ERROR(Error) << "Error getting ADC " << adc_idx 
+				      << " on (sub)module " << sub_mod_idx;
+	val = ret;
+	DEB_RETURN() << DEB_VAR1(val);
+}
+
+void Camera::getADCList(ADCIndex adc_idx, IntList& val_list)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(adc_idx);
+
+	int nb_sub_modules = getNbDetSubModules();
+	val_list.resize(nb_sub_modules);
+	for (int i = 0; i < nb_sub_modules; ++i)
+		getADC(i, adc_idx, val_list[i]);
 }
 
 void Camera::setSettings(Settings settings)

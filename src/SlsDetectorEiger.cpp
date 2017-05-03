@@ -21,10 +21,12 @@
 //###########################################################################
 
 #include "SlsDetectorEiger.h"
+#include "lima/MiscUtils.h"
 
 using namespace std;
 using namespace lima;
 using namespace lima::SlsDetector;
+using namespace lima::SlsDetector::Defs;
 
 const int Eiger::ChipSize = 256;
 const int Eiger::ChipGap = 2;
@@ -302,6 +304,73 @@ void Eiger::getPixelSize(double& x_size, double& y_size)
 	DEB_MEMBER_FUNCT();
 	x_size = y_size = 75e-6;
 	DEB_RETURN() << DEB_VAR2(x_size, y_size);
+}
+
+void Eiger::getDACInfo(NameList& name_list, IntList& dac_idx_list)
+{
+	DEB_MEMBER_FUNCT();
+
+	static DACIndex EigerDACList[] = {
+		Threshold,
+		EigerSvP,
+		EigerSvN,
+		EigerVtr,
+		EigerVrf,
+		EigerVrs,
+		EigerVtgstv,
+		EigerVcmpLL,
+		EigerVcmpLR,
+		EigerVcal,
+		EigerVcmpRL,
+		EigerVcmpRR,
+		EigerRxbRB,
+		EigerRxbLB,
+		EigerVcp,
+		EigerVcn,
+		EigerVis,
+		IODelay,
+		HVNew,
+	};
+	const unsigned int size = C_LIST_SIZE(EigerDACList);
+
+	name_list.resize(size);
+	dac_idx_list.resize(size);
+	for (unsigned int i = 0; i < size; ++i) {
+		const DACIndex& idx = EigerDACList[i];
+		ostringstream os;
+		os << idx;
+		name_list[i] = os.str();
+		dac_idx_list[i] = int(idx);
+		DEB_RETURN() << DEB_VAR2(name_list[i], dac_idx_list[i]);
+	}
+}
+
+void Eiger::getADCInfo(NameList& name_list, IntList& adc_idx_list)
+{
+	DEB_MEMBER_FUNCT();
+
+	static ADCIndex EigerADCList[] = {
+		TempFPGA,
+		TempFPGAExt,
+		Temp10GE,
+		TempDCDC,
+		TempSODL,
+		TempSODR,
+		TempFPGAFL,
+		TempFPGAFR,
+	};
+	const unsigned int size = C_LIST_SIZE(EigerADCList);
+
+	name_list.resize(size);
+	adc_idx_list.resize(size);
+	for (unsigned int i = 0; i < size; ++i) {
+		const ADCIndex& idx = EigerADCList[i];
+		ostringstream os;
+		os << idx;
+		name_list[i] = os.str();
+		adc_idx_list[i] = int(idx);
+		DEB_RETURN() << DEB_VAR2(name_list[i], adc_idx_list[i]);
+	}
 }
 
 bool Eiger::checkSettings(Settings settings)

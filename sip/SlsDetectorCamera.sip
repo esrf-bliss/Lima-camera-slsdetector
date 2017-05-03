@@ -59,11 +59,19 @@ public:
 		virtual void getPixelSize(double& x_size /Out/,
 					  double& y_size /Out/) = 0;
 
+		virtual 
+		void getDACInfo(std::vector<std::string>& name_list /Out/, 
+				std::vector<int>& dac_idx_list /Out/) = 0;
+		virtual 
+		void getADCInfo(std::vector<std::string>& name_list /Out/, 
+				std::vector<int>& adc_idx_list /Out/) = 0;
+
 	protected:
 		void putCmd(const std::string& s, int idx = -1);
 		std::string getCmd(const std::string& s, int idx = -1);
 
-		virtual bool checkSettings(SlsDetector::Defs::Settings settings) = 0;
+		virtual 
+		bool checkSettings(SlsDetector::Defs::Settings settings) = 0;
 
 		virtual int getRecvPorts() = 0;
 
@@ -120,6 +128,7 @@ public:
 	SlsDetector::Camera::Model *getModel();
 	std::vector<std::string> getHostnameList();
 	int getNbDetModules();
+	int getNbDetSubModules();
 
 	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr);
 
@@ -150,11 +159,20 @@ public:
 	void setFramePeriod(double  frame_period);
 	void getFramePeriod(double& frame_period /Out/);
 
-	// dat_idx -> slsDetectorDefs::dacIndex
-	void setDAC(int dac_idx, int  val, bool milli_volt = false);
-	void getDAC(int dac_idx, int& val /Out/, bool milli_volt = false);
-	void setHighVoltage(int  hvolt);
-	void getHighVoltage(int& hvolt /Out/);
+	// setDAC: sub_mod_idx: 0-N=module, -1=all
+	void setDAC(int sub_mod_idx, SlsDetector::Defs::DACIndex dac_idx,
+		    int  val,       bool milli_volt = false);
+	void getDAC(int sub_mod_idx, SlsDetector::Defs::DACIndex dac_idx,
+	     	    int& val /Out/, bool milli_volt = false);
+	void getDACList(SlsDetector::Defs::DACIndex dac_idx,
+			std::vector<int>& val_list /Out/,
+			bool milli_volt = false);
+
+	void getADC(int sub_mod_idx, SlsDetector::Defs::ADCIndex adc_idx,
+		    int& val /Out/);
+	void getADCList(SlsDetector::Defs::ADCIndex adc_idx,
+		        std::vector<int>& val_list /Out/);
+
 	void setSettings(SlsDetector::Defs::Settings  settings);
 	void getSettings(SlsDetector::Defs::Settings& settings /Out/);
 	void setThresholdEnergy(int  thres);

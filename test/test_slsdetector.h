@@ -26,6 +26,8 @@
 #include "SlsDetectorCamera.h"
 #include "lima/AcqState.h"
 
+#include <cstdlib>
+
 namespace lima 
 {
 

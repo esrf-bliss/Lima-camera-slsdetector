@@ -43,6 +43,8 @@ class Eiger : public Camera::Model
  public:
 	typedef Defs::Settings Settings;
 	typedef Camera::FrameType FrameType;
+	typedef Camera::NameList NameList;
+	typedef Camera::IntList IntList;
 
 	typedef unsigned char Byte;
 	typedef unsigned short Word;
@@ -115,6 +117,9 @@ class Eiger : public Camera::Model
 
 	virtual std::string getName();
 	virtual void getPixelSize(double& x_size, double& y_size);
+
+	virtual void getDACInfo(NameList& name_list, IntList& dac_idx_list);
+	virtual void getADCInfo(NameList& name_list, IntList& adc_idx_list);
 
 	// the returned object must be deleted by the caller
 	Correction *createCorrectionTask();
