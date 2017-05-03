@@ -27,7 +27,6 @@
 #include "SlsDetectorDefs.h"
 
 #include "multiSlsDetector.h"
-#include "multiSlsDetectorCommand.h"
 #include "slsReceiverUsers.h"
 
 #include "lima/RegExUtils.h"
@@ -388,8 +387,6 @@ private:
 	AutoPtr<AppInputData> m_input_data;
 	RecvList m_recv_list;
 	AutoPtr<multiSlsDetector> m_det;
-	AutoPtr<multiSlsDetectorCommand> m_cmd;
-	Mutex m_cmd_mutex;
 	TrigMode m_trig_mode;
 	FrameType m_nb_frames;
 	double m_exp_time;

@@ -23,6 +23,8 @@
 #include "SlsDetectorCamera.h"
 #include "lima/Timestamp.h"
 
+#include "multiSlsDetectorCommand.h"
+
 using namespace std;
 using namespace lima;
 using namespace lima::SlsDetector;
@@ -539,9 +541,6 @@ Camera::Camera(string config_fname)
 	const char *fname = m_input_data->config_file_name.c_str();
 	m_det->readConfigurationFile(fname);
 
-	DEB_TRACE() << "Creating the multiSlsDetectorCommand";
-	m_cmd = new multiSlsDetectorCommand(m_det);
-
 	setSettings(Defs::Standard);
 	setTrigMode(Defs::Auto);
 	setNbFrames(1);
@@ -650,8 +649,8 @@ void Camera::putCmd(const string& s, int idx)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << "s=\"" << s << "\"";
 	Args args(s);
-	AutoMutex l(m_cmd_mutex);
-	m_cmd->putCommand(args.size(), args, idx);
+	multiSlsDetectorCommand cmd(m_det);
+	cmd.putCommand(args.size(), args, idx);
 }
 
 string Camera::getCmd(const string& s, int idx)
@@ -659,8 +658,8 @@ string Camera::getCmd(const string& s, int idx)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << "s=\"" << s << "\"";
 	Args args(s);
-	AutoMutex l(m_cmd_mutex);
-	string r = m_cmd->getCommand(args.size(), args, idx);
+	multiSlsDetectorCommand cmd(m_det);
+	string r = cmd.getCommand(args.size(), args, idx);
 	DEB_RETURN() << "r=\"" << r << "\"";
 	return r;
 }
