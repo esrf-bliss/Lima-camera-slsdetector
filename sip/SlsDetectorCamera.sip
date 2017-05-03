@@ -61,10 +61,12 @@ public:
 
 		virtual 
 		void getDACInfo(std::vector<std::string>& name_list /Out/, 
-				std::vector<int>& dac_idx_list /Out/) = 0;
+				std::vector<int>& idx_list /Out/) = 0;
 		virtual 
 		void getADCInfo(std::vector<std::string>& name_list /Out/, 
-				std::vector<int>& adc_idx_list /Out/) = 0;
+				std::vector<int>& idx_list /Out/,
+				std::vector<double>& factor_list /Out/,
+				std::vector<double>& min_val_list /Out/) = 0;
 
 	protected:
 		void putCmd(const std::string& s, int idx = -1);

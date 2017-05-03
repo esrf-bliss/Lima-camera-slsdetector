@@ -306,7 +306,7 @@ void Eiger::getPixelSize(double& x_size, double& y_size)
 	DEB_RETURN() << DEB_VAR2(x_size, y_size);
 }
 
-void Eiger::getDACInfo(NameList& name_list, IntList& dac_idx_list)
+void Eiger::getDACInfo(NameList& name_list, IntList& idx_list)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -334,42 +334,55 @@ void Eiger::getDACInfo(NameList& name_list, IntList& dac_idx_list)
 	const unsigned int size = C_LIST_SIZE(EigerDACList);
 
 	name_list.resize(size);
-	dac_idx_list.resize(size);
-	for (unsigned int i = 0; i < size; ++i) {
-		const DACIndex& idx = EigerDACList[i];
+	idx_list.resize(size);
+	DACIndex *idx = EigerDACList;
+	for (unsigned int i = 0; i < size; ++i, ++idx) {
 		ostringstream os;
-		os << idx;
+		os << *idx;
 		name_list[i] = os.str();
-		dac_idx_list[i] = int(idx);
-		DEB_RETURN() << DEB_VAR2(name_list[i], dac_idx_list[i]);
+		idx_list[i] = int(*idx);
+		DEB_RETURN() << DEB_VAR2(name_list[i], idx_list[i]);
 	}
 }
 
-void Eiger::getADCInfo(NameList& name_list, IntList& adc_idx_list)
+void Eiger::getADCInfo(NameList& name_list, IntList& idx_list,
+		       FloatList& factor_list, FloatList& min_val_list)
 {
 	DEB_MEMBER_FUNCT();
 
-	static ADCIndex EigerADCList[] = {
-		TempFPGA,
-		TempFPGAExt,
-		Temp10GE,
-		TempDCDC,
-		TempSODL,
-		TempSODR,
-		TempFPGAFL,
-		TempFPGAFR,
+#define EIGER_TEMP_FACTOR		(1 / 1000.0)
+
+#define EIGER_TEMP(x)			{x, EIGER_TEMP_FACTOR}
+
+	static struct ADCData {
+		ADCIndex idx;
+		double factor, min_val;
+	} EigerADCList[] = {
+		EIGER_TEMP(TempFPGA),
+		EIGER_TEMP(TempFPGAExt),
+		EIGER_TEMP(Temp10GE),
+		EIGER_TEMP(TempDCDC),
+		EIGER_TEMP(TempSODL),
+		EIGER_TEMP(TempSODR),
+		EIGER_TEMP(TempFPGAFL),
+		EIGER_TEMP(TempFPGAFR),
 	};
 	const unsigned int size = C_LIST_SIZE(EigerADCList);
 
 	name_list.resize(size);
-	adc_idx_list.resize(size);
-	for (unsigned int i = 0; i < size; ++i) {
-		const ADCIndex& idx = EigerADCList[i];
+	idx_list.resize(size);
+	factor_list.resize(size);
+	min_val_list.resize(size);
+	struct ADCData *data = EigerADCList;
+	for (unsigned int i = 0; i < size; ++i, ++data) {
 		ostringstream os;
-		os << idx;
+		os << data->idx;
 		name_list[i] = os.str();
-		adc_idx_list[i] = int(idx);
-		DEB_RETURN() << DEB_VAR2(name_list[i], adc_idx_list[i]);
+		idx_list[i] = int(data->idx);
+		factor_list[i] = data->factor;
+		min_val_list[i] = data->min_val;
+		DEB_RETURN() << DEB_VAR4(name_list[i], idx_list[i], 
+					 factor_list[i], min_val_list[i]);
 	}
 }
 

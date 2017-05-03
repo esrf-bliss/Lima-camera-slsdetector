@@ -65,6 +65,7 @@ public:
 	typedef uint64_t FrameType;
 	typedef std::vector<std::string> NameList;
 	typedef std::vector<int> IntList;
+	typedef std::vector<double> FloatList;
 
 	class Model
 	{
@@ -86,9 +87,11 @@ public:
 		virtual void getPixelSize(double& x_size, double& y_size) = 0;
 
 		virtual void getDACInfo(NameList& name_list, 
-					IntList& dac_idx_list) = 0;
+					IntList& idx_list) = 0;
 		virtual void getADCInfo(NameList& name_list, 
-					IntList& adc_idx_list) = 0;
+					IntList& idx_list,
+					FloatList& factor_list, 
+					FloatList& min_val_list) = 0;
 
 	protected:
 		void putCmd(const std::string& s, int idx = -1);
