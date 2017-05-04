@@ -87,7 +87,8 @@ public:
 		virtual void getPixelSize(double& x_size, double& y_size) = 0;
 
 		virtual void getDACInfo(NameList& name_list, 
-					IntList& idx_list) = 0;
+					IntList& idx_list,
+					IntList& milli_volt_list) = 0;
 		virtual void getADCInfo(NameList& name_list, 
 					IntList& idx_list,
 					FloatList& factor_list, 

@@ -306,41 +306,50 @@ void Eiger::getPixelSize(double& x_size, double& y_size)
 	DEB_RETURN() << DEB_VAR2(x_size, y_size);
 }
 
-void Eiger::getDACInfo(NameList& name_list, IntList& idx_list)
+void Eiger::getDACInfo(NameList& name_list, IntList& idx_list,
+		       IntList& milli_volt_list)
 {
 	DEB_MEMBER_FUNCT();
 
-	static DACIndex EigerDACList[] = {
-		Threshold,
-		EigerSvP,
-		EigerSvN,
-		EigerVtr,
-		EigerVrf,
-		EigerVrs,
-		EigerVtgstv,
-		EigerVcmpLL,
-		EigerVcmpLR,
-		EigerVcal,
-		EigerVcmpRL,
-		EigerVcmpRR,
-		EigerRxbRB,
-		EigerRxbLB,
-		EigerVcp,
-		EigerVcn,
-		EigerVis,
-		IODelay,
-		HVNew,
+#define EIGER_DAC_MV(x)			{x, 1}
+#define EIGER_DAC_OTHER(x)		{x, 0}
+
+	static struct DACData {
+		DACIndex idx;
+		int milli_volt;
+	} EigerDACList[] = {
+		EIGER_DAC_MV(EigerSvP),
+		EIGER_DAC_MV(EigerSvN),
+		EIGER_DAC_MV(EigerVrf),
+		EIGER_DAC_MV(EigerVrs),
+		EIGER_DAC_MV(EigerVtr),
+		EIGER_DAC_MV(EigerVtgstv),
+		EIGER_DAC_MV(EigerVcal),
+		EIGER_DAC_MV(EigerVcp),
+		EIGER_DAC_MV(EigerVcn),
+		EIGER_DAC_MV(EigerVis),
+		EIGER_DAC_MV(EigerVcmpLL),
+		EIGER_DAC_MV(EigerVcmpLR),
+		EIGER_DAC_MV(EigerVcmpRL),
+		EIGER_DAC_MV(EigerVcmpRR),
+		EIGER_DAC_MV(EigerRxbLB),
+		EIGER_DAC_MV(EigerRxbRB),
+		EIGER_DAC_MV(Threshold),
+		EIGER_DAC_OTHER(IODelay),
+		EIGER_DAC_OTHER(HVNew),
 	};
 	const unsigned int size = C_LIST_SIZE(EigerDACList);
 
 	name_list.resize(size);
 	idx_list.resize(size);
-	DACIndex *idx = EigerDACList;
-	for (unsigned int i = 0; i < size; ++i, ++idx) {
+	milli_volt_list.resize(size);
+	struct DACData *data = EigerDACList;
+	for (unsigned int i = 0; i < size; ++i, ++data) {
 		ostringstream os;
-		os << *idx;
+		os << data->idx;
 		name_list[i] = os.str();
-		idx_list[i] = int(*idx);
+		idx_list[i] = int(data->idx);
+		milli_volt_list[i] = data->milli_volt;
 		DEB_RETURN() << DEB_VAR2(name_list[i], idx_list[i]);
 	}
 }

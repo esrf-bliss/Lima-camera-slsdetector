@@ -119,7 +119,8 @@ class Eiger : public Camera::Model
 	virtual std::string getName();
 	virtual void getPixelSize(double& x_size, double& y_size);
 
-	virtual void getDACInfo(NameList& name_list, IntList& idx_list);
+	virtual void getDACInfo(NameList& name_list, IntList& idx_list,
+				IntList& milli_volt_list);
 	virtual void getADCInfo(NameList& name_list, IntList& idx_list,
 				FloatList& factor_list, 
 				FloatList& min_val_list);

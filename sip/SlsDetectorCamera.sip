@@ -61,7 +61,8 @@ public:
 
 		virtual 
 		void getDACInfo(std::vector<std::string>& name_list /Out/, 
-				std::vector<int>& idx_list /Out/) = 0;
+				std::vector<int>& idx_list /Out/, 
+				std::vector<int>& milli_volt_list /Out/) = 0;
 		virtual 
 		void getADCInfo(std::vector<std::string>& name_list /Out/, 
 				std::vector<int>& idx_list /Out/,

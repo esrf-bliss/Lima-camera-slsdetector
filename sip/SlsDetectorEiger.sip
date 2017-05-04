@@ -53,7 +53,8 @@ class Eiger : public SlsDetector::Camera::Model
 	virtual void getPixelSize(double& x_size /Out/, double& y_size /Out/);
 
 	virtual void getDACInfo(std::vector<std::string>& name_list /Out/,
-				std::vector<int>& idx_list /Out/);
+				std::vector<int>& idx_list /Out/, 
+				std::vector<int>& milli_volt_list /Out/);
 	virtual void getADCInfo(std::vector<std::string>& name_list /Out/,
 				std::vector<int>& idx_list /Out/,
 				std::vector<double>& factor_list /Out/,
