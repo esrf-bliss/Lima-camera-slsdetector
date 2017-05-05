@@ -70,11 +70,21 @@ public:
 				std::vector<double>& min_val_list /Out/) = 0;
 
 	protected:
+		void updateCameraModel();
+
 		void putCmd(const std::string& s, int idx = -1);
 		std::string getCmd(const std::string& s, int idx = -1);
 
 		virtual 
 		bool checkSettings(SlsDetector::Defs::Settings settings) = 0;
+
+		virtual
+		SlsDetector::Defs::ReadoutFlags getReadoutFlagsMask() = 0;
+		virtual 
+		bool checkReadoutFlags(
+				SlsDetector::Defs::ReadoutFlags flags,
+				std::vector<int>& flag_list,
+				bool silent = false) = 0;
 
 		virtual int getRecvPorts() = 0;
 
@@ -180,6 +190,13 @@ public:
 	void getSettings(SlsDetector::Defs::Settings& settings /Out/);
 	void setThresholdEnergy(int  thres);
 	void getThresholdEnergy(int& thres /Out/);
+
+	void setClockDiv(SlsDetector::Defs::ClockDiv  clock_div);
+	void getClockDiv(SlsDetector::Defs::ClockDiv& clock_div /Out/);
+	void setReadoutFlags(SlsDetector::Defs::ReadoutFlags  flags);
+	void getReadoutFlags(SlsDetector::Defs::ReadoutFlags& flags /Out/);
+	void getValidReadoutFlags(std::vector<int>& flag_list /Out/,
+	     			std::vector<std::string>& flag_name_list /Out/);
 
 	void prepareAcq();
 	void startAcq();

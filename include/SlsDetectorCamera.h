@@ -53,6 +53,8 @@ public:
 	typedef Defs::Settings Settings;
 	typedef Defs::DACIndex DACIndex;
 	typedef Defs::ADCIndex ADCIndex;
+	typedef Defs::ClockDiv ClockDiv;
+	typedef Defs::ReadoutFlags ReadoutFlags;
 
 	enum State {
 		Idle, Init, Starting, Running, StopReq, Stopping, Stopped,
@@ -95,10 +97,17 @@ public:
 					FloatList& min_val_list) = 0;
 
 	protected:
+		void updateCameraModel();
+
 		void putCmd(const std::string& s, int idx = -1);
 		std::string getCmd(const std::string& s, int idx = -1);
 
 		virtual bool checkSettings(Settings settings) = 0;
+
+		virtual ReadoutFlags getReadoutFlagsMask() = 0;
+		virtual bool checkReadoutFlags(ReadoutFlags flags,
+					       IntList& flag_list,
+					       bool silent = false) = 0;
 
 		virtual int getRecvPorts() = 0;
 
@@ -243,6 +252,12 @@ public:
 	void setThresholdEnergy(int  thres);
 	void getThresholdEnergy(int& thres);
 
+	void setClockDiv(ClockDiv  clock_div);
+	void getClockDiv(ClockDiv& clock_div);
+	void setReadoutFlags(ReadoutFlags  flags);
+	void getReadoutFlags(ReadoutFlags& flags);
+	void getValidReadoutFlags(IntList& flag_list, NameList& flag_name_list);
+
 	void prepareAcq();
 	void startAcq();
 	void stopAcq();
@@ -384,6 +399,9 @@ private:
 
 	void receiverFrameFinished(FrameType frame, Receiver *recv);
 	void frameFinished(FrameType frame);
+
+	void addValidReadoutFlags(DebObj *deb_ptr, ReadoutFlags flags, 
+				  IntList& flag_list, NameList& flag_name_list);
 
 	template <class T>
 	void putNbCmd(const std::string& cmd, T val, int idx = -1)

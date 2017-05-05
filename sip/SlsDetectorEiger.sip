@@ -63,6 +63,11 @@ class Eiger : public SlsDetector::Camera::Model
  protected:
 	virtual bool checkSettings(SlsDetector::Defs::Settings settings);
 
+	virtual SlsDetector::Defs::ReadoutFlags getReadoutFlagsMask();
+	virtual bool checkReadoutFlags(SlsDetector::Defs::ReadoutFlags flags,
+				       std::vector<int>& flag_list,
+				       bool silent = false);
+
 	virtual int getRecvPorts();
 
 	virtual void prepareAcq();

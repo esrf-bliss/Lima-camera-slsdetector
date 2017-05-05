@@ -239,6 +239,8 @@ Eiger::Eiger(Camera *cam)
 			m_port_geom_list.push_back(g);
 		}
 	}
+
+	updateCameraModel();
 }
 
 Eiger::~Eiger()
@@ -410,6 +412,66 @@ bool Eiger::checkSettings(Settings settings)
 
 	DEB_RETURN() << DEB_VAR1(ok);
 	return ok;
+}
+
+Eiger::ReadoutFlags Eiger::getReadoutFlagsMask()
+{
+	DEB_MEMBER_FUNCT();
+	ReadoutFlags flags = ReadoutFlags(Parallel | NonParallel | Safe | 
+					  StoreInRAM | Continous);
+	DEB_RETURN() << DEB_VAR1(flags);
+	return flags;
+}
+
+bool Eiger::checkReadoutFlags(ReadoutFlags flags, IntList& flag_list, 
+			      bool silent)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(flags, silent);
+
+	bool ok = false;
+	ReadoutFlags mask, result;
+
+	mask = ReadoutFlags(Parallel | NonParallel | Safe);
+	result = ReadoutFlags(flags & mask);
+	flags = ReadoutFlags(flags & ~mask);
+	if (countFlags(result) != 1) {
+		if (!silent)
+			DEB_ERROR() << "Invalid number of readout-mode flags";
+		goto out;
+	}
+	flag_list.push_back(result);
+
+	mask = ReadoutFlags(StoreInRAM | Continous);
+	result = ReadoutFlags(flags & mask);
+	flags = ReadoutFlags(flags & ~mask);
+	if (countFlags(result) != 1) {
+		if (!silent)
+			DEB_ERROR() << "Invalid number of store-in-mem flags";
+		goto out;
+	}
+	flag_list.push_back(result);
+
+	if (flags != 0) {
+		if (!silent)
+			DEB_ERROR() << "Invalid flags for Eiger: " << flags;
+		goto out;
+	}
+
+	ok = true;
+ out:
+	DEB_RETURN() << DEB_VAR1(ok);
+	return ok;
+}
+
+int Eiger::countFlags(ReadoutFlags flags)
+{
+	const unsigned int nb_bits = sizeof(flags) * 8;
+	int count = 0;
+	for (unsigned int i = 0; i < nb_bits; ++i)
+		if (flags & (1 << i))
+			count++;
+	return count;
 }
 
 int Eiger::getRecvPorts()

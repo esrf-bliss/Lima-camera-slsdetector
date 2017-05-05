@@ -42,6 +42,7 @@ class Eiger : public Camera::Model
 
  public:
 	typedef Defs::Settings Settings;
+	typedef Defs::ReadoutFlags ReadoutFlags;
 	typedef Camera::FrameType FrameType;
 	typedef Camera::NameList NameList;
 	typedef Camera::IntList IntList;
@@ -130,6 +131,11 @@ class Eiger : public Camera::Model
 
  protected:
 	virtual bool checkSettings(Settings settings);
+
+	virtual ReadoutFlags getReadoutFlagsMask();
+	virtual bool checkReadoutFlags(ReadoutFlags flags,
+				       IntList& flag_list,
+				       bool silent = false);
 
 	virtual int getRecvPorts();
 
@@ -274,6 +280,8 @@ class Eiger : public Camera::Model
 
 		std::vector<BorderFactor> m_f;
 	};
+
+	int countFlags(ReadoutFlags flags);
 
 	void getRecvFrameDim(FrameDim& frame_dim, bool raw, bool geom);
 

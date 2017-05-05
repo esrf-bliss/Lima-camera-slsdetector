@@ -21,6 +21,7 @@
 //###########################################################################
 
 #include "SlsDetectorCamera.h"
+#include "lima/MiscUtils.h"
 
 using namespace std;
 using namespace lima;
@@ -143,3 +144,52 @@ ostream& lima::SlsDetector::Defs::operator <<(ostream& os, ADCIndex adc_idx)
 	}
 	return os << name;
 }
+
+ostream& lima::SlsDetector::Defs::operator <<(ostream& os, ClockDiv clock_div)
+{
+	const char *name = "Unknown";
+	switch (clock_div) {
+	case FullSpeed:		name = "FullSpeed";		break;
+	case HalfSpeed:		name = "HalfSpeed";		break;
+	case QuarterSpeed:	name = "QuarterSpeed";		break;
+	case SuperSlowSpeed:	name = "SuperSlowSpeed";	break;
+	}
+	return os << name;
+}
+
+ostream& lima::SlsDetector::Defs::operator <<(ostream& os, ReadoutFlags flags)
+{
+#define READOUT_FLAG(x)		{#x, x}
+
+	static struct FlagData {
+		const char *name;
+		ReadoutFlags flag;
+	} ReadoutFlagNamesCList[] = {
+		READOUT_FLAG(StoreInRAM),
+		READOUT_FLAG(ReadHits),
+		READOUT_FLAG(ZeroCompress),
+		READOUT_FLAG(PumpProbe),
+		READOUT_FLAG(BackgndCorr),
+		READOUT_FLAG(TOTMode),
+		READOUT_FLAG(Continous),
+		READOUT_FLAG(Parallel),
+		READOUT_FLAG(NonParallel),
+		READOUT_FLAG(Safe),
+	};
+	const unsigned int size = C_LIST_SIZE(ReadoutFlagNamesCList);
+
+	struct FlagData *data = ReadoutFlagNamesCList;
+	bool empty = true;
+	for (unsigned int i = 0; i < size; ++i, ++data) {
+		if (flags & data->flag) {
+			if (!empty)
+				os << " + ";
+			os << data->name;
+			empty = false;
+		}
+	}
+	if (empty)
+		os << ((flags == Normal) ? "Normal" : "Unknown");
+	return os;
+}
+

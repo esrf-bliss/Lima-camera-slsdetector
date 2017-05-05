@@ -133,10 +133,33 @@ enum ADCIndex {
 	TempFPGAFR       = slsDetectorDefs::TEMPERATURE_FPGA3,
 };
 
+enum ClockDiv {
+	FullSpeed,
+	HalfSpeed,
+	QuarterSpeed,
+	SuperSlowSpeed, 
+};
+
+enum ReadoutFlags {
+	Normal       = slsDetectorDefs::NORMAL_READOUT,
+	StoreInRAM   = slsDetectorDefs::STORE_IN_RAM,
+	ReadHits     = slsDetectorDefs::READ_HITS,
+	ZeroCompress = slsDetectorDefs::ZERO_COMPRESSION,
+	PumpProbe    = slsDetectorDefs::PUMP_PROBE_MODE,
+	BackgndCorr  = slsDetectorDefs::BACKGROUND_CORRECTIONS,
+	TOTMode      = slsDetectorDefs::TOT_MODE,
+	Continous    = slsDetectorDefs::CONTINOUS_RO,
+	Parallel     = slsDetectorDefs::PARALLEL,
+	NonParallel  = slsDetectorDefs::NONPARALLEL,
+	Safe         = slsDetectorDefs::SAFE,
+};
+
 std::ostream& operator <<(std::ostream& os, TrigMode trig_mode);
 std::ostream& operator <<(std::ostream& os, Settings settings);
 std::ostream& operator <<(std::ostream& os, DACIndex dac_idx);
 std::ostream& operator <<(std::ostream& os, ADCIndex adc_idx);
+std::ostream& operator <<(std::ostream& os, ClockDiv clock_div);
+std::ostream& operator <<(std::ostream& os, ReadoutFlags flags);
 
 } // namespace Defs
 

@@ -35,8 +35,6 @@ Camera::Model::Model(Camera *cam, Type type)
 {
 	DEB_CONSTRUCTOR();
 	DEB_PARAM() << DEB_VAR1(type);
-
-	m_cam->setModel(this);
 }
 
 Camera::Model::~Model()
@@ -45,6 +43,12 @@ Camera::Model::~Model()
 
 	if (m_cam)
 		m_cam->setModel(NULL);
+}
+
+void Camera::Model::updateCameraModel()
+{
+	DEB_MEMBER_FUNCT();
+	m_cam->setModel(this);	
 }
 
 void Camera::Model::putCmd(const string& s, int idx)
@@ -596,6 +600,10 @@ void Camera::setModel(Model *model)
 	if (m_model)
 		m_model->m_cam = NULL;
 	m_model = model;
+	if (!m_model)
+		return;
+
+	setSettings(m_settings);
 }
 
 char *Camera::getFrameBufferPtr(FrameType frame_nb)
@@ -817,9 +825,6 @@ void Camera::prepareAcq()
 			m_frame_queue.pop();
 	}
 
-
-	setSettings(m_settings);
-
 	m_model->prepareAcq();
 
 	// recv->resetAcquisitionCount()
@@ -993,3 +998,102 @@ void Camera::getThresholdEnergy(int& thres)
 	DEB_RETURN() << DEB_VAR1(thres);
 }
 
+void Camera::setClockDiv(ClockDiv clock_div)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(clock_div);
+	m_det->setSpeed(slsDetectorDefs::CLOCK_DIVIDER, clock_div);
+}
+
+void Camera::getClockDiv(ClockDiv& clock_div)
+{
+	DEB_MEMBER_FUNCT();
+	int ret = m_det->setSpeed(slsDetectorDefs::CLOCK_DIVIDER, -1);
+	if (ret == MultiSlsDetectorErr)
+		THROW_HW_ERROR(Error) << "Error getting clock divider";
+	clock_div = ClockDiv(ret);
+	DEB_RETURN() << DEB_VAR1(clock_div);
+}
+
+void Camera::setReadoutFlags(ReadoutFlags flags)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(flags);
+
+	if (!m_model)
+		return;
+
+	IntList flags_list;
+	if (!m_model->checkReadoutFlags(flags, flags_list))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(flags);
+
+	IntList::const_iterator it, end = flags_list.end();
+	for (it = flags_list.begin(); it != end; ++it) {
+		typedef slsDetectorDefs::readOutFlags DetFlags;
+		DetFlags det_flags = static_cast<DetFlags>(*it);
+		m_det->setReadOutFlags(det_flags);
+	}
+}
+
+void Camera::getReadoutFlags(ReadoutFlags& flags)
+{
+	DEB_MEMBER_FUNCT();
+	typedef slsDetectorDefs::readOutFlags DetFlags;
+	DetFlags det_flags = static_cast<DetFlags>(-1);
+	int ret = m_det->setReadOutFlags(det_flags);
+	if (ret == MultiSlsDetectorErr)
+		THROW_HW_ERROR(Error) << "Error getting flags";
+	flags = ReadoutFlags(ret);
+	DEB_RETURN() << DEB_VAR1(flags);
+}
+
+void Camera::addValidReadoutFlags(DebObj *deb_ptr, ReadoutFlags flags, 
+				  IntList& flag_list, NameList& flag_name_list)
+{
+	DEB_FROM_PTR(deb_ptr);
+	ostringstream os;
+	os << flags;
+	DEB_RETURN() << DEB_VAR2(flags, os.str());
+	flag_list.push_back(flags);
+	flag_name_list.push_back(os.str());
+}
+
+void Camera::getValidReadoutFlags(IntList& flag_list, NameList& flag_name_list)
+{
+	DEB_MEMBER_FUNCT();
+	flag_list.clear();
+	flag_name_list.clear();
+
+#define add_valid_flags(x) \
+	do { \
+		addValidReadoutFlags(&deb, x, flag_list, flag_name_list); \
+	} while (0)
+
+	if (!m_model)
+		return;
+
+	IntList aux_list;
+	ReadoutFlags flags = Defs::Normal;
+	if (m_model->checkReadoutFlags(flags, aux_list, true))
+		add_valid_flags(flags);
+
+	ReadoutFlags flag_mask = m_model->getReadoutFlagsMask();
+	IntList det_flags;
+	const unsigned int nb_bits = sizeof(ReadoutFlags) * 8;
+	for (unsigned int i = 0; i < nb_bits; ++i) {
+		int flags = (1 << i);
+		if (flag_mask & flags)
+			det_flags.push_back(flags);
+	}
+
+	int max_flags = (1 << det_flags.size());
+	for (int n = 0; n < max_flags; ++n) {
+		flags = ReadoutFlags(0);
+		for (unsigned int i = 0; i < nb_bits; ++i) {
+			if (n & (1 << i))
+				flags = ReadoutFlags(flags | det_flags[i]);
+		}
+		if (m_model->checkReadoutFlags(flags, aux_list, true))
+			add_valid_flags(flags);
+	}
+}
