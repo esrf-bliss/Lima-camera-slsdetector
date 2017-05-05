@@ -289,8 +289,8 @@ string Eiger::getName()
 	int nb_modules = m_nb_det_modules / 2;
 	if (nb_modules == 1) {
 		os << "500k";
-	} else if (nb_modules == 4) {
-		os << "2M";
+	} else if (nb_modules % 2 == 0) {
+		os << (nb_modules / 2) << "M";
 	} else {
 		os << nb_modules << "-Modules";
 	}
