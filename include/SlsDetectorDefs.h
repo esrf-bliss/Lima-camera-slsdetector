@@ -119,7 +119,7 @@ enum DACIndex {
 	PowerChip        = slsDetectorDefs::V_POWER_CHIP,
 };
 
-#define DACErr (-100)
+#define MultiSlsDetectorErr (-100)
 
 enum ADCIndex {
 	TempADC          = slsDetectorDefs::TEMPERATURE_ADC,

@@ -895,7 +895,7 @@ void Camera::setDAC(int sub_mod_idx, DACIndex dac_idx, int val, bool milli_volt)
 	typedef slsDetectorDefs::dacIndex SlsDACIndex;
 	SlsDACIndex idx = static_cast<SlsDACIndex>(dac_idx);
 	dacs_t ret = m_det->setDAC(val, idx, milli_volt, sub_mod_idx);
-	if (ret == DACErr)
+	if (ret == MultiSlsDetectorErr)
 		THROW_HW_ERROR(Error) << "Error setting DAC " << dac_idx 
 				      << " on (sub)module " << sub_mod_idx;
 }
@@ -911,7 +911,7 @@ void Camera::getDAC(int sub_mod_idx, DACIndex dac_idx, int& val, bool milli_volt
 	typedef slsDetectorDefs::dacIndex SlsDACIndex;
 	SlsDACIndex idx = static_cast<SlsDACIndex>(dac_idx);
 	dacs_t ret = m_det->setDAC(-1, idx, milli_volt, sub_mod_idx);
-	if (ret == DACErr)
+	if (ret == MultiSlsDetectorErr)
 		THROW_HW_ERROR(Error) << "Error getting DAC " << dac_idx 
 				      << " on (sub)module " << sub_mod_idx;
 	val = ret;
@@ -940,7 +940,7 @@ void Camera::getADC(int sub_mod_idx, ADCIndex adc_idx, int& val)
 	typedef slsDetectorDefs::dacIndex SlsDACIndex;
 	SlsDACIndex idx = static_cast<SlsDACIndex>(adc_idx);
 	dacs_t ret = m_det->getADC(idx, sub_mod_idx);
-	if (ret == DACErr)
+	if (ret == MultiSlsDetectorErr)
 		THROW_HW_ERROR(Error) << "Error getting ADC " << adc_idx 
 				      << " on (sub)module " << sub_mod_idx;
 	val = ret;
