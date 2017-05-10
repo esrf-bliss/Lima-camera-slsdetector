@@ -178,9 +178,9 @@ ostream& lima::SlsDetector::Defs::operator <<(ostream& os, ReadoutFlags flags)
 	};
 	const unsigned int size = C_LIST_SIZE(ReadoutFlagNamesCList);
 
-	struct FlagData *data = ReadoutFlagNamesCList;
+	struct FlagData *data = &ReadoutFlagNamesCList[size - 1];
 	bool empty = true;
-	for (unsigned int i = 0; i < size; ++i, ++data) {
+	for (unsigned int i = 0; i < size; ++i, --data) {
 		if (flags & data->flag) {
 			if (!empty)
 				os << " + ";
