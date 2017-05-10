@@ -602,6 +602,6 @@ int Eiger::getInterModuleGap(int det)
 	DEB_MEMBER_FUNCT();
 	if (det >= (m_nb_det_modules / 2) - 1)
 		THROW_HW_ERROR(InvalidValue) << "Invalid " << DEB_VAR1(det);
-	return 35;
+	return 36;
 }
 
