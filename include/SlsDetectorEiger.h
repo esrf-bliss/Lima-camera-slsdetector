@@ -52,16 +52,12 @@ class Eiger : public Camera::Model
 	typedef unsigned short Word;
 	typedef unsigned int Long;
 
-	enum CorrType {
-		ChipBorder, Gap,
-	};
-
 	class CorrBase
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::CorrBase", 
 				  "SlsDetector");
 	public:
-		CorrBase(Eiger *eiger, CorrType type);
+		CorrBase(Eiger *eiger);
 		virtual ~CorrBase();
 
 		bool getRaw();
@@ -74,14 +70,13 @@ class Eiger : public Camera::Model
 	protected:
 		friend class Eiger;
 		Eiger *m_eiger;
-		CorrType m_type;
 		int m_nb_modules;
 		FrameDim m_mod_frame_dim;
 		Size m_frame_size;
 		std::vector<int> m_inter_lines;
 	};
 
-	typedef std::map<CorrType, CorrBase *> CorrMap;
+	typedef std::vector<AutoPtr<CorrBase> > CorrList;
 
 	class InterModGapCorr : public CorrBase
 	{
@@ -108,8 +103,7 @@ class Eiger : public Camera::Model
 
 		virtual Data process(Data& data);
 	private:
-		typedef std::vector<AutoPtr<CorrBase> > CorrList;
-		CorrList m_corr_list;
+		CorrList& m_corr_list;
 	};
 
 	Eiger(Camera *cam);
@@ -130,6 +124,8 @@ class Eiger : public Camera::Model
 	Correction *createCorrectionTask();
 
  protected:
+	virtual void updateImageSize();
+
 	virtual bool checkSettings(Settings settings);
 
 	virtual ReadoutFlags getReadoutFlagsMask();
@@ -180,7 +176,7 @@ class Eiger : public Camera::Model
 	{
 	public:
 		ChipBorderCorr(Eiger *eiger)
-			: CorrBase(eiger, ChipBorder)
+			: CorrBase(eiger)
 		{}
 		
 		virtual void prepareAcq()
@@ -293,6 +289,7 @@ class Eiger : public Camera::Model
 
 	void addCorr(CorrBase *corr);
 	void removeCorr(CorrBase *corr);
+	void removeAllCorr();
 
 	double getBorderCorrFactor(int det, int line);
 	int getInterModuleGap(int det);
@@ -304,7 +301,7 @@ class Eiger : public Camera::Model
 
 	int m_nb_det_modules;
 	FrameDim m_recv_frame_dim;
-	CorrMap m_corr_map;
+	CorrList m_corr_list;
 	PortGeometryList m_port_geom_list;
 };
 

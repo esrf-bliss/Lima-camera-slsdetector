@@ -43,6 +43,13 @@ public:
 		GenericDet, EigerDet, JungfrauDet,
 	};
 
+	enum PixelDepth {
+		PixelDepth4 = 4, 
+		PixelDepth8 = 8, 
+		PixelDepth16 = 16, 
+		PixelDepth32 = 32,
+	};
+
 	class Model
 	{
 	public:
@@ -71,6 +78,8 @@ public:
 
 	protected:
 		void updateCameraModel();
+
+		virtual void updateImageSize() = 0;
 
 		void putCmd(const std::string& s, int idx = -1);
 		std::string getCmd(const std::string& s, int idx = -1);
@@ -144,6 +153,9 @@ public:
 	int getNbDetSubModules();
 
 	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr);
+
+	void setPixelDepth(SlsDetector::Camera::PixelDepth  pixel_depth);
+	void getPixelDepth(SlsDetector::Camera::PixelDepth& pixel_depth /Out/);
 
 	void setRawMode(bool  raw_mode);
 	void getRawMode(bool& raw_mode /Out/);

@@ -105,10 +105,15 @@ void DetInfoCtrlObj::getCurrImageType(ImageType& curr_image_type)
 void DetInfoCtrlObj::setCurrImageType(ImageType curr_image_type)
 {
 	DEB_MEMBER_FUNCT();
-	ImageType unique_image_type = Bpp16;
-	if (curr_image_type != unique_image_type)
-		THROW_HW_ERROR(InvalidValue) 
-			<< "Only " << DEB_VAR1(unique_image_type) << "allowed";
+	Camera::PixelDepth pixel_depth;
+	switch (curr_image_type) {
+	case Bpp8:	pixel_depth = Camera::PixelDepth8;	break;
+	case Bpp16:	pixel_depth = Camera::PixelDepth16;	break;
+	case Bpp32:	pixel_depth = Camera::PixelDepth32;	break;
+	default:
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(curr_image_type);
+	}
+	m_cam.setPixelDepth(pixel_depth);
 }
 
 void DetInfoCtrlObj::getPixelSize(double& x_size, double& y_size)

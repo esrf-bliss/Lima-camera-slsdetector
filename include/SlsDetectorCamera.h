@@ -64,6 +64,13 @@ public:
 		UnknownDet, GenericDet, EigerDet, JungfrauDet,
 	};
 
+	enum PixelDepth {
+		PixelDepth4 = 4, 
+		PixelDepth8 = 8, 
+		PixelDepth16 = 16, 
+		PixelDepth32 = 32,
+	};
+
 	typedef uint64_t FrameType;
 	typedef std::vector<std::string> NameList;
 	typedef std::vector<int> IntList;
@@ -98,6 +105,8 @@ public:
 
 	protected:
 		void updateCameraModel();
+
+		virtual void updateImageSize() = 0;
 
 		void putCmd(const std::string& s, int idx = -1);
 		std::string getCmd(const std::string& s, int idx = -1);
@@ -204,6 +213,9 @@ public:
 
 	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr)
 	{ m_buffer_cb_mgr = buffer_cb_mgr; }
+
+	void setPixelDepth(PixelDepth  pixel_depth);
+	void getPixelDepth(PixelDepth& pixel_depth);
 
 	void setRawMode(bool  raw_mode);
 	void getRawMode(bool& raw_mode);
@@ -388,6 +400,8 @@ private:
 	AutoMutex lock()
 	{ return AutoMutex(m_cond.mutex()); }
 
+	void updateImageSize();
+
 	int64_t NSec(double x)
 	{ return int64_t(x * 1e9); }
 
@@ -434,6 +448,7 @@ private:
 	FrameMap m_recv_map;
 	AutoPtr<FrameFinishedCallback> m_frame_cb;
 	StdBufferCbMgr *m_buffer_cb_mgr;
+	PixelDepth m_pixel_depth;
 	ImageType m_image_type;
 	bool m_raw_mode;
 	AutoPtr<AcqThread> m_acq_thread;

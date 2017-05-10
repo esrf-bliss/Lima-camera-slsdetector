@@ -61,6 +61,8 @@ class Eiger : public SlsDetector::Camera::Model
 				std::vector<double>& min_val_list /Out/);
 
  protected:
+	virtual void updateImageSize();
+
 	virtual bool checkSettings(SlsDetector::Defs::Settings settings);
 
 	virtual SlsDetector::Defs::ReadoutFlags getReadoutFlagsMask();

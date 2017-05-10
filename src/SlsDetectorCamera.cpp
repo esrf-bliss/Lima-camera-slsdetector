@@ -528,6 +528,7 @@ bool Camera::AcqThread::newFrameReady(FrameType frame)
 
 Camera::Camera(string config_fname) 
 	: m_model(NULL),
+	  m_pixel_depth(PixelDepth16), 
 	  m_image_type(Bpp16), 
 	  m_raw_mode(false),
 	  m_state(Idle)
@@ -544,6 +545,10 @@ Camera::Camera(string config_fname)
 	DEB_TRACE() << "Reading configuration file";
 	const char *fname = m_input_data->config_file_name.c_str();
 	m_det->readConfigurationFile(fname);
+
+	m_pixel_depth = PixelDepth(m_det->setDynamicRange(-1));
+	if (m_pixel_depth == PixelDepth4)
+		m_pixel_depth = PixelDepth8;
 
 	setSettings(Defs::Standard);
 	setTrigMode(Defs::Auto);
@@ -603,6 +608,7 @@ void Camera::setModel(Model *model)
 	if (!m_model)
 		return;
 
+	setPixelDepth(m_pixel_depth);
 	setSettings(m_settings);
 }
 
@@ -739,6 +745,50 @@ void Camera::getFramePeriod(double& frame_period)
 	DEB_RETURN() << DEB_VAR1(frame_period);
 }
 
+void Camera::updateImageSize()
+{
+	DEB_MEMBER_FUNCT();
+	m_model->updateImageSize();
+	FrameDim frame_dim;
+	getFrameDim(frame_dim, m_raw_mode);
+	DEB_TRACE() << "MaxImageSizeChanged: " << DEB_VAR1(frame_dim);
+	maxImageSizeChanged(frame_dim.getSize(), frame_dim.getImageType());
+}
+
+void Camera::setPixelDepth(PixelDepth pixel_depth)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(pixel_depth);
+
+	if (getState() != Idle)
+		THROW_HW_FATAL(Error) << "Camera is not idle";
+
+	switch (pixel_depth) {
+	case PixelDepth4:
+		THROW_HW_ERROR(NotSupported) << "PixelDepth4 not supported yet";
+	case PixelDepth8:
+		m_image_type = Bpp8;	break;
+	case PixelDepth16:
+		m_image_type = Bpp16;	break;
+	case PixelDepth32:
+		m_image_type = Bpp32;	break;
+	default:
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(pixel_depth);
+	}
+	m_det->setDynamicRange(pixel_depth);
+	m_pixel_depth = pixel_depth;
+
+	if (m_model)
+		updateImageSize();
+}
+
+void Camera::getPixelDepth(PixelDepth& pixel_depth)
+{
+	DEB_MEMBER_FUNCT();
+	pixel_depth = m_pixel_depth; 
+	DEB_RETURN() << DEB_VAR1(pixel_depth);
+}
+
 void Camera::setRawMode(bool raw_mode)
 {
 	DEB_MEMBER_FUNCT();
@@ -748,10 +798,7 @@ void Camera::setRawMode(bool raw_mode)
 		return;
 	m_raw_mode = raw_mode;
 
-	FrameDim frame_dim;
-	getFrameDim(frame_dim, m_raw_mode);
-	DEB_TRACE() << "MaxImageSizeChanged: " << DEB_VAR1(frame_dim);
-	maxImageSizeChanged(frame_dim.getSize(), frame_dim.getImageType());
+	updateImageSize();
 }
 
 void Camera::getRawMode(bool& raw_mode)
@@ -760,7 +807,6 @@ void Camera::getRawMode(bool& raw_mode)
 	raw_mode = m_raw_mode; 
 	DEB_RETURN() << DEB_VAR1(raw_mode);
 }
-
 
 Camera::State Camera::getState()
 {
