@@ -1009,6 +1009,45 @@ void Camera::getADCList(ADCIndex adc_idx, IntList& val_list)
 		getADC(i, adc_idx, val_list[i]);
 }
 
+void Camera::setAllTrimBits(int sub_mod_idx, int val)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(sub_mod_idx, val);
+
+	if ((sub_mod_idx < -1) || (sub_mod_idx >= getNbDetSubModules()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(sub_mod_idx);
+
+	int ret = m_det->setAllTrimbits(val, sub_mod_idx);
+	if (ret == MultiSlsDetectorErr)
+		THROW_HW_ERROR(Error) << "Error setting all trim bits"
+				      << " on (sub)module " << sub_mod_idx;
+}
+
+void Camera::getAllTrimBits(int sub_mod_idx, int& val)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(sub_mod_idx);
+
+	if ((sub_mod_idx < 0) || (sub_mod_idx >= getNbDetSubModules()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(sub_mod_idx);
+
+	int ret = m_det->setAllTrimbits(-1, sub_mod_idx);
+	if (ret == MultiSlsDetectorErr)
+		THROW_HW_ERROR(Error) << "Error getting all trim bits"
+				      << " on (sub)module " << sub_mod_idx;
+	val = ret;
+	DEB_RETURN() << DEB_VAR1(val);
+}
+
+void Camera::getAllTrimBitsList(IntList& val_list)
+{
+	DEB_MEMBER_FUNCT();
+	int nb_sub_modules = getNbDetSubModules();
+	val_list.resize(nb_sub_modules);
+	for (int i = 0; i < nb_sub_modules; ++i)
+		getAllTrimBits(i, val_list[i]);
+}
+
 void Camera::setSettings(Settings settings)
 {
 	DEB_MEMBER_FUNCT();

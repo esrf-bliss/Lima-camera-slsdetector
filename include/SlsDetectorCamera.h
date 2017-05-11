@@ -259,6 +259,10 @@ public:
 	void getADC(int sub_mod_idx, ADCIndex adc_idx, int& val);
 	void getADCList(ADCIndex adc_idx, IntList& val_list);
 
+	void setAllTrimBits(int sub_mod_idx, int  val);
+	void getAllTrimBits(int sub_mod_idx, int& val);
+	void getAllTrimBitsList(IntList& val_list);
+
 	void setSettings(Settings  settings);
 	void getSettings(Settings& settings);
 	void setThresholdEnergy(int  thres);

@@ -198,6 +198,10 @@ public:
 	void getADCList(SlsDetector::Defs::ADCIndex adc_idx,
 		        std::vector<int>& val_list /Out/);
 
+	void setAllTrimBits(int sub_mod_idx, int  val);
+	void getAllTrimBits(int sub_mod_idx, int& val /Out/);
+	void getAllTrimBitsList(std::vector<int>& val_list /Out/);
+
 	void setSettings(SlsDetector::Defs::Settings  settings);
 	void getSettings(SlsDetector::Defs::Settings& settings /Out/);
 	void setThresholdEnergy(int  thres);
