@@ -103,6 +103,7 @@ class Eiger : public Camera::Model
 
 		virtual Data process(Data& data);
 	private:
+		// TODO: add map<CorrList, use_ref_count> when executing
 		CorrList& m_corr_list;
 	};
 

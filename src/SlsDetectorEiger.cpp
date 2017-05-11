@@ -395,12 +395,9 @@ void Eiger::updateImageSize()
 	CorrBase *corr;
 	ImageType image_type = getCamera()->getImageType();
 	corr = createChipBorderCorr(image_type);
-	m_corr_list.push_back(corr);
 
-	if (corr->getNbModules() > 1) {
-		corr = createInterModGapCorr();
-		m_corr_list.push_back(corr);
-	}
+	if (corr->getNbModules() > 1)
+		createInterModGapCorr();
 }
 
 bool Eiger::checkSettings(Settings settings)
@@ -579,20 +576,15 @@ void Eiger::removeCorr(CorrBase *corr)
 
 	CorrList::iterator it, end = m_corr_list.end();
 	it = find(m_corr_list.begin(), end, corr);
-	if (it == end) {
-		DEB_WARNING() << DEB_VAR1(corr) << " already removed";
-		return;
-	}
-
+	if (it != end)
+		m_corr_list.erase(it);
 	corr->m_eiger = NULL;
-	m_corr_list.erase(it);
 }
 
 void Eiger::removeAllCorr()
 {
 	DEB_MEMBER_FUNCT();
-	while (!m_corr_list.empty())
-		m_corr_list.erase(m_corr_list.begin());
+	m_corr_list.clear();
 }
 
 double Eiger::getBorderCorrFactor(int det, int line)
