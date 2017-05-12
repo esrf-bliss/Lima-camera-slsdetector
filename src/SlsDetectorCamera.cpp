@@ -145,6 +145,7 @@ Camera::FrameMap::~FrameMap()
 void Camera::FrameMap::setNbItems(int nb_items)
 {
 	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(nb_items);
 	m_nb_items = nb_items;
 }
 
@@ -197,6 +198,7 @@ void Camera::FrameMap::frameItemFinished(FrameType frame, int item,
 					 bool no_check)
 {
 	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR4(frame, item, no_check, m_nb_items);
 
 	if (!no_check)
 		checkFinishedFrameItem(frame, item);
@@ -227,7 +229,8 @@ void Camera::FrameMap::frameItemFinished(FrameType frame, int item,
 		last_item = (nb_items == m_nb_items);
 	}
 	if (!last_item)
-		return
+		return;
+
 	m_map.erase(mit);
 
 	FrameType &last = m_last_seq_finished_frame;
