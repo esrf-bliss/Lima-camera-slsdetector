@@ -316,6 +316,7 @@ Interface::Interface(Camera& cam)
 	DEB_CONSTRUCTOR();
 
 	m_cam.setBufferCbMgr(&m_buffer.getBuffer());
+	m_cam.registerEventCallback(m_event_cb);
 
 	HwDetInfoCtrlObj *det_info = &m_det_info;
 	m_cap_list.push_back(HwCap(det_info));
