@@ -25,6 +25,8 @@
 
 #include "multiSlsDetectorCommand.h"
 
+#include <limits.h>
+
 using namespace std;
 using namespace lima;
 using namespace lima::SlsDetector;
@@ -420,9 +422,14 @@ void Camera::Receiver::portCallback(FrameType frame, int port, char *dptr,
 	if (!model || (m_cam->getState() == Stopping))
 		return;
 
-	char *bptr = m_cam->getFrameBufferPtr(frame);
 	Mutex& lock = m_cam->m_cond.mutex();
 	try {
+		FrameType& nb_frames = m_cam->m_nb_frames;
+		if (frame >= nb_frames)
+			THROW_HW_ERROR(Error) << "Invalid " 
+					      << DEB_VAR2(frame, nb_frames);
+		char *bptr = m_cam->getFrameBufferPtr(frame);
+
 		AutoMutex l(lock);
 		m_port_map.checkFinishedFrameItem(frame, port);
 		{
@@ -531,6 +538,7 @@ bool Camera::AcqThread::newFrameReady(FrameType frame)
 
 Camera::Camera(string config_fname) 
 	: m_model(NULL),
+	  m_nb_frames(1),
 	  m_pixel_depth(PixelDepth16), 
 	  m_image_type(Bpp16), 
 	  m_raw_mode(false),
@@ -703,6 +711,13 @@ void Camera::setNbFrames(FrameType nb_frames)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(nb_frames);
+
+	// Lima frame numbers are (signed) int
+	const FrameType MaxFrames = INT_MAX;
+	if (nb_frames >= MaxFrames)
+		THROW_HW_ERROR(InvalidValue) << "too high " 
+					     <<	DEB_VAR2(nb_frames, MaxFrames);
+
 	bool trig_exp = (m_trig_mode == Defs::TriggerExposure);
 	int cam_frames = trig_exp ? 1 : nb_frames;
 	int cam_triggers = trig_exp ? nb_frames : 1;
