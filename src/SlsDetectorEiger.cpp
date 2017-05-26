@@ -584,7 +584,11 @@ void Eiger::removeCorr(CorrBase *corr)
 void Eiger::removeAllCorr()
 {
 	DEB_MEMBER_FUNCT();
-	m_corr_list.clear();
+	CorrList::reverse_iterator it, end = m_corr_list.rend();
+	for (it = m_corr_list.rbegin(); it != end; ++it)
+		delete *it;
+	if (m_corr_list.size() > 0)
+		THROW_HW_ERROR(Error) << "Correction list not empty!";
 }
 
 double Eiger::getBorderCorrFactor(int det, int line)

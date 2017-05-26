@@ -76,7 +76,7 @@ class Eiger : public Camera::Model
 		std::vector<int> m_inter_lines;
 	};
 
-	typedef std::vector<AutoPtr<CorrBase> > CorrList;
+	typedef std::vector<CorrBase *> CorrList;
 
 	class InterModGapCorr : public CorrBase
 	{
