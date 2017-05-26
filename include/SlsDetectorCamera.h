@@ -160,7 +160,7 @@ public:
 			FrameMap *m_map;
 		};
 
-		FrameMap(bool debug = false);
+		FrameMap(bool debug = true);
 		~FrameMap();
 		
 		void setCallback(Callback *cb);

@@ -237,18 +237,23 @@ void Camera::FrameMap::frameItemFinished(FrameType frame, int item,
 
 	FrameType &last = m_last_seq_finished_frame;
 	List &waiting = m_non_seq_finished_frames;
-	if (frame == last + 1) {
-		int next = ++last + 1;
-		List::iterator lit;
-		while (!waiting.empty() && (*(lit = waiting.begin()) == next)) {
-			waiting.erase(lit);
-			last = next++;
-		}
-	} else {
+	int next = last + 1;
+	if (frame > next) {
 		waiting.insert(frame);
+		return;
 	}
+
 	if (m_cb)
-		m_cb->frameFinished(frame);
+		m_cb->frameFinished(next);
+	last = next++;
+
+	List::iterator lit;
+	while (!waiting.empty() && (*(lit = waiting.begin()) == next)) {
+		waiting.erase(lit);
+		if (m_cb)
+			m_cb->frameFinished(next);
+		last = next++;
+	}
 }
 
 ostream& lima::SlsDetector::operator <<(ostream& os, Camera::State state)
