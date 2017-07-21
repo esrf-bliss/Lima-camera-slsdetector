@@ -52,48 +52,6 @@ class Eiger : public Camera::Model
 	typedef unsigned short Word;
 	typedef unsigned int Long;
 
-	class CorrBase
-	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::CorrBase", 
-				  "SlsDetector");
-	public:
-		CorrBase(Eiger *eiger);
-		virtual ~CorrBase();
-
-		bool getRaw();
-		int getNbModules()
-		{ return m_nb_modules; }
-
-		virtual void prepareAcq();
-		virtual void correctFrame(FrameType frame, void *ptr) = 0;
-
-	protected:
-		friend class Eiger;
-		Eiger *m_eiger;
-		int m_nb_modules;
-		FrameDim m_mod_frame_dim;
-		Size m_frame_size;
-		std::vector<int> m_inter_lines;
-	};
-
-	typedef std::vector<CorrBase *> CorrList;
-
-	class InterModGapCorr : public CorrBase
-	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::InterModGapCorr", 
-				  "SlsDetector");
-	public:
-		InterModGapCorr(Eiger *eiger);
-
-		virtual void prepareAcq();
-		virtual void correctFrame(FrameType frame, void *ptr);
-
-	protected:
-		typedef std::pair<int, int> Block;
-		typedef std::vector<Block> BlockList;
-		BlockList m_gap_list;
-	};
-
 	class Correction : public LinkTask
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Correction", 
@@ -103,8 +61,7 @@ class Eiger : public Camera::Model
 
 		virtual Data process(Data& data);
 	private:
-		// TODO: add map<CorrList, use_ref_count> when executing
-		CorrList& m_corr_list;
+		Eiger *m_eiger;
 	};
 
 	Eiger(Camera *cam);
@@ -156,6 +113,9 @@ class Eiger : public Camera::Model
 		void prepareAcq();
 		void processRecvFileStart(uint32_t dsize);
 		void processRecvPort(FrameType frame, char *dptr, char *bptr);
+
+		void expandPixelDepth4(FrameType frame, char *ptr);
+
 	private:
 		Eiger *m_eiger;
 		int m_port;
@@ -164,13 +124,69 @@ class Eiger : public Camera::Model
 		bool m_raw;
 		int m_recv_idx;
 		int m_port_offset;
-		int m_dlw;			// dest line width
-		int m_plw;			// packet line width
-		int m_clw;			// chip line width
+		int m_ilw;			// image line width
+		int m_scw;			// source chip width
+		int m_dcw;			// dest chip width
 		int m_pchips;
 	};
 
 	typedef std::vector<AutoPtr<RecvPortGeometry> > PortGeometryList;
+
+	class CorrBase
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::CorrBase", 
+				  "SlsDetector");
+	public:
+		CorrBase(Eiger *eiger);
+		virtual ~CorrBase();
+
+		int getNbEigerModules()
+		{ return m_nb_eiger_modules; }
+
+		virtual void prepareAcq();
+		virtual void correctFrame(FrameType frame, void *ptr) = 0;
+
+	protected:
+		friend class Eiger;
+		Eiger *m_eiger;
+		int m_nb_eiger_modules;
+		FrameDim m_mod_frame_dim;
+		Size m_frame_size;
+		std::vector<int> m_inter_lines;
+		// TODO: add ref count
+	};
+
+	typedef std::vector<CorrBase *> CorrList;
+
+	class PixelDepth4Corr : public CorrBase
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::PixelDepth4Corr", 
+				  "SlsDetector");
+	public:
+		PixelDepth4Corr(Eiger *eiger);
+
+		virtual void prepareAcq();
+		virtual void correctFrame(FrameType frame, void *ptr);
+
+	protected:
+		PortGeometryList& m_port_geom_list;
+	};
+
+	class InterModGapCorr : public CorrBase
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::InterModGapCorr", 
+				  "SlsDetector");
+	public:
+		InterModGapCorr(Eiger *eiger);
+
+		virtual void prepareAcq();
+		virtual void correctFrame(FrameType frame, void *ptr);
+
+	protected:
+		typedef std::pair<int, int> Block;
+		typedef std::vector<Block> BlockList;
+		BlockList m_gap_list;
+	};
 
 	template <class T>
 	class ChipBorderCorr : public CorrBase
@@ -184,9 +200,9 @@ class Eiger : public Camera::Model
 		{
 			CorrBase::prepareAcq();
 
-			m_f.resize(m_nb_modules);
+			m_f.resize(m_nb_eiger_modules);
 			std::vector<BorderFactor>::iterator it = m_f.begin();
-			for (int i = 0; i < m_nb_modules; ++i, ++it) {
+			for (int i = 0; i < m_nb_eiger_modules; ++i, ++it) {
 				it->resize(2);
 				(*it)[0] = m_eiger->getBorderCorrFactor(i, 0);
 				(*it)[1] = m_eiger->getBorderCorrFactor(i, 1);
@@ -235,12 +251,12 @@ class Eiger : public Camera::Model
 			int width = m_frame_size.getWidth();
 			int mod_height = m_mod_frame_dim.getSize().getHeight();
 			T *p = static_cast<T *>(ptr);
-			for (int i = 0; i < m_nb_modules; ++i) {
+			for (int i = 0; i < m_nb_eiger_modules; ++i) {
 				T *d = p + ChipSize * width;
 				correctInterChipLine(d, -width, width, 1);
 				d += width;
 				correctInterChipLine(d, width, width, 1);
-				if (i == m_nb_modules - 1)
+				if (i == m_nb_eiger_modules - 1)
 					continue;
 				p += (mod_height + m_inter_lines[i]) * width;
 			}
@@ -261,7 +277,7 @@ class Eiger : public Camera::Model
 			int width = m_frame_size.getWidth();
 			int mod_height = m_mod_frame_dim.getSize().getHeight();
 			T *p = static_cast<T *>(ptr);
-			for (int i = 0; i < m_nb_modules; ++i) {
+			for (int i = 0; i < m_nb_eiger_modules; ++i) {
 				double f0 = m_f[i][0], f1 = m_f[i][1];
 				T *d = p;
 				correctBorderLine(d, width, 1, f0);
@@ -280,11 +296,22 @@ class Eiger : public Camera::Model
 
 	int countFlags(ReadoutFlags flags);
 
+	bool isPixelDepth4()
+	{
+		Camera::PixelDepth pixel_depth;
+		getCamera()->getPixelDepth(pixel_depth);
+		return (pixel_depth == Camera::PixelDepth4);
+	}
+
+	int getNbEigerModules()
+	{ return m_nb_det_modules / 2; }
+
 	void getRecvFrameDim(FrameDim& frame_dim, bool raw, bool geom);
 
 	int getPortIndex(int recv_idx, int port)
 	{ return recv_idx * RecvPorts + port; }
 
+	CorrBase *createPixelDepth4Corr();
 	CorrBase *createChipBorderCorr(ImageType image_type);
 	CorrBase *createInterModGapCorr();
 

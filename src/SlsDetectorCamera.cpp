@@ -563,8 +563,6 @@ Camera::Camera(string config_fname)
 	m_det->readConfigurationFile(fname);
 
 	m_pixel_depth = PixelDepth(m_det->setDynamicRange(-1));
-	if (m_pixel_depth == PixelDepth4)
-		m_pixel_depth = PixelDepth8;
 
 	setSettings(Defs::Standard);
 	setTrigMode(Defs::Auto);
@@ -788,7 +786,6 @@ void Camera::setPixelDepth(PixelDepth pixel_depth)
 
 	switch (pixel_depth) {
 	case PixelDepth4:
-		THROW_HW_ERROR(NotSupported) << "PixelDepth4 not supported yet";
 	case PixelDepth8:
 		m_image_type = Bpp8;	break;
 	case PixelDepth16:
