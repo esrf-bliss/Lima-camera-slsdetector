@@ -80,8 +80,9 @@ void Eiger::PixelDepth4Corr::correctFrame(FrameType frame, void *ptr)
 {
 	DEB_MEMBER_FUNCT();
 
-	for (unsigned int i = 0; i < m_port_geom_list.size(); ++i)
-		m_port_geom_list[i]->expandPixelDepth4(frame, (char *) ptr);
+	PortGeometryList::iterator it, end = m_port_geom_list.end();
+	for (it = m_port_geom_list.begin(); it != end; ++it)
+		(*it)->expandPixelDepth4(frame, (char *) ptr);
 }
 
 Eiger::InterModGapCorr::InterModGapCorr(Eiger *eiger)
@@ -531,12 +532,13 @@ void Eiger::prepareAcq()
 	
 	DEB_TRACE() << DEB_VAR2(raw, m_recv_frame_dim);
 
-	for (int i = 0; i < m_nb_det_modules * RecvPorts; ++i)
-		m_port_geom_list[i]->prepareAcq();
+	PortGeometryList::iterator git, gend = m_port_geom_list.end();
+	for (git = m_port_geom_list.begin(); git != gend; ++git)
+		(*git)->prepareAcq();
 
-	CorrList::iterator it, end = m_corr_list.end();
-	for (it = m_corr_list.begin(); it != end; ++it)
-		(*it)->prepareAcq();
+	CorrList::iterator cit, cend = m_corr_list.end();
+	for (cit = m_corr_list.begin(); cit != cend; ++cit)
+		(*cit)->prepareAcq();
 }
 
 void Eiger::processRecvFileStart(int recv_idx, uint32_t dsize)

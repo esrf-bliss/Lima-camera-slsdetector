@@ -237,7 +237,7 @@ void Camera::FrameMap::frameItemFinished(FrameType frame, int item,
 
 	FrameType &last = m_last_seq_finished_frame;
 	List &waiting = m_non_seq_finished_frames;
-	int next = last + 1;
+	FrameType next = last + 1;
 	if (frame > next) {
 		waiting.insert(frame);
 		return;
@@ -248,7 +248,7 @@ void Camera::FrameMap::frameItemFinished(FrameType frame, int item,
 	last = next++;
 
 	List::iterator lit;
-	while (!waiting.empty() && (*(lit = waiting.begin()) == next)) {
+	while (!waiting.empty() && (*(lit = waiting.begin()) == int(next))) {
 		waiting.erase(lit);
 		if (m_cb)
 			m_cb->frameFinished(next);
