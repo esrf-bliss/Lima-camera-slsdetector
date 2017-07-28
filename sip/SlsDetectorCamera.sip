@@ -92,7 +92,7 @@ public:
 		virtual 
 		bool checkReadoutFlags(
 				SlsDetector::Defs::ReadoutFlags flags,
-				std::vector<int>& flag_list,
+				std::vector<int>& flag_list /Out/,
 				bool silent = false) = 0;
 
 		virtual int getRecvPorts() = 0;
@@ -165,7 +165,7 @@ public:
 	SlsDetector::Camera::State waitNotState(
 				   SlsDetector::Camera::State state);
 
-	void getFrameDim(FrameDim& frame_dim, bool raw = false);
+	void getFrameDim(FrameDim& frame_dim /Out/, bool raw = false);
 
 	const SlsDetector::Camera::FrameMap& getRecvMap();
 
