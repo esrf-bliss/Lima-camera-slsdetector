@@ -256,6 +256,22 @@ void Camera::FrameMap::frameItemFinished(FrameType frame, int item,
 	}
 }
 
+Camera::FrameType Camera::FrameMap::getLastItemFrame() const
+{
+	DEB_MEMBER_FUNCT();
+
+	FrameType last_frame = m_last_seq_finished_frame;
+	const List& waiting = m_non_seq_finished_frames;
+	if (waiting.size() > 0)
+		last_frame = latestFrame(last_frame, *waiting.rbegin());
+	FrameMap::Map::const_iterator mit, mend = m_map.end();
+	for (mit = m_map.begin(); mit != mend; ++mit)
+		last_frame = latestFrame(last_frame, mit->first);
+
+	DEB_RETURN() << DEB_VAR1(last_frame);
+	return last_frame;
+}
+
 ostream& lima::SlsDetector::operator <<(ostream& os, Camera::State state)
 {
 	const char *name = "Unknown";
@@ -300,9 +316,21 @@ ostream& lima::SlsDetector::operator <<(ostream& os,
 	os << "[";
 	typedef Camera::FrameMap::List List;
 	List::const_iterator it, end = l.end();
-	bool first;
-	for (it = l.begin(), first = true; it != end; ++it, first = false)
-		os << (first ? "" : ", ") << *it;
+	bool first, in_seq = false;
+	int prev;
+	for (it = l.begin(), first = true; it != end; ++it, first = false) {
+		int val = *it;
+		bool seq = (!first && (val == prev + 1));
+		if (!seq) {
+			if (in_seq)
+				os << "-" << prev;
+			os << (first ? "" : ",") << val;
+		}
+		prev = val;
+		in_seq = seq;
+	}
+	if (in_seq)
+		os << "-" << prev;
 	return os << "]";
 }
 
@@ -504,8 +532,12 @@ void Camera::AcqThread::threadFunction()
 	m_cond.broadcast();
 
 	do {
-		while ((m_state != StopReq) && m_frame_queue.empty())
-			m_cond.wait();
+		while ((m_state != StopReq) && m_frame_queue.empty()) {
+			if (!m_cond.wait(m_cam->m_new_frame_timeout)) {
+				AutoMutexUnlock u(l);
+				m_cam->checkLostPackets();
+			}
+		}
 		if (!m_frame_queue.empty()) {
 			FrameType frame = m_frame_queue.front();
 			m_frame_queue.pop();
@@ -520,14 +552,21 @@ void Camera::AcqThread::threadFunction()
 		}
 	} while (m_state != StopReq);
 
+	FrameType last_frame = m_cam->getLastReceivedFrame();
+	bool was_acquiring = (last_frame != m_cam->m_nb_frames - 1);
+	DEB_TRACE() << DEB_VAR2(last_frame, was_acquiring);
+	
 	m_state = Stopping;
 	{
 		AutoMutexUnlock u(l);
 		DEB_TRACE() << "calling stopAcquisition";
 		det->stopAcquisition();
+		if (was_acquiring)
+			Sleep(m_cam->m_abort_sleep_time);
 		DEB_TRACE() << "calling stopReceiver";
 		det->stopReceiver();
 	}
+
 	m_state = Stopped;
 	m_cond.broadcast();
 }
@@ -547,7 +586,9 @@ Camera::Camera(string config_fname)
 	  m_pixel_depth(PixelDepth16), 
 	  m_image_type(Bpp16), 
 	  m_raw_mode(false),
-	  m_state(Idle)
+	  m_state(Idle),
+	  m_new_frame_timeout(1),
+	  m_abort_sleep_time(1)
 {
 	DEB_CONSTRUCTOR();
 
@@ -938,6 +979,57 @@ void Camera::frameFinished(FrameType frame)
 
 	m_frame_queue.push(frame);
 	m_cond.broadcast();
+}
+
+bool Camera::checkLostPackets()
+{
+	DEB_MEMBER_FUNCT();
+
+	AutoMutex l = lock();
+	RecvList::iterator it, end = m_recv_list.end();
+	for (it = m_recv_list.begin(); it != end; ++it) {
+		Receiver *recv = *it;
+		const FrameMap& port_map = recv->m_port_map;
+		DEB_TRACE() << DEB_VAR2(recv->m_idx, port_map);
+		if (port_map.getNonSeqFinishedFrames().size() == 0)
+			continue;
+
+		ostringstream err_msg;
+		err_msg << "checkLostPackets: recv[" << recv->m_idx << "]."
+			<< "port_map=" << port_map;
+		Event::Code err_code = Event::CamOverrun;
+		Event *event = new Event(Hardware, Event::Error, Event::Camera, 
+					 err_code, err_msg.str());
+		DEB_EVENT(*event) << DEB_VAR1(*event);
+
+		AutoMutexUnlock u(l);
+		reportEvent(event);
+
+		DEB_RETURN() << DEB_VAR1(true);
+		return true;
+	}
+
+	DEB_RETURN() << DEB_VAR1(false);
+	return false;
+}
+
+Camera::FrameType Camera::getLastReceivedFrame()
+{
+	DEB_MEMBER_FUNCT();
+
+	FrameType last_frame = -1;
+
+	RecvList::iterator it, end = m_recv_list.end();
+	for (it = m_recv_list.begin(); it != end; ++it) {
+		Receiver *recv = *it;
+		const FrameMap& port_map = recv->m_port_map;
+		DEB_TRACE() << DEB_VAR2(recv->m_idx, port_map);
+		FrameType frame = port_map.getLastItemFrame();
+		last_frame = port_map.latestFrame(last_frame, frame);
+	}
+
+	DEB_RETURN() << DEB_VAR1(last_frame);
+	return last_frame;
 }
 
 int Camera::getFramesCaught()

@@ -170,7 +170,9 @@ public:
 		void checkFinishedFrameItem(FrameType frame, int item);
 		void frameItemFinished(FrameType frame, int item, 
 				       bool no_check = false);
-		
+
+		FrameType getLastItemFrame() const;
+
 		FrameType getLastSeqFinishedFrame() const
 		{ return m_last_seq_finished_frame; }
 
@@ -180,8 +182,17 @@ public:
 		const Map& getFramePendingItemsMap() const
 		{ return m_map; }
 
-		bool isValidFrame(FrameType frame)
+		static bool isValidFrame(FrameType frame)
 		{ return (frame != FrameType(-1)); }
+
+		static FrameType latestFrame(FrameType a, FrameType b)
+		{
+			if (!isValidFrame(a))
+				return b;
+			if (!isValidFrame(b))
+				return a;
+			return (a > b) ? a : b;
+		}
 
 	private:
 		friend class Callback;
@@ -418,6 +429,9 @@ private:
 	void receiverFrameFinished(FrameType frame, Receiver *recv);
 	void frameFinished(FrameType frame);
 
+	bool checkLostPackets();
+	FrameType getLastReceivedFrame();
+
 	void addValidReadoutFlags(DebObj *deb_ptr, ReadoutFlags flags, 
 				  IntList& flag_list, NameList& flag_name_list);
 
@@ -458,6 +472,8 @@ private:
 	AutoPtr<AcqThread> m_acq_thread;
 	volatile State m_state;
 	FrameQueue m_frame_queue;
+	double m_new_frame_timeout;
+	double m_abort_sleep_time;
 };
 
 std::ostream& operator <<(std::ostream& os, Camera::State state);
