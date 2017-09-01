@@ -73,10 +73,9 @@ class Eiger : public SlsDetector::Camera::Model
 	virtual int getRecvPorts();
 
 	virtual void prepareAcq();
-	virtual void processRecvFileStart(int recv_idx, unsigned int dsize);
-	virtual void processRecvPort(int recv_idx, unsigned long frame, int port,
-				    char *dptr, unsigned int dsize, Mutex *lock,
-				    char *bptr);
+	virtual void processRecvFileStart(int port_idx, unsigned int dsize);
+	virtual void processRecvPort(int port_idx, unsigned long frame, 
+				     char *dptr, unsigned int dsize, char *bptr);
 };
 
 }; // namespace SlsDetector

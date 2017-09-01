@@ -164,13 +164,12 @@ public:
 		virtual int getRecvPorts() = 0;
 
 		virtual void prepareAcq() = 0;
-		virtual void processRecvFileStart(int recv_idx,
+		virtual void processRecvFileStart(int port_idx,
 						  uint32_t dsize) = 0;
 		// TODO: add file finished callback
-		virtual void processRecvPort(int recv_idx, FrameType frame, 
-					     int port, char *dptr, 
-					     uint32_t dsize, 
-					     Mutex *lock, char *bptr) = 0;
+		virtual void processRecvPort(int port_idx, FrameType frame, 
+					     char *dptr, uint32_t dsize, 
+					     char *bptr) = 0;
 
 	private:
 		friend class Camera;
@@ -265,6 +264,9 @@ public:
 	int getNbDetSubModules()
 	{ return m_det->getNMods(); }
 
+	int getPortIndex(int recv_idx, int port)
+	{ return recv_idx * m_recv_ports + port; }
+
 	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr)
 	{ m_buffer_cb_mgr = buffer_cb_mgr; }
 
@@ -284,8 +286,8 @@ public:
 	void getFrameDim(FrameDim& frame_dim, bool raw = false)
 	{ m_model->getFrameDim(frame_dim, raw); }
 
-	const FrameMap& getRecvMap()
-	{ return m_recv_map; }
+	const FrameMap& getFrameMap()
+	{ return m_frame_map; }
 
 	void putCmd(const std::string& s, int idx = -1);
 	std::string getCmd(const std::string& s, int idx = -1);
@@ -370,25 +372,8 @@ private:
 		~Receiver();
 		void start();
 
-		void prepareAcq();
-
 	private:
-		class FrameFinishedCallback : public FrameMap::Callback
-		{
-			DEB_CLASS_NAMESPC(DebModCamera, 
-					  "Camera::Receiver"
-					  "::FrameFinishedCallback", 
-					  "SlsDetector");
-		public:
-			FrameFinishedCallback(Receiver *r);
-		protected:
-			virtual void frameFinished(FrameType frame);
-		private:
-			Receiver *m_recv;
-		};
-
 		friend class Camera;
-		friend class FrameFinishedCallback;
 
 		static int fileStartCallback(char *fpath, char *fname, 
 					 FrameType fidx, uint32_t dsize, 
@@ -413,16 +398,11 @@ private:
 		void portCallback(FrameType frame, int port, char *dptr, 
 				  uint32_t dsize);
 
-		void handleLostPackets();
-
 		Camera *m_cam;
 		int m_idx;
 		int m_rx_port;
-		int m_nb_ports;
-		FrameMap m_port_map;
 		Args m_args;
 		AutoPtr<slsReceiverUsers> m_recv;
-		AutoPtr<FrameFinishedCallback> m_cb;
 	}; 
 
 	typedef std::vector<AutoPtr<Receiver> > RecvList;
@@ -476,10 +456,10 @@ private:
 	void removeSharedMem();
 	void createReceivers();
 
-	void receiverFrameFinished(FrameType frame, Receiver *recv);
 	void frameFinished(FrameType frame);
 
 	bool checkLostPackets();
+	void handleLostPackets();
 	FrameType getLastReceivedFrame();
 
 	void addValidReadoutFlags(DebObj *deb_ptr, ReadoutFlags flags, 
@@ -513,7 +493,8 @@ private:
 	double m_exp_time;
 	double m_frame_period;
 	Settings m_settings;
-	FrameMap m_recv_map;
+	FrameMap m_frame_map;
+	int m_recv_ports;
 	AutoPtr<FrameFinishedCallback> m_frame_cb;
 	StdBufferCbMgr *m_buffer_cb_mgr;
 	PixelDepth m_pixel_depth;

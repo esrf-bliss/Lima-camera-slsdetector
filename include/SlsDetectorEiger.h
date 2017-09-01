@@ -94,10 +94,9 @@ class Eiger : public Camera::Model
 	virtual int getRecvPorts();
 
 	virtual void prepareAcq();
-	virtual void processRecvFileStart(int recv_idx, uint32_t dsize);
-	virtual void processRecvPort(int recv_idx, FrameType frame, int port,
-				     char *dptr, uint32_t dsize, Mutex *lock, 
-				     char *bptr);
+	virtual void processRecvFileStart(int port_idx, uint32_t dsize);
+	virtual void processRecvPort(int port_idx, FrameType frame, char *dptr,
+				     uint32_t dsize, char *bptr);
 
  private:
 	friend class Correction;
@@ -307,9 +306,6 @@ class Eiger : public Camera::Model
 	{ return m_nb_det_modules / 2; }
 
 	void getRecvFrameDim(FrameDim& frame_dim, bool raw, bool geom);
-
-	int getPortIndex(int recv_idx, int port)
-	{ return recv_idx * RecvPorts + port; }
 
 	CorrBase *createPixelDepth4Corr();
 	CorrBase *createChipBorderCorr(ImageType image_type);

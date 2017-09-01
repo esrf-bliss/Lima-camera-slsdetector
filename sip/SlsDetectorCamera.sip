@@ -98,12 +98,11 @@ public:
 		virtual int getRecvPorts() = 0;
 
 		virtual void prepareAcq() = 0;
-		virtual void processRecvFileStart(int recv_idx, 
+		virtual void processRecvFileStart(int port_idx, 
 						  unsigned int dsize) = 0;
-		virtual void processRecvPort(int recv_idx, unsigned long frame,
-					     int port, char *dptr, 
-					     unsigned int dsize,
-					     Mutex *lock, char *bptr) = 0;
+		virtual void processRecvPort(int port_idx, unsigned long frame,
+					     char *dptr, unsigned int dsize,
+					     char *bptr) = 0;
 	};
 
 	class FrameMap
@@ -151,6 +150,7 @@ public:
 	std::vector<std::string> getHostnameList();
 	int getNbDetModules();
 	int getNbDetSubModules();
+	int getPortIndex(int recv_idx, int port);
 
 	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr);
 
@@ -167,7 +167,7 @@ public:
 
 	void getFrameDim(FrameDim& frame_dim /Out/, bool raw = false);
 
-	const SlsDetector::Camera::FrameMap& getRecvMap();
+	const SlsDetector::Camera::FrameMap& getFrameMap();
 
 	void putCmd(const std::string& s, int idx = -1);
 	std::string getCmd(const std::string& s, int idx = -1);

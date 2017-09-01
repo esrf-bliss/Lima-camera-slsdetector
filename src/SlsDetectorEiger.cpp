@@ -545,21 +545,18 @@ void Eiger::prepareAcq()
 		(*cit)->prepareAcq();
 }
 
-void Eiger::processRecvFileStart(int recv_idx, uint32_t dsize)
+void Eiger::processRecvFileStart(int port_idx, uint32_t dsize)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(recv_idx, dsize);
-	for (int i = 0; i < RecvPorts; ++i) {
-		int port_idx = getPortIndex(recv_idx, i);
-		m_port_geom_list[port_idx]->processRecvFileStart(dsize);
-	}
+	DEB_PARAM() << DEB_VAR2(port_idx, dsize);
+	m_port_geom_list[port_idx]->processRecvFileStart(dsize);
 }
 
-void Eiger::processRecvPort(int recv_idx, FrameType frame, int port, char *dptr, 
-			    uint32_t dsize, Mutex *lock, char *bptr)
+void Eiger::processRecvPort(int port_idx, FrameType frame, char *dptr, 
+			    uint32_t dsize, char *bptr)
 {
 	DEB_MEMBER_FUNCT();
-	int port_idx = getPortIndex(recv_idx, port);
+	DEB_PARAM() << DEB_VAR3(port_idx, frame, dsize);
 	m_port_geom_list[port_idx]->processRecvPort(frame, dptr, bptr);
 }
 

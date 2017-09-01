@@ -329,27 +329,10 @@ ostream& lima::SlsDetector::operator <<(ostream& os,
 	return os << "}";
 }
 
-Camera::Receiver::FrameFinishedCallback::FrameFinishedCallback(Receiver *r) 
-	: m_recv(r)
-{
-	DEB_CONSTRUCTOR();
-}
-
-void Camera::Receiver::FrameFinishedCallback::frameFinished(FrameType frame) 
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(frame, m_recv->m_idx); 
-	m_recv->m_cam->receiverFrameFinished(frame, m_recv);
-}
-
 Camera::Receiver::Receiver(Camera *cam, int idx, int rx_port)
-	: m_cam(cam), m_idx(idx), m_rx_port(rx_port), m_nb_ports(0)
+	: m_cam(cam), m_idx(idx), m_rx_port(rx_port)
 {
 	DEB_CONSTRUCTOR();
-
-	m_cb = new FrameFinishedCallback(this);
-
-	m_port_map.setCallback(m_cb);
 
 	ostringstream os;
 	os << "slsReceiver"
@@ -377,14 +360,6 @@ void Camera::Receiver::start()
 		THROW_HW_ERROR(Error) << "Error creating slsReceiver";
 	if (m_recv->start() == slsReceiverDefs::FAIL) 
 		THROW_HW_ERROR(Error) << "Error starting slsReceiver";
-}
-
-void Camera::Receiver::prepareAcq()
-{
-	DEB_MEMBER_FUNCT();
-	m_nb_ports = m_cam->m_model->getRecvPorts();
-	m_port_map.setNbItems(m_nb_ports);
-	m_port_map.clear();
 }
 
 int Camera::Receiver::fileStartCallback(char *fpath, char *fname, 
@@ -424,8 +399,12 @@ int Camera::Receiver::fileStartCallback(char *fpath, char *fname,
 {
 	DEB_MEMBER_FUNCT();
 	Model *model = m_cam->m_model;
-	if (model)
-		model->processRecvFileStart(m_idx, dsize);
+	if (model) {
+		for (int i = 0; i < model->getRecvPorts(); ++i) {
+			int port_idx = m_cam->getPortIndex(m_idx, i);
+			model->processRecvFileStart(port_idx, dsize);
+		}
+	}
 	return 0;
 }
 
@@ -439,21 +418,23 @@ void Camera::Receiver::portCallback(FrameType frame, int port, char *dptr,
 		return;
 
 	Mutex& lock = m_cam->m_cond.mutex();
+	FrameMap& frame_map = m_cam->m_frame_map;
 	try {
 		FrameType& nb_frames = m_cam->m_nb_frames;
 		if (frame >= nb_frames)
 			THROW_HW_ERROR(Error) << "Invalid " 
 					      << DEB_VAR2(frame, nb_frames);
 		char *bptr = m_cam->getFrameBufferPtr(frame);
+		int port_idx = m_cam->getPortIndex(m_idx, port);
 
 		AutoMutex l(lock);
-		m_port_map.checkFinishedFrameItem(frame, port);
+		frame_map.checkFinishedFrameItem(frame, port_idx);
 		{
 			AutoMutexUnlock u(l);
-			model->processRecvPort(m_idx, frame, port, dptr, dsize,
-					       &lock, bptr);
+			model->processRecvPort(port_idx, frame, dptr, dsize,
+					       bptr);
 		}
-		m_port_map.frameItemFinished(frame, port, true);
+		frame_map.frameItemFinished(frame, port_idx, true);
 	} catch (Exception& e) {
 		ostringstream err_msg;
 		err_msg << "Receiver::frameCallback: " << e;
@@ -462,23 +443,6 @@ void Camera::Receiver::portCallback(FrameType frame, int port, char *dptr,
 					 err_code, err_msg.str());
 		DEB_EVENT(*event) << DEB_VAR1(*event);
 		m_cam->reportEvent(event);
-	}
-}
-
-void Camera::Receiver::handleLostPackets()
-{
-	DEB_MEMBER_FUNCT();
-	Model *model = m_cam->m_model;
-	const FrameMap::List& nsff = m_port_map.getNonSeqFinishedFrames();
-	const FrameMap::Map& fm = m_port_map.getFramePendingItemsMap();
-	while (nsff.size() > 0) {
-		FrameType frame = m_port_map.getLastSeqFinishedFrame() + 1;
-		FrameMap::Map::const_iterator mit = fm.find(frame);
-		int port = (mit != fm.end()) ? *mit->second.begin() : 0;
-		char *bptr = m_cam->getFrameBufferPtr(frame);
-		model->processRecvPort(m_idx, frame, port, NULL, 0, NULL, bptr);
-		m_port_map.frameItemFinished(frame, port, true);
-		m_cam->m_bad_frame_list.push_back(frame);
 	}
 }
 
@@ -583,6 +547,7 @@ bool Camera::AcqThread::newFrameReady(FrameType frame)
 Camera::Camera(string config_fname) 
 	: m_model(NULL),
 	  m_nb_frames(1),
+	  m_recv_ports(0),
 	  m_pixel_depth(PixelDepth16), 
 	  m_image_type(Bpp16), 
 	  m_raw_mode(false),
@@ -710,8 +675,7 @@ void Camera::createReceivers()
 	}
 
 	m_frame_cb = new FrameFinishedCallback(this);
-	m_recv_map.setNbItems(recv_port_map.size());
-	m_recv_map.setCallback(m_frame_cb);
+	m_frame_map.setCallback(m_frame_cb);
 }
 
 void Camera::putCmd(const string& s, int idx)
@@ -924,10 +888,10 @@ void Camera::prepareAcq()
 
 	{
 		AutoMutex l = lock();
-		RecvList::iterator it, end = m_recv_list.end();
-		for (it = m_recv_list.begin(); it != end; ++it)
-			(*it)->prepareAcq();
-		m_recv_map.clear();
+		m_recv_ports = m_model->getRecvPorts();
+		int nb_ports = m_recv_list.size() * m_recv_ports;
+		m_frame_map.setNbItems(nb_ports);
+		m_frame_map.clear();
 		DEB_TRACE() << DEB_VAR1(m_frame_queue.size());
 		while (!m_frame_queue.empty())
 			m_frame_queue.pop();
@@ -967,13 +931,6 @@ void Camera::stopAcq()
 		THROW_HW_ERROR(Error) << "Camera not Idle";
 }
 
-void Camera::receiverFrameFinished(FrameType frame, Receiver *recv)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(frame, recv->m_idx);
-	m_recv_map.frameItemFinished(frame, recv->m_idx);
-}
-
 void Camera::frameFinished(FrameType frame)
 {
 	DEB_MEMBER_FUNCT();
@@ -987,27 +944,15 @@ bool Camera::checkLostPackets()
 {
 	DEB_MEMBER_FUNCT();
 
-	bool bad_frames = false;
-	IntList::const_iterator bad_begin = m_bad_frame_list.end();
-
 	AutoMutex l = lock();
-	RecvList::iterator it, end = m_recv_list.end();
-	for (it = m_recv_list.begin(); it != end; ++it) {
-		Receiver *recv = *it;
-		const FrameMap& port_map = recv->m_port_map;
-		DEB_TRACE() << DEB_VAR2(recv->m_idx, port_map);
-		if (port_map.getNonSeqFinishedFrames().size() == 0)
-			continue;
+	if (m_frame_map.getNonSeqFinishedFrames().size() == 0) {
+		DEB_RETURN() << DEB_VAR1(false);
+		return false;
+	}
 
-		if (m_tol_lost_packets) {
-			recv->handleLostPackets();
-			bad_frames = true;
-			continue;
-		}
-
+	if (!m_tol_lost_packets) {
 		ostringstream err_msg;
-		err_msg << "checkLostPackets: recv[" << recv->m_idx << "]."
-			<< "port_map=" << port_map;
+		err_msg << "checkLostPackets: frame_map=" << m_frame_map;
 		Event::Code err_code = Event::CamOverrun;
 		Event *event = new Event(Hardware, Event::Error, Event::Camera, 
 					 err_code, err_msg.str());
@@ -1020,7 +965,9 @@ bool Camera::checkLostPackets()
 		return true;
 	}
 
-	if (bad_frames && DEB_CHECK_ANY(DebTypeWarning)) {
+	IntList::const_iterator bad_begin = m_bad_frame_list.end();
+	handleLostPackets();
+	if (DEB_CHECK_ANY(DebTypeWarning)) {
 		AutoMutexUnlock u(l);
 		ostringstream msg;
 		IntList::const_iterator bad_end = m_bad_frame_list.end();
@@ -1033,21 +980,26 @@ bool Camera::checkLostPackets()
 	return false;
 }
 
+void Camera::handleLostPackets()
+{
+	DEB_MEMBER_FUNCT();
+	const FrameMap::List& nsff = m_frame_map.getNonSeqFinishedFrames();
+	const FrameMap::Map& fm = m_frame_map.getFramePendingItemsMap();
+	while (nsff.size() > 0) {
+		FrameType frame = m_frame_map.getLastSeqFinishedFrame() + 1;
+		FrameMap::Map::const_iterator mit = fm.find(frame);
+		int port_idx = (mit != fm.end()) ? *mit->second.begin() : 0;
+		char *bptr = getFrameBufferPtr(frame);
+		m_model->processRecvPort(port_idx, frame, NULL, 0, bptr);
+		m_frame_map.frameItemFinished(frame, port_idx, true);
+		m_bad_frame_list.push_back(frame);
+	}
+}
+
 Camera::FrameType Camera::getLastReceivedFrame()
 {
 	DEB_MEMBER_FUNCT();
-
-	FrameType last_frame = -1;
-
-	RecvList::iterator it, end = m_recv_list.end();
-	for (it = m_recv_list.begin(); it != end; ++it) {
-		Receiver *recv = *it;
-		const FrameMap& port_map = recv->m_port_map;
-		DEB_TRACE() << DEB_VAR2(recv->m_idx, port_map);
-		FrameType frame = port_map.getLastItemFrame();
-		last_frame = port_map.latestFrame(last_frame, frame);
-	}
-
+	FrameType last_frame = m_frame_map.getLastItemFrame();
 	DEB_RETURN() << DEB_VAR1(last_frame);
 	return last_frame;
 }
