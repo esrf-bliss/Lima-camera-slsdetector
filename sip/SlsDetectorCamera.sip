@@ -103,7 +103,7 @@ public:
 		virtual void processRecvPort(int recv_idx, unsigned long frame,
 					     int port, char *dptr, 
 					     unsigned int dsize,
-					     Mutex& lock, char *bptr) = 0;
+					     Mutex *lock, char *bptr) = 0;
 	};
 
 	class FrameMap
@@ -213,6 +213,10 @@ public:
 	void getReadoutFlags(SlsDetector::Defs::ReadoutFlags& flags /Out/);
 	void getValidReadoutFlags(std::vector<int>& flag_list /Out/,
 	     			std::vector<std::string>& flag_name_list /Out/);
+
+	void setTolerateLostPackets(bool  tol_lost_packets);
+	void getTolerateLostPackets(bool& tol_lost_packets /Out/);
+	void getBadFrameList(std::vector<int>& bad_frame_list /Out/);
 
 	void prepareAcq();
 	void startAcq();

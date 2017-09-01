@@ -220,12 +220,16 @@ void Eiger::RecvPortGeometry::processRecvPort(FrameType frame, char *dptr,
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR3(frame, m_recv_idx, m_port);
 
+	bool valid_data = (dptr != NULL);
 	char *src = dptr;
 	char *dest = bptr + m_port_offset;	
 	for (int i = 0; i < ChipSize; ++i, dest += m_ilw) {
 		char *d = dest;
 		for (int j = 0; j < m_pchips; ++j, src += m_scw, d += m_dcw)
-			memcpy(d, src, m_scw);
+			if (valid_data)
+				memcpy(d, src, m_scw);
+			else
+				memset(d, 0xff, m_scw);
 	}
 }
 
@@ -552,7 +556,7 @@ void Eiger::processRecvFileStart(int recv_idx, uint32_t dsize)
 }
 
 void Eiger::processRecvPort(int recv_idx, FrameType frame, int port, char *dptr, 
-			    uint32_t dsize, Mutex& lock, char *bptr)
+			    uint32_t dsize, Mutex *lock, char *bptr)
 {
 	DEB_MEMBER_FUNCT();
 	int port_idx = getPortIndex(recv_idx, port);

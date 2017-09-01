@@ -44,6 +44,49 @@ namespace lima
 namespace SlsDetector
 {
 
+template <class T>
+class PrettyList
+{
+ public:
+	typedef typename T::const_iterator const_iterator;
+
+	PrettyList(const T& l) : begin(l.begin()), end(l.end()) {}
+	PrettyList(const_iterator b, const_iterator e) : begin(b), end(e) {}
+
+	ostream& print(ostream& os) const
+	{
+		os << "[";
+		int prev;
+		bool in_seq = false;
+		bool first = true;
+		for (const_iterator it = begin; it != end; ++it) {
+			int val = *it;
+			bool seq = (!first && (val == prev + 1));
+			if (!seq) {
+				if (in_seq)
+					os << "-" << prev;
+				os << (first ? "" : ",") << val;
+			}
+			prev = val;
+			in_seq = seq;
+			first = false;
+		}
+		if (in_seq)
+			os << "-" << prev;
+		return os << "]";
+	}
+
+ private:
+	const_iterator begin, end;
+};
+
+template <class T>
+std::ostream& operator <<(std::ostream& os, const PrettyList<T>& pl)
+{
+	return pl.print(os);
+}
+
+
 class Camera : public HwMaxImageSizeCallbackGen, public EventCallbackGen
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "Camera", "SlsDetector");
@@ -127,7 +170,7 @@ public:
 		virtual void processRecvPort(int recv_idx, FrameType frame, 
 					     int port, char *dptr, 
 					     uint32_t dsize, 
-					     Mutex& lock, char *bptr) = 0;
+					     Mutex *lock, char *bptr) = 0;
 
 	private:
 		friend class Camera;
@@ -285,6 +328,10 @@ public:
 	void getReadoutFlags(ReadoutFlags& flags);
 	void getValidReadoutFlags(IntList& flag_list, NameList& flag_name_list);
 
+	void setTolerateLostPackets(bool  tol_lost_packets);
+	void getTolerateLostPackets(bool& tol_lost_packets);
+	void getBadFrameList(IntList& bad_frame_list);
+
 	void prepareAcq();
 	void startAcq();
 	void stopAcq();
@@ -366,9 +413,12 @@ private:
 		void portCallback(FrameType frame, int port, char *dptr, 
 				  uint32_t dsize);
 
+		void handleLostPackets();
+
 		Camera *m_cam;
 		int m_idx;
 		int m_rx_port;
+		int m_nb_ports;
 		FrameMap m_port_map;
 		Args m_args;
 		AutoPtr<slsReceiverUsers> m_recv;
@@ -474,6 +524,8 @@ private:
 	FrameQueue m_frame_queue;
 	double m_new_frame_timeout;
 	double m_abort_sleep_time;
+	bool m_tol_lost_packets;
+	IntList m_bad_frame_list;
 };
 
 std::ostream& operator <<(std::ostream& os, Camera::State state);

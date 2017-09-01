@@ -96,7 +96,7 @@ class Eiger : public Camera::Model
 	virtual void prepareAcq();
 	virtual void processRecvFileStart(int recv_idx, uint32_t dsize);
 	virtual void processRecvPort(int recv_idx, FrameType frame, int port,
-				     char *dptr, uint32_t dsize, Mutex& lock, 
+				     char *dptr, uint32_t dsize, Mutex *lock, 
 				     char *bptr);
 
  private:

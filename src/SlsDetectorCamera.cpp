@@ -26,6 +26,7 @@
 #include "multiSlsDetectorCommand.h"
 
 #include <limits.h>
+#include <algorithm>
 
 using namespace std;
 using namespace lima;
@@ -313,25 +314,7 @@ ostream& lima::SlsDetector::operator <<(ostream& os,
 ostream& lima::SlsDetector::operator <<(ostream& os, 
 					const Camera::FrameMap::List& l)
 {
-	os << "[";
-	typedef Camera::FrameMap::List List;
-	List::const_iterator it, end = l.end();
-	bool first, in_seq = false;
-	int prev;
-	for (it = l.begin(), first = true; it != end; ++it, first = false) {
-		int val = *it;
-		bool seq = (!first && (val == prev + 1));
-		if (!seq) {
-			if (in_seq)
-				os << "-" << prev;
-			os << (first ? "" : ",") << val;
-		}
-		prev = val;
-		in_seq = seq;
-	}
-	if (in_seq)
-		os << "-" << prev;
-	return os << "]";
+	return os << PrettyList<Camera::FrameMap::List>(l);
 }
 
 ostream& lima::SlsDetector::operator <<(ostream& os, 
@@ -360,7 +343,7 @@ void Camera::Receiver::FrameFinishedCallback::frameFinished(FrameType frame)
 }
 
 Camera::Receiver::Receiver(Camera *cam, int idx, int rx_port)
-	: m_cam(cam), m_idx(idx), m_rx_port(rx_port)
+	: m_cam(cam), m_idx(idx), m_rx_port(rx_port), m_nb_ports(0)
 {
 	DEB_CONSTRUCTOR();
 
@@ -399,8 +382,8 @@ void Camera::Receiver::start()
 void Camera::Receiver::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
-	int recv_ports = m_cam->m_model->getRecvPorts();
-	m_port_map.setNbItems(recv_ports);
+	m_nb_ports = m_cam->m_model->getRecvPorts();
+	m_port_map.setNbItems(m_nb_ports);
 	m_port_map.clear();
 }
 
@@ -468,7 +451,7 @@ void Camera::Receiver::portCallback(FrameType frame, int port, char *dptr,
 		{
 			AutoMutexUnlock u(l);
 			model->processRecvPort(m_idx, frame, port, dptr, dsize,
-					       lock, bptr);
+					       &lock, bptr);
 		}
 		m_port_map.frameItemFinished(frame, port, true);
 	} catch (Exception& e) {
@@ -479,6 +462,23 @@ void Camera::Receiver::portCallback(FrameType frame, int port, char *dptr,
 					 err_code, err_msg.str());
 		DEB_EVENT(*event) << DEB_VAR1(*event);
 		m_cam->reportEvent(event);
+	}
+}
+
+void Camera::Receiver::handleLostPackets()
+{
+	DEB_MEMBER_FUNCT();
+	Model *model = m_cam->m_model;
+	const FrameMap::List& nsff = m_port_map.getNonSeqFinishedFrames();
+	const FrameMap::Map& fm = m_port_map.getFramePendingItemsMap();
+	while (nsff.size() > 0) {
+		FrameType frame = m_port_map.getLastSeqFinishedFrame() + 1;
+		FrameMap::Map::const_iterator mit = fm.find(frame);
+		int port = (mit != fm.end()) ? *mit->second.begin() : 0;
+		char *bptr = m_cam->getFrameBufferPtr(frame);
+		model->processRecvPort(m_idx, frame, port, NULL, 0, NULL, bptr);
+		m_port_map.frameItemFinished(frame, port, true);
+		m_cam->m_bad_frame_list.push_back(frame);
 	}
 }
 
@@ -587,8 +587,9 @@ Camera::Camera(string config_fname)
 	  m_image_type(Bpp16), 
 	  m_raw_mode(false),
 	  m_state(Idle),
-	  m_new_frame_timeout(1),
-	  m_abort_sleep_time(1)
+	  m_new_frame_timeout(0.1),
+	  m_abort_sleep_time(1),
+	  m_tol_lost_packets(true)
 {
 	DEB_CONSTRUCTOR();
 
@@ -930,6 +931,7 @@ void Camera::prepareAcq()
 		DEB_TRACE() << DEB_VAR1(m_frame_queue.size());
 		while (!m_frame_queue.empty())
 			m_frame_queue.pop();
+		m_bad_frame_list.clear();
 	}
 
 	m_model->prepareAcq();
@@ -985,6 +987,9 @@ bool Camera::checkLostPackets()
 {
 	DEB_MEMBER_FUNCT();
 
+	bool bad_frames = false;
+	IntList::const_iterator bad_begin = m_bad_frame_list.end();
+
 	AutoMutex l = lock();
 	RecvList::iterator it, end = m_recv_list.end();
 	for (it = m_recv_list.begin(); it != end; ++it) {
@@ -993,6 +998,12 @@ bool Camera::checkLostPackets()
 		DEB_TRACE() << DEB_VAR2(recv->m_idx, port_map);
 		if (port_map.getNonSeqFinishedFrames().size() == 0)
 			continue;
+
+		if (m_tol_lost_packets) {
+			recv->handleLostPackets();
+			bad_frames = true;
+			continue;
+		}
 
 		ostringstream err_msg;
 		err_msg << "checkLostPackets: recv[" << recv->m_idx << "]."
@@ -1007,6 +1018,15 @@ bool Camera::checkLostPackets()
 
 		DEB_RETURN() << DEB_VAR1(true);
 		return true;
+	}
+
+	if (bad_frames && DEB_CHECK_ANY(DebTypeWarning)) {
+		AutoMutexUnlock u(l);
+		ostringstream msg;
+		IntList::const_iterator bad_end = m_bad_frame_list.end();
+		msg << PrettyList<IntList>(bad_begin, bad_end);
+		DEB_WARNING() << "bad_frames=" << (bad_end - bad_begin) << ": " 
+			      << msg.str();
 	}
 
 	DEB_RETURN() << DEB_VAR1(false);
@@ -1293,4 +1313,41 @@ void Camera::getValidReadoutFlags(IntList& flag_list, NameList& flag_name_list)
 		if (m_model->checkReadoutFlags(flags, aux_list, true))
 			add_valid_flags(flags);
 	}
+}
+
+void Camera::setTolerateLostPackets(bool tol_lost_packets)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(tol_lost_packets);
+	m_tol_lost_packets = tol_lost_packets;
+}
+
+void Camera::getTolerateLostPackets(bool& tol_lost_packets)
+{
+	DEB_MEMBER_FUNCT();
+	tol_lost_packets = m_tol_lost_packets;
+	DEB_RETURN() << DEB_VAR1(tol_lost_packets);
+}
+
+void Camera::getBadFrameList(IntList& bad_frame_list)
+{
+	DEB_MEMBER_FUNCT();
+	IntList aux_list;
+	{
+		AutoMutex l = lock();
+		aux_list = m_bad_frame_list;
+	}
+	sort(aux_list.begin(), aux_list.end());
+	bad_frame_list.clear();
+	bool first = true;
+	int prev;
+	IntList::const_iterator it, end = aux_list.end();
+	for (it = aux_list.begin(); it != end; ++it) {
+		int val = *it;
+		if (first || (val != prev))
+			bad_frame_list.push_back(val);
+		first = false;
+		prev = val;
+	}
+	DEB_RETURN() << DEB_VAR1(PrettyList<IntList>(bad_frame_list));
 }
