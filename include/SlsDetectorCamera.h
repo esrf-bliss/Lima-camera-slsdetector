@@ -37,7 +37,6 @@
 #include <set>
 #include <queue>
 
-
 namespace lima 
 {
 
@@ -118,6 +117,45 @@ public:
 	typedef std::vector<std::string> NameList;
 	typedef std::vector<int> IntList;
 	typedef std::vector<double> FloatList;
+	typedef std::set<int> SortedIntList;
+	typedef std::vector<FrameType> FrameArray;
+
+
+	static bool isValidFrame(FrameType frame)
+	{ return (frame != FrameType(-1)); }
+
+	static FrameType latestFrame(FrameType a, FrameType b)
+	{
+		if (!isValidFrame(a))
+			return b;
+		if (!isValidFrame(b))
+			return a;
+		return std::max(a, b);
+	}
+
+	static FrameType oldestFrame(FrameType a, FrameType b)
+	{
+		if (!isValidFrame(a))
+			return a;
+		if (!isValidFrame(b))
+			return b;
+		return std::min(a, b);
+	}
+
+	static FrameType updateLatestFrame(FrameType& a, FrameType b)
+	{
+		a = latestFrame(a, b);
+		return a;
+	}
+
+	static FrameType updateOldestFrame(FrameType& a, FrameType b)
+	{
+		a = oldestFrame(a, b);
+		return a;
+	}
+
+	static FrameType getLatestFrame(const FrameArray& l);
+	static FrameType getOldestFrame(const FrameArray& l);
 
 	class Model
 	{
@@ -183,68 +221,37 @@ public:
 				  "SlsDetector");
 
 	public:
-		typedef std::set<int> List;
-		typedef std::map<FrameType, List> Map;
-
-		class Callback
-		{
-			DEB_CLASS_NAMESPC(DebModCamera, 
-					  "Camera::FrameMap::Callback", 
-					  "SlsDetector");
-
-		public:
-			Callback();
-			virtual ~Callback();
-		protected:
-			virtual void frameFinished(FrameType frame) = 0;
-		private:
-			friend class FrameMap;
-			FrameMap *m_map;
+		struct FinishInfo {
+			FrameType first_lost;
+			int nb_lost;
+			SortedIntList finished;
 		};
 
-		FrameMap(bool debug = true);
+		FrameMap();
 		~FrameMap();
 		
-		void setCallback(Callback *cb);
 		void setNbItems(int nb_items);
+		void setBufferSize(int buffer_size);
 		void clear();
 
 		void checkFinishedFrameItem(FrameType frame, int item);
-		void frameItemFinished(FrameType frame, int item, 
-				       bool no_check = false);
+		FinishInfo frameItemFinished(FrameType frame, int item, 
+					     bool no_check, bool valid);
 
-		FrameType getLastItemFrame() const;
+		FrameArray getItemFrameArray() const
+		{ return m_last_item_frame; }
 
-		FrameType getLastSeqFinishedFrame() const
-		{ return m_last_seq_finished_frame; }
+		FrameType getLastItemFrame() const
+		{ return getLatestFrame(m_last_item_frame); }
 
-		const List& getNonSeqFinishedFrames() const
-		{ return m_non_seq_finished_frames; }
-
-		const Map& getFramePendingItemsMap() const
-		{ return m_map; }
-
-		static bool isValidFrame(FrameType frame)
-		{ return (frame != FrameType(-1)); }
-
-		static FrameType latestFrame(FrameType a, FrameType b)
-		{
-			if (!isValidFrame(a))
-				return b;
-			if (!isValidFrame(b))
-				return a;
-			return (a > b) ? a : b;
-		}
+		FrameType getLastFinishedFrame() const
+		{ return getOldestFrame(m_last_item_frame); }
 
 	private:
-		friend class Callback;
-
 		int m_nb_items;
-		Map m_map;
-		List m_non_seq_finished_frames;
-		FrameType m_last_seq_finished_frame;
-		Callback *m_cb;
-		bool m_debug;
+		FrameArray m_last_item_frame;
+		int m_buffer_size;
+		IntList m_frame_item_count;
 	};
 
 	Camera(std::string config_fname);
@@ -425,19 +432,6 @@ private:
 		FrameQueue& m_frame_queue;
 	};
 
-	class FrameFinishedCallback : public FrameMap::Callback
-	{
-		DEB_CLASS_NAMESPC(DebModCamera, 
-				  "Camera::FrameFinishedCallback", 
-				  "SlsDetector");
-	public:
-		FrameFinishedCallback(Camera *cam);
-	protected:
-		virtual void frameFinished(FrameType frame);
-	private:
-		Camera *m_cam;
-	};
-
 	friend class Model;
 
 	void setModel(Model *model);
@@ -456,11 +450,17 @@ private:
 	void removeSharedMem();
 	void createReceivers();
 
+	void processRecvFileStart(int recv_idx, uint32_t dsize);
+	void processRecvPort(int port_idx, FrameType frame, char *dptr, 
+			     uint32_t dsize);
 	void frameFinished(FrameType frame);
 
 	bool checkLostPackets();
-	void handleLostPackets();
 	FrameType getLastReceivedFrame();
+
+	IntList getSortedBadFrameList(int first_idx, int last_idx);
+	IntList getSortedBadFrameList()
+	{ return getSortedBadFrameList(0, m_bad_frame_list.size()); }
 
 	void addValidReadoutFlags(DebObj *deb_ptr, ReadoutFlags flags, 
 				  IntList& flag_list, NameList& flag_name_list);
@@ -495,7 +495,6 @@ private:
 	Settings m_settings;
 	FrameMap m_frame_map;
 	int m_recv_ports;
-	AutoPtr<FrameFinishedCallback> m_frame_cb;
 	StdBufferCbMgr *m_buffer_cb_mgr;
 	PixelDepth m_pixel_depth;
 	ImageType m_image_type;
@@ -513,9 +512,11 @@ std::ostream& operator <<(std::ostream& os, Camera::State state);
 std::ostream& operator <<(std::ostream& os, Camera::Type type);
 
 std::ostream& operator <<(std::ostream& os, const Camera::FrameMap& m);
-std::ostream& operator <<(std::ostream& os, const Camera::FrameMap::List& l);
-std::ostream& operator <<(std::ostream& os, const Camera::FrameMap::Map& m);
+std::ostream& operator <<(std::ostream& os, const Camera::SortedIntList& l);
+std::ostream& operator <<(std::ostream& os, const Camera::FrameArray& a);
 
+typedef PrettyList<Camera::IntList> PrettyIntList;
+typedef PrettyList<Camera::SortedIntList> PrettySortedList;
 
 } // namespace SlsDetector
 

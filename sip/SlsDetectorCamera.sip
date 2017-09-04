@@ -50,6 +50,9 @@ public:
 		PixelDepth32 = 32,
 	};
 
+	static bool isValidFrame(unsigned long frame);
+	static unsigned long latestFrame(unsigned long a, unsigned long b);
+
 	class Model
 	{
 	public:
@@ -111,35 +114,17 @@ public:
 		typedef std::set<int> List;
 		typedef std::map<unsigned long, std::set<int> > Map;
 
-		class Callback
-		{
-		public:
-			Callback();
-			virtual ~Callback();
-		protected:
-			virtual void frameFinished(unsigned long frame) = 0;
-		};
-
-		FrameMap(bool debug = false);
 		~FrameMap();
-		
-		void setCallback(Callback *cb);
+
 		void setNbItems(int nb_items);
+		void setBufferSize(int buffer_size);
 		void clear();
 
-		void checkFinishedFrameItem(unsigned long frame, int item);
-		void frameItemFinished(unsigned long frame, int item, 
-				       bool no_check = false);
-		
-		unsigned long getLastSeqFinishedFrame() const;
+		unsigned long getLastItemFrame() const;
+		unsigned long getLastFinishedFrame() const;
 
-		const SlsDetector::Camera::FrameMap::List& 
-		      getNonSeqFinishedFrames() const;
-
-		const SlsDetector::Camera::FrameMap::Map&
-		      getFramePendingItemsMap() const;
-
-		bool isValidFrame(unsigned long frame);
+	private:
+		FrameMap();
 	};
 
 	Camera(std::string config_fname);
