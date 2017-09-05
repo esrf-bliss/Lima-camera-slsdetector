@@ -27,6 +27,7 @@
 
 #include <limits.h>
 #include <algorithm>
+#include <cmath>
 
 using namespace std;
 using namespace lima;
@@ -181,7 +182,7 @@ void Camera::FrameMap::clear()
 	for (int i = 0; i < m_nb_items; ++i)
 		m_last_item_frame[i] = -1;
 	for (int i = 0; i < m_buffer_size; ++i)
-		m_frame_item_count[i] = m_nb_items;
+		m_frame_item_count[i].set(m_nb_items);
 }
 
 void Camera::FrameMap::checkFinishedFrameItem(FrameType frame, int item)
@@ -216,10 +217,10 @@ Camera::FrameMap::frameItemFinished(FrameType frame, int item, bool no_check,
 	finfo.nb_lost = frame - finfo.first_lost + (!valid ? 1 : 0);
 	for (FrameType f = last + 1; f != (frame + 1); ++f) {
 		int idx = f % m_buffer_size;
-		int& count = m_frame_item_count[idx];
-		if (--count != 0)
+		AtomicCounter& count = m_frame_item_count[idx];
+		bool frame_finished = count.dec_test_and_reset(m_nb_items);
+		if (!frame_finished)
 			continue;
-		count = m_nb_items;
 		finfo.finished.insert(f);
 	}
 	last = frame;
@@ -228,6 +229,58 @@ Camera::FrameMap::frameItemFinished(FrameType frame, int item, bool no_check,
 		DEB_RETURN() << DEB_VAR3(finfo.first_lost, finfo.nb_lost,
 					 PrettySortedList(finfo.finished));
 	return finfo;
+}
+
+Camera::Stats::Stats(double f)
+	: factor(f)
+{
+	reset();
+}
+
+void Camera::Stats::reset()
+{
+	tmin = 1e9;
+	tmax = tacc = tacc2 = 0;
+	tn = 0;
+}
+
+void Camera::Stats::add(double elapsed) {
+	AutoMutex l(lock);
+	tmin = std::min(tmin, elapsed);
+	tmax = std::max(tmax, elapsed);
+	tacc += elapsed;
+	tacc2 += pow(elapsed, 2);
+	tn++;
+}
+
+int Camera::Stats::n() const
+{ 
+	AutoMutex l(lock);
+	return tn; 
+}
+
+double Camera::Stats::min() const
+{ 
+	AutoMutex l(lock);
+	return tmin;
+}
+
+double Camera::Stats::max() const
+{
+	AutoMutex l(lock);
+	return tmax; 
+}
+
+double Camera::Stats::ave() const
+{ 
+	AutoMutex l(lock);
+	return tn ? (tacc / tn) : 0; 
+}
+
+double Camera::Stats::std() const
+{ 
+	AutoMutex l(lock);
+	return tn ? sqrt(tacc2 / tn - pow(ave(), 2)) : 0; 
 }
 
 ostream& lima::SlsDetector::operator <<(ostream& os, Camera::State state)
@@ -280,6 +333,16 @@ ostream& lima::SlsDetector::operator <<(ostream& os,
 	for (unsigned int i = 0; i < a.size(); i++)
 		os << (i ? ", " : "") << a[i];
 	return os << "]";
+}
+
+ostream& lima::SlsDetector::operator <<(ostream& os, 
+					const Camera::Stats& s)
+{
+	const double& f = s.factor;
+	os << "<";
+	os << "min=" << int(s.min() * f) << ", max=" << int(s.max() * f) << ", "
+	   << "ave=" << int(s.ave() * f) << ", std=" << int(s.std() * f);
+	return os << ">";
 }
 
 Camera::Receiver::Receiver(Camera *cam, int idx, int rx_port)
@@ -364,6 +427,8 @@ void Camera::Receiver::portCallback(FrameType frame, int port, char *dptr,
 	if (!m_cam->m_model || (m_cam->getState() == Stopping))
 		return;
 
+	Timestamp t0 = Timestamp::now();
+
 	try {
 		if (frame >= m_cam->m_nb_frames)
 			THROW_HW_ERROR(Error) << "Invalid " 
@@ -379,6 +444,9 @@ void Camera::Receiver::portCallback(FrameType frame, int port, char *dptr,
 		DEB_EVENT(*event) << DEB_VAR1(*event);
 		m_cam->reportEvent(event);
 	}
+
+	Timestamp t1 = Timestamp::now();
+	m_cam->m_port_cb_stats.add(t1 - t0);
 }
 
 Camera::AcqThread::AcqThread(Camera *cam)
@@ -457,6 +525,8 @@ void Camera::AcqThread::threadFunction()
 	IntList bfl = m_cam->getSortedBadFrameList();
 	DEB_ALWAYS() << "bad_frames=" << bfl.size() << ": "
 		     << PrettyIntList(bfl);
+	DEB_ALWAYS() << DEB_VAR1(m_cam->m_lock_stats);
+	DEB_ALWAYS() << DEB_VAR1(m_cam->m_port_cb_stats);
 
 	m_state = Stopped;
 	m_cond.broadcast();
@@ -825,6 +895,8 @@ void Camera::prepareAcq()
 			m_frame_queue.pop();
 		m_bad_frame_list.clear();
 		m_bad_frame_list.reserve(16 * 1024);
+		m_lock_stats.reset();
+		m_port_cb_stats.reset();
 	}
 
 	m_model->prepareAcq();
@@ -874,11 +946,9 @@ void Camera::processRecvPort(int port_idx, FrameType frame, char *dptr,
 {
 	DEB_MEMBER_FUNCT();
 
-	AutoMutex l = lock();
 	m_frame_map.checkFinishedFrameItem(frame, port_idx);
 	bool valid = (dptr != NULL);
 	if (valid) {
-		AutoMutexUnlock u(l);
 		char *bptr = getFrameBufferPtr(frame);
 		m_model->processRecvPort(port_idx, frame, dptr, dsize, bptr);
 	}
@@ -891,21 +961,25 @@ void Camera::processRecvPort(int port_idx, FrameType frame, char *dptr,
 				      << ", nb=" << finfo.nb_lost;
 	FrameType f = finfo.first_lost;
 	for (int i = 0; i < finfo.nb_lost; ++i, ++f) {
-		m_bad_frame_list.push_back(f);
-		AutoMutexUnlock u(l);
 		char *bptr = getFrameBufferPtr(f);
 		m_model->processRecvPort(port_idx, f, NULL, dsize, bptr);
+		AutoMutex l = lock();
+		m_bad_frame_list.push_back(f);
 	}
 	SortedIntList::const_iterator it, end = finfo.finished.end();
-	for (it = finfo.finished.begin(); it != end; ++it)
+	for (it = finfo.finished.begin(); it != end; ++it) {
+		Timestamp t0 = Timestamp::now();
 		frameFinished(*it);
+		Timestamp t1 = Timestamp::now();
+		m_lock_stats.add(t1 - t0);
+	}
 }
 
 void Camera::frameFinished(FrameType frame)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(frame);
-
+	AutoMutex l = lock();
 	m_frame_queue.push(frame);
 	m_cond.broadcast();
 }
@@ -914,7 +988,6 @@ bool Camera::checkLostPackets()
 {
 	DEB_MEMBER_FUNCT();
 
-	AutoMutex l = lock();
 	FrameArray ifa = m_frame_map.getItemFrameArray();
 	FrameType last_frame = getLatestFrame(ifa);
 	if (getOldestFrame(ifa) == last_frame) {
@@ -929,25 +1002,27 @@ bool Camera::checkLostPackets()
 		Event *event = new Event(Hardware, Event::Error, Event::Camera, 
 					 err_code, err_msg.str());
 		DEB_EVENT(*event) << DEB_VAR1(*event);
-
-		AutoMutexUnlock u(l);
 		reportEvent(event);
-
 		DEB_RETURN() << DEB_VAR1(true);
 		return true;
 	}
 
-	int first_bad = m_bad_frame_list.size();
+	int first_bad = 0;
+	if (DEB_CHECK_ANY(DebTypeWarning)) {
+		AutoMutex l = lock();
+		first_bad = m_bad_frame_list.size();
+	}
 	for (int port_idx = 0; port_idx < int(ifa.size()); ++port_idx) {
-		if (ifa[port_idx] != last_frame) {
-			AutoMutexUnlock u(l);
+		if (ifa[port_idx] != last_frame)
 			processRecvPort(port_idx, last_frame, NULL, 0);
-		}
 	}
 	if (DEB_CHECK_ANY(DebTypeWarning)) {
-		int last_bad = m_bad_frame_list.size();
-		IntList bfl = getSortedBadFrameList(first_bad, last_bad);
-		AutoMutexUnlock u(l);
+		IntList bfl;
+		{
+			AutoMutex l = lock();
+			int last_bad = m_bad_frame_list.size();
+			bfl = getSortedBadFrameList(first_bad, last_bad);
+		}
 		DEB_WARNING() << "bad_frames=" << bfl.size() << ": " 
 			      << PrettyIntList(bfl);
 	}

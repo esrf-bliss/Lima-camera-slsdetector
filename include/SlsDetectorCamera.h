@@ -248,10 +248,46 @@ public:
 		{ return getOldestFrame(m_last_item_frame); }
 
 	private:
+		struct AtomicCounter {
+			int count;
+			Mutex mutex;
+
+			void set(int reset)
+			{ count = reset; }
+
+			bool dec_test_and_reset(int reset)
+			{
+				mutex.lock();
+				bool zero = (--count == 0);
+				if (zero)
+					set(reset);
+				mutex.unlock();
+				return zero;
+			}
+		};
+		typedef std::vector<AtomicCounter> CounterList;
+
 		int m_nb_items;
 		FrameArray m_last_item_frame;
 		int m_buffer_size;
-		IntList m_frame_item_count;
+		CounterList m_frame_item_count;
+	};
+
+	struct Stats {
+		double tmin, tmax, tacc, tacc2;
+		int tn;
+		double factor;
+		mutable Mutex lock;
+
+		Stats(double f = 1e6);
+		void reset();
+		void add(double elapsed);
+
+		int n() const;
+		double min() const;
+		double max() const;
+		double ave() const;
+		double std() const;
 	};
 
 	Camera(std::string config_fname);
@@ -506,6 +542,8 @@ private:
 	double m_abort_sleep_time;
 	bool m_tol_lost_packets;
 	IntList m_bad_frame_list;
+	Stats m_lock_stats;
+	Stats m_port_cb_stats;
 };
 
 std::ostream& operator <<(std::ostream& os, Camera::State state);
@@ -514,6 +552,7 @@ std::ostream& operator <<(std::ostream& os, Camera::Type type);
 std::ostream& operator <<(std::ostream& os, const Camera::FrameMap& m);
 std::ostream& operator <<(std::ostream& os, const Camera::SortedIntList& l);
 std::ostream& operator <<(std::ostream& os, const Camera::FrameArray& a);
+std::ostream& operator <<(std::ostream& os, const Camera::Stats& s);
 
 typedef PrettyList<Camera::IntList> PrettyIntList;
 typedef PrettyList<Camera::SortedIntList> PrettySortedList;
