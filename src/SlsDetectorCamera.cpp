@@ -696,6 +696,7 @@ void Camera::setTrigMode(TrigMode trig_mode)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(trig_mode);
+	waitState(Idle);
 	typedef slsDetectorDefs::externalCommunicationMode ExtComMode;
 	ExtComMode mode = static_cast<ExtComMode>(trig_mode);
 	m_det->setExternalCommunicationMode(mode);
@@ -721,6 +722,7 @@ void Camera::setNbFrames(FrameType nb_frames)
 		THROW_HW_ERROR(InvalidValue) << "too high " 
 					     <<	DEB_VAR2(nb_frames, MaxFrames);
 
+	waitState(Idle);
 	bool trig_exp = (m_trig_mode == Defs::TriggerExposure);
 	int cam_frames = trig_exp ? 1 : nb_frames;
 	int cam_triggers = trig_exp ? nb_frames : 1;
@@ -740,6 +742,7 @@ void Camera::setExpTime(double exp_time)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(exp_time);
+	waitState(Idle);
 	m_det->setExposureTime(NSec(exp_time));
 	m_exp_time = exp_time;
 }
@@ -755,6 +758,7 @@ void Camera::setFramePeriod(double frame_period)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(frame_period);
+	waitState(Idle);
 	m_det->setExposurePeriod(NSec(frame_period));
 	m_frame_period = frame_period;
 }
@@ -784,6 +788,7 @@ void Camera::setPixelDepth(PixelDepth pixel_depth)
 	if (getState() != Idle)
 		THROW_HW_FATAL(Error) << "Camera is not idle";
 
+	waitState(Idle);
 	switch (pixel_depth) {
 	case PixelDepth4:
 	case PixelDepth8:
