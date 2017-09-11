@@ -120,6 +120,38 @@ public:
 	typedef std::set<int> SortedIntList;
 	typedef std::vector<FrameType> FrameArray;
 
+	struct TimeRanges {
+		TimeRanges() :
+			min_exp_time(-1.), 
+			max_exp_time(-1.),
+			min_lat_time(-1.),
+			max_lat_time(-1.),
+			min_frame_period(-1.),
+			max_frame_period(-1.)
+		{}
+
+		double min_exp_time;
+		double max_exp_time;
+		double min_lat_time;
+		double max_lat_time;
+		double min_frame_period;
+		double max_frame_period;
+	};
+
+	class TimeRangesChangedCallback {
+		DEB_CLASS_NAMESPC(DebModCamera, "TimeRangesChangedCallback", 
+				  "SlsDetector::Camera");
+	public:
+		TimeRangesChangedCallback();
+		virtual ~TimeRangesChangedCallback();
+
+	protected:
+		virtual void timeRangesChanged(TimeRanges time_ranges) = 0;
+
+	private:
+		friend class Camera;
+		Camera *m_cam;
+	};
 
 	static bool isValidFrame(FrameType frame)
 	{ return (frame != FrameType(-1)); }
@@ -183,6 +215,8 @@ public:
 					IntList& idx_list,
 					FloatList& factor_list, 
 					FloatList& min_val_list) = 0;
+
+		virtual void getTimeRanges(TimeRanges& time_ranges) = 0;
 
 	protected:
 		void updateCameraModel();
@@ -381,6 +415,9 @@ public:
 	void startAcq();
 	void stopAcq();
 
+	void registerTimeRangesChangedCallback(TimeRangesChangedCallback& cb);
+	void unregisterTimeRangesChangedCallback(TimeRangesChangedCallback& cb);
+
 private:
 	typedef RegEx::SingleMatchType SingleMatch;
 	typedef RegEx::FullMatchType FullMatch;
@@ -476,8 +513,9 @@ private:
 	{ return AutoMutex(m_cond.mutex()); }
 
 	void updateImageSize();
+	void updateTimeRanges();
 
-	int64_t NSec(double x)
+	static int64_t NSec(double x)
 	{ return int64_t(x * 1e9); }
 
 	State getEffectiveState();
@@ -544,6 +582,7 @@ private:
 	IntList m_bad_frame_list;
 	Stats m_lock_stats;
 	Stats m_port_cb_stats;
+	TimeRangesChangedCallback *m_time_ranges_cb;
 };
 
 std::ostream& operator <<(std::ostream& os, Camera::State state);

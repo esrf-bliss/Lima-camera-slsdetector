@@ -78,6 +78,8 @@ class Eiger : public Camera::Model
 				FloatList& factor_list, 
 				FloatList& min_val_list);
 
+	virtual void getTimeRanges(Camera::TimeRanges& time_ranges);
+
 	// the returned object must be deleted by the caller
 	Correction *createCorrectionTask();
 
@@ -304,6 +306,9 @@ class Eiger : public Camera::Model
 
 	int getNbEigerModules()
 	{ return m_nb_det_modules / 2; }
+
+	static double KiloHzPeriod(double f)
+	{ return 1e6 / (f * 1e3); }
 
 	void getRecvFrameDim(FrameDim& frame_dim, bool raw, bool geom);
 

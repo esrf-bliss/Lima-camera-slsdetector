@@ -50,6 +50,16 @@ public:
 		PixelDepth32 = 32,
 	};
 
+	struct TimeRanges {
+		TimeRanges();
+		double min_exp_time;
+		double max_exp_time;
+		double min_lat_time;
+		double max_lat_time;
+		double min_frame_period;
+		double max_frame_period;
+	};
+
 	static bool isValidFrame(unsigned long frame);
 	static unsigned long latestFrame(unsigned long a, unsigned long b);
 
@@ -78,6 +88,9 @@ public:
 				std::vector<int>& idx_list /Out/,
 				std::vector<double>& factor_list /Out/,
 				std::vector<double>& min_val_list /Out/) = 0;
+
+		virtual void getTimeRanges(SlsDetector::Camera::TimeRanges& 
+			     			time_ranges /Out/) = 0;
 
 	protected:
 		void updateCameraModel();

@@ -168,6 +168,28 @@ void DetInfoCtrlObj::unregisterMaxImageSizeCallback(
  * \brief SyncCtrlObj constructor
  *******************************************************************/
 
+SyncCtrlObj::
+TimeRangesChangedCallback::TimeRangesChangedCallback(SyncCtrlObj *sync)
+	: m_sync(sync)
+{
+	DEB_CONSTRUCTOR();
+}
+
+void SyncCtrlObj::
+TimeRangesChangedCallback::timeRangesChanged(Camera::TimeRanges time_ranges)
+{
+	DEB_MEMBER_FUNCT();
+
+	if (!m_sync)
+		return;
+
+	ValidRangesType valid_ranges(time_ranges.min_exp_time, 
+				     time_ranges.max_exp_time,
+				     time_ranges.min_lat_time,
+				     time_ranges.max_lat_time);
+	m_sync->validRangesChanged(valid_ranges);
+}
+	
 typedef pair<TrigMode, Defs::TrigMode> TrigPair;
 static const TrigPair Lima2CamTrigModeCList[] = {
 	TrigPair(IntTrig,	Defs::Auto),
@@ -179,14 +201,16 @@ SyncCtrlObj::TrigModeMap
 SyncCtrlObj::Lima2CamTrigModeMap(C_LIST_ITERS(Lima2CamTrigModeCList));
 
 SyncCtrlObj::SyncCtrlObj(Camera& cam)
-	: m_cam(cam)
+	: m_cam(cam), m_time_ranges_cb(this)
 {
 	DEB_CONSTRUCTOR();
+	m_cam.registerTimeRangesChangedCallback(m_time_ranges_cb);
 }
 
 SyncCtrlObj::~SyncCtrlObj()
 {
 	DEB_DESTRUCTOR();
+	m_time_ranges_cb.m_sync = NULL;
 }
 
 bool SyncCtrlObj::checkTrigMode(TrigMode trig_mode)
@@ -277,11 +301,17 @@ void SyncCtrlObj::getValidRanges(ValidRangesType& valid_ranges)
 {
 	DEB_MEMBER_FUNCT();
 
-	valid_ranges.min_exp_time = 100e-6;
-	valid_ranges.max_exp_time = 1e3;
-
-	valid_ranges.min_lat_time = 100e-6;
-	valid_ranges.max_lat_time = 1e3;
+	Camera::Model *model = m_cam.getModel();
+	if (model) {
+		Camera::TimeRanges time_ranges;
+		model->getTimeRanges(time_ranges);
+		valid_ranges.min_exp_time = time_ranges.min_exp_time;
+		valid_ranges.max_exp_time = time_ranges.max_exp_time;
+		valid_ranges.min_lat_time = time_ranges.min_lat_time;
+		valid_ranges.max_lat_time = time_ranges.max_lat_time;
+	} else {
+		valid_ranges = ValidRangesType();
+	}
 
 	DEB_RETURN() << DEB_VAR2(valid_ranges.min_exp_time, 
 				 valid_ranges.max_exp_time);

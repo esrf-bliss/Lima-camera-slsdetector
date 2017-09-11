@@ -33,6 +33,19 @@ using namespace std;
 using namespace lima;
 using namespace lima::SlsDetector;
 
+Camera::TimeRangesChangedCallback::TimeRangesChangedCallback()
+	: m_cam(NULL)
+{
+	DEB_CONSTRUCTOR();
+}
+
+Camera::TimeRangesChangedCallback::~TimeRangesChangedCallback()
+{
+	DEB_DESTRUCTOR();
+
+	if (m_cam)
+		m_cam->unregisterTimeRangesChangedCallback(*this);
+}
 
 Camera::FrameType Camera::getLatestFrame(const FrameArray& l)
 {
@@ -551,7 +564,8 @@ Camera::Camera(string config_fname)
 	  m_state(Idle),
 	  m_new_frame_timeout(1),
 	  m_abort_sleep_time(1),
-	  m_tol_lost_packets(true)
+	  m_tol_lost_packets(true),
+	  m_time_ranges_cb(NULL)
 {
 	DEB_CONSTRUCTOR();
 
@@ -578,6 +592,9 @@ Camera::Camera(string config_fname)
 Camera::~Camera()
 {
 	DEB_DESTRUCTOR();
+
+	if (m_time_ranges_cb)
+		unregisterTimeRangesChangedCallback(*m_time_ranges_cb);
 
 	if (!m_model)
 		return;
@@ -758,6 +775,15 @@ void Camera::setFramePeriod(double frame_period)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(frame_period);
+
+	if (m_model) {
+		TimeRanges time_ranges;
+		m_model->getTimeRanges(time_ranges);
+		if ((frame_period < time_ranges.min_frame_period) ||
+		    (frame_period > time_ranges.max_frame_period))
+			THROW_HW_ERROR(InvalidValue) << DEB_VAR1(frame_period);
+	}
+
 	waitState(Idle);
 	m_det->setExposurePeriod(NSec(frame_period));
 	m_frame_period = frame_period;
@@ -778,6 +804,21 @@ void Camera::updateImageSize()
 	getFrameDim(frame_dim, m_raw_mode);
 	DEB_TRACE() << "MaxImageSizeChanged: " << DEB_VAR1(frame_dim);
 	maxImageSizeChanged(frame_dim.getSize(), frame_dim.getImageType());
+}
+
+void Camera::updateTimeRanges()
+{
+	DEB_MEMBER_FUNCT();
+	TimeRanges time_ranges;
+	m_model->getTimeRanges(time_ranges);
+	DEB_TRACE() << "TimeRangesChanged: " 
+		    << DEB_VAR6(time_ranges.min_exp_time, 
+				time_ranges.max_exp_time,
+				time_ranges.min_lat_time,
+				time_ranges.max_lat_time,
+				time_ranges.min_frame_period,
+				time_ranges.max_frame_period);
+	m_time_ranges_cb->timeRangesChanged(time_ranges);
 }
 
 void Camera::setPixelDepth(PixelDepth pixel_depth)
@@ -803,8 +844,10 @@ void Camera::setPixelDepth(PixelDepth pixel_depth)
 	m_det->setDynamicRange(pixel_depth);
 	m_pixel_depth = pixel_depth;
 
-	if (m_model)
+	if (m_model) {
 		updateImageSize();
+		updateTimeRanges();
+	}
 }
 
 void Camera::getPixelDepth(PixelDepth& pixel_depth)
@@ -1212,6 +1255,8 @@ void Camera::setClockDiv(ClockDiv clock_div)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(clock_div);
 	m_det->setSpeed(slsDetectorDefs::CLOCK_DIVIDER, clock_div);
+	if (m_model)
+		updateTimeRanges();
 }
 
 void Camera::getClockDiv(ClockDiv& clock_div)
@@ -1242,6 +1287,8 @@ void Camera::setReadoutFlags(ReadoutFlags flags)
 		DetFlags det_flags = static_cast<DetFlags>(*it);
 		m_det->setReadOutFlags(det_flags);
 	}
+
+	updateTimeRanges();
 }
 
 void Camera::getReadoutFlags(ReadoutFlags& flags)
@@ -1343,3 +1390,26 @@ void Camera::getBadFrameList(IntList& bad_frame_list)
 	}
 	DEB_RETURN() << DEB_VAR1(PrettyIntList(bad_frame_list));
 }
+
+void Camera::registerTimeRangesChangedCallback(TimeRangesChangedCallback& cb)
+{
+	DEB_MEMBER_FUNCT();
+
+	if (m_time_ranges_cb)
+		THROW_HW_ERROR(InvalidValue) << "a cb is already registered";
+
+	cb.m_cam = this;
+	m_time_ranges_cb = &cb;
+}
+
+void Camera::unregisterTimeRangesChangedCallback(TimeRangesChangedCallback& cb)
+{
+	DEB_MEMBER_FUNCT();
+
+	if (&cb != m_time_ranges_cb)
+		THROW_HW_ERROR(InvalidValue) << "the cb is not registered";
+
+	m_time_ranges_cb = NULL;
+	cb.m_cam = NULL;
+}
+

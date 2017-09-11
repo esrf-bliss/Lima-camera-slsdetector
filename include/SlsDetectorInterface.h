@@ -120,7 +120,22 @@ class SyncCtrlObj : public HwSyncCtrlObj
 	static TrigModeMap Lima2CamTrigModeMap;
 
  private:
+	class TimeRangesChangedCallback : 
+				public Camera::TimeRangesChangedCallback
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "TimeRangesChangedCallback", 
+				  "SlsDetector::SynCtrlObj");
+	public:
+		TimeRangesChangedCallback(SyncCtrlObj *sync);
+	protected:
+		virtual void timeRangesChanged(Camera::TimeRanges time_ranges);
+	private:
+		friend class SyncCtrlObj;
+		SyncCtrlObj *m_sync;
+	};
+
 	Camera& m_cam;
+	TimeRangesChangedCallback m_time_ranges_cb;
 };
 
 

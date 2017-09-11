@@ -421,6 +421,72 @@ void Eiger::getADCInfo(NameList& name_list, IntList& idx_list,
 	}
 }
 
+void Eiger::getTimeRanges(Camera::TimeRanges& time_ranges)
+{
+	DEB_MEMBER_FUNCT();
+
+	Camera* cam = getCamera();
+	ReadoutFlags readout_flags;
+	cam->getReadoutFlags(readout_flags);
+	Camera::ClockDiv clock_div;
+	cam->getClockDiv(clock_div);
+	Camera::PixelDepth pixel_depth;
+	cam->getPixelDepth(pixel_depth);
+
+	bool parallel = (readout_flags & Parallel);
+
+	double min_exp = 10;
+	double min_lat = 500;
+	double min_period = 500;
+	double max_freq_p = 0;
+	double readout_p = 0;
+	double readout_np = 0;
+	if (pixel_depth == Camera::PixelDepth4) {
+		min_lat = 10;
+		min_period = KiloHzPeriod(22);
+	} else if (pixel_depth == Camera::PixelDepth8) {
+		min_lat = 10;
+		min_period = KiloHzPeriod(11);
+	} else if (pixel_depth == Camera::PixelDepth16) {
+		if (clock_div == FullSpeed) {
+			max_freq_p = 6;
+			readout_p = 2.75;
+			readout_np = 126;
+		} else if (clock_div == HalfSpeed) {
+			max_freq_p = 2.9;
+			readout_p = 5.36;
+			readout_np = 252;
+		} else if (clock_div == QuarterSpeed) {
+			max_freq_p = 1.5;
+			readout_p = 10.6;
+			readout_np = 504;
+		}
+	} else if (clock_div == QuarterSpeed) {
+		max_freq_p = 2;
+		readout_p = 10.6;
+		readout_np = 504;
+	}
+
+	if (max_freq_p * readout_p * readout_np != 0) {
+		min_lat = parallel ? readout_p : readout_np;
+		min_period = min_lat + KiloHzPeriod(max_freq_p) - readout_p;
+	}
+
+	time_ranges.min_exp_time = min_exp * 1e-6;
+	time_ranges.max_exp_time = 1e3;
+	time_ranges.min_lat_time = min_lat * 1e-6;
+	time_ranges.max_lat_time = 1e3;
+	time_ranges.min_frame_period = min_period * 1e-6;
+	time_ranges.max_frame_period = 1e3;
+
+	DEB_RETURN() << DEB_VAR2(time_ranges.min_exp_time, 
+				 time_ranges.max_exp_time);
+	DEB_RETURN() << DEB_VAR2(time_ranges.min_lat_time, 
+				 time_ranges.max_lat_time);
+	DEB_RETURN() << DEB_VAR2(time_ranges.min_frame_period, 
+				 time_ranges.max_frame_period);
+}
+
 void Eiger::updateImageSize()
 {
 	DEB_MEMBER_FUNCT();
