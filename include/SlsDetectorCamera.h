@@ -378,6 +378,8 @@ public:
 	void getNbFrames(FrameType& nb_frames);
 	void setExpTime(double  exp_time);
 	void getExpTime(double& exp_time);
+	void setLatTime(double  lat_time);
+	void getLatTime(double& lat_time);
 	void setFramePeriod(double  frame_period);
 	void getFramePeriod(double& frame_period);
 
@@ -565,6 +567,7 @@ private:
 	TrigMode m_trig_mode;
 	FrameType m_nb_frames;
 	double m_exp_time;
+	double m_lat_time;
 	double m_frame_period;
 	Settings m_settings;
 	FrameMap m_frame_map;

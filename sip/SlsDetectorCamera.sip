@@ -179,6 +179,8 @@ public:
 	void getNbFrames(unsigned long& nb_frames /Out/);
 	void setExpTime(double  exp_time);
 	void getExpTime(double& exp_time /Out/);
+	void setLatTime(double  lat_time);
+	void getLatTime(double& lat_time /Out/);
 	void setFramePeriod(double  frame_period);
 	void getFramePeriod(double& frame_period /Out/);
 

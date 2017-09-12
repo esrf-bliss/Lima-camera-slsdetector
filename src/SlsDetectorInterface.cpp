@@ -252,10 +252,7 @@ void SyncCtrlObj::getTrigMode(TrigMode& trig_mode)
 void SyncCtrlObj::setExpTime(double exp_time)
 {
 	DEB_MEMBER_FUNCT();
-	double lat_time;
-	getLatTime(lat_time);
 	m_cam.setExpTime(exp_time);
-	setLatTime(lat_time);
 }
 
 void SyncCtrlObj::getExpTime(double& exp_time)
@@ -267,18 +264,13 @@ void SyncCtrlObj::getExpTime(double& exp_time)
 void SyncCtrlObj::setLatTime(double lat_time)
 {
 	DEB_MEMBER_FUNCT();
-	double exp_time;
-	m_cam.getExpTime(exp_time);
-	m_cam.setFramePeriod(exp_time + lat_time);
+	m_cam.setLatTime(lat_time);
 }
 
 void SyncCtrlObj::getLatTime(double& lat_time)
 {
 	DEB_MEMBER_FUNCT();
-	double exp_time, frame_period;
-	m_cam.getExpTime(exp_time);
-	m_cam.getFramePeriod(frame_period);
-	lat_time = frame_period - exp_time;
+	m_cam.getLatTime(lat_time);
 }
 
 void SyncCtrlObj::setNbHwFrames(int nb_frames)

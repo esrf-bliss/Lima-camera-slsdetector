@@ -557,6 +557,7 @@ bool Camera::AcqThread::newFrameReady(FrameType frame)
 Camera::Camera(string config_fname) 
 	: m_model(NULL),
 	  m_nb_frames(1),
+	  m_lat_time(0),
 	  m_recv_ports(0),
 	  m_pixel_depth(PixelDepth16), 
 	  m_image_type(Bpp16), 
@@ -771,6 +772,20 @@ void Camera::getExpTime(double& exp_time)
 	DEB_RETURN() << DEB_VAR1(exp_time);
 }
 
+void Camera::setLatTime(double lat_time)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(lat_time);
+	m_lat_time = lat_time;
+}
+
+void Camera::getLatTime(double& lat_time)
+{ 
+	DEB_MEMBER_FUNCT();
+	lat_time = m_lat_time;
+	DEB_RETURN() << DEB_VAR1(lat_time);
+}
+
 void Camera::setFramePeriod(double frame_period)
 {
 	DEB_MEMBER_FUNCT();
@@ -778,10 +793,14 @@ void Camera::setFramePeriod(double frame_period)
 
 	if (m_model) {
 		TimeRanges time_ranges;
+		double e = 1e-6;
 		m_model->getTimeRanges(time_ranges);
-		if ((frame_period < time_ranges.min_frame_period) ||
-		    (frame_period > time_ranges.max_frame_period))
-			THROW_HW_ERROR(InvalidValue) << DEB_VAR1(frame_period);
+		if ((frame_period < time_ranges.min_frame_period - e) ||
+		    (frame_period > time_ranges.max_frame_period + e))
+			THROW_HW_ERROR(InvalidValue) 
+				<< DEB_VAR3(frame_period,
+					    time_ranges.min_frame_period, 
+					    time_ranges.max_frame_period);
 	}
 
 	waitState(Idle);
@@ -811,6 +830,8 @@ void Camera::updateTimeRanges()
 	DEB_MEMBER_FUNCT();
 	TimeRanges time_ranges;
 	m_model->getTimeRanges(time_ranges);
+	m_exp_time = max(m_exp_time, time_ranges.min_exp_time);
+	m_frame_period = max(m_frame_period, time_ranges.min_frame_period);
 	DEB_TRACE() << "TimeRangesChanged: " 
 		    << DEB_VAR6(time_ranges.min_exp_time, 
 				time_ranges.max_exp_time,
@@ -927,6 +948,9 @@ void Camera::prepareAcq()
 	waitNotState(Stopping);
 	if (getState() != Idle)
 		THROW_HW_ERROR(Error) << "Camera is not idle";
+
+	if (m_lat_time > 0)
+		setFramePeriod(m_exp_time + m_lat_time);
 
 	int nb_buffers;
 	m_buffer_cb_mgr->getNbBuffers(nb_buffers);
