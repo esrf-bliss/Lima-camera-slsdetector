@@ -18,8 +18,12 @@ The current implementation only works with the PSI/Eiger detectors.
 
 Prerequisite
 ````````````
-The slsDetectorsPackage-v2.3.x is needed by the SlsDetector LIMA plugin. In particular, 
-the *libSlsDetector.so* and *libSlsReceiver.so* shared libraries must be reachable from the *LD_LIBRARY_PATH*. 
+The slsDetectorsPackage-v2.3.x is needed by the SlsDetector LIMA plugin. In the compilation phase, 
+the SLS_DETECTORS_DIR environment variable must point to the directory where the previous package 
+is extracted; header files and shared libraries are used during compilation and linkage. In particular, 
+the *libSlsDetector.so* and *libSlsReceiver.so* shared libraries must be reachable both by the compiler
+and from the *LD_LIBRARY_PATH* during execution time, in order to run the SlsDetector plugin. 
+
 In addition to that, a *configuration file*, containing the commands necessary to initialise both 
 the *slsDetector" and *slsReceiver* instances, is required. 
 
@@ -168,7 +172,9 @@ The following trigger modes are currently implemented:
   + ExtTrigMult
   + ExtGate
 
-The minimum *latency_time* is currently fixed to 100 us.
+The minimum *latency_time* and the *max_frame_rate* are automatically updated depending on
+the *PixelDepth* (4, 8, 16, 32), the *ClockDiv* (Full-, Half-, Quarter-, SuperSlow-Speed),
+and the *ReadoutFlags* (Parallel, Non-Parallel).
 
 Optional capabilites
 ........................
