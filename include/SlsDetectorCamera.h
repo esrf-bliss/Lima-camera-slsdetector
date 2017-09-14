@@ -489,6 +489,67 @@ private:
 
 	typedef std::vector<AutoPtr<Receiver> > RecvList;
 
+	class BufferThread : public Thread
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Camera::BufferThread", 
+				  "SlsDetector");
+	public:
+		typedef FrameMap::FinishInfo FinishInfo;
+		typedef std::vector<FinishInfo> FinishInfoArray;
+
+		BufferThread();
+		~BufferThread();
+
+		void init(Camera *cam, int port_idx, int size);
+
+		void getNewFrameEntry(int& idx, FinishInfo*& finfo)
+		{
+			DEB_MEMBER_FUNCT();
+			AutoMutex l = lock();
+			if (m_free_idx == m_finish_idx)
+				THROW_HW_ERROR(Error) << "BufferThread overrun";
+			idx = m_free_idx;
+			m_free_idx = getIndex(m_free_idx + 1);
+			l.unlock();
+			finfo = &m_finfo_array[idx];
+		}
+
+		void putNewFrameEntry(int idx, FinishInfo* finfo)
+		{
+			DEB_MEMBER_FUNCT();
+			AutoMutex l = lock();
+			m_ready_idx = idx;
+			m_cond.broadcast();
+		}
+
+	protected:
+		virtual void start();
+		virtual void threadFunction();
+
+	private:
+		AutoMutex lock()
+		{ return m_cond.mutex(); }
+
+		int getIndex(int i)
+		{
+			while (i < 0)
+				i += m_size;
+			return i % m_size;
+		}
+
+		void processFinishInfo(FinishInfo& finfo);
+
+		Camera *m_cam;
+		int m_port_idx;
+		bool m_end;
+		Cond m_cond;
+		int m_size;
+		FinishInfoArray m_finfo_array;
+		int m_free_idx;
+		int m_ready_idx;
+		int m_finish_idx;
+	};
+
 	class AcqThread : public Thread
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Camera::AcqThread", 
@@ -576,6 +637,7 @@ private:
 	PixelDepth m_pixel_depth;
 	ImageType m_image_type;
 	bool m_raw_mode;
+	AutoPtr<BufferThread, true> m_buffer_thread;
 	AutoPtr<AcqThread> m_acq_thread;
 	volatile State m_state;
 	FrameQueue m_frame_queue;

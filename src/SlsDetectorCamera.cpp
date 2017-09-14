@@ -470,6 +470,114 @@ void Camera::Receiver::portCallback(FrameType frame, int port, char *dptr,
 	m_cam->m_port_cb_stats.add(t1 - t0);
 }
 
+Camera::BufferThread::BufferThread()
+	: m_cam(NULL)
+{
+	DEB_CONSTRUCTOR();
+}
+
+void Camera::BufferThread::init(Camera *cam, int port_idx, int size)
+{
+	DEB_MEMBER_FUNCT();
+
+	m_cam = cam;
+	m_port_idx = port_idx;
+	m_size = size;
+	m_finfo_array.resize(size);
+
+	m_free_idx = getIndex(0);
+	m_ready_idx = getIndex(-1);
+	m_finish_idx = getIndex(-1);
+
+	start();
+}
+
+Camera::BufferThread::~BufferThread()
+{
+	DEB_DESTRUCTOR();
+
+	if (!hasStarted())
+		return;
+
+	AutoMutex l = lock();
+	m_end = true;
+	m_cond.broadcast();
+}
+
+void Camera::BufferThread::start()
+{
+	DEB_MEMBER_FUNCT();
+
+	m_end = true;
+	Thread::start();
+
+	struct sched_param param;
+	param.sched_priority = 50;
+	int ret = pthread_setschedparam(m_thread, SCHED_RR, &param);
+	if (ret != 0)
+		DEB_ERROR() << "Could not set real-time priority!!";
+
+	AutoMutex l = lock();
+	while (m_end)
+		m_cond.wait();
+}
+
+void Camera::BufferThread::threadFunction()
+{
+	DEB_MEMBER_FUNCT();
+
+	AutoMutex l = lock();
+
+	m_end = false;
+	m_cond.broadcast();
+	while (!m_end) {
+		while (!m_end && (m_finish_idx == m_ready_idx))
+			m_cond.wait();
+		if (m_finish_idx != m_ready_idx) {
+			int new_idx = getIndex(m_finish_idx + 1);
+			{
+				AutoMutexUnlock u(l);
+				FinishInfo& finfo = m_finfo_array[new_idx];
+				processFinishInfo(finfo);
+			}
+			m_finish_idx = new_idx;
+		}
+	}
+}
+
+void Camera::BufferThread:: processFinishInfo(FinishInfo& finfo)
+{
+	DEB_MEMBER_FUNCT();
+
+	try {
+		if ((finfo.nb_lost > 0) && !m_cam->m_tol_lost_packets)
+			THROW_HW_ERROR(Error) << "lost frames: "
+					      << "port_idx=" << m_port_idx
+					      << ", first=" << finfo.first_lost
+					      << ", nb=" << finfo.nb_lost;
+		FrameType f = finfo.first_lost;
+		for (int i = 0; i < finfo.nb_lost; ++i, ++f) {
+			char *bptr = m_cam->getFrameBufferPtr(f);
+			Model *model = m_cam->m_model;
+			model->processRecvPort(m_port_idx, f, NULL, 0, bptr);
+			AutoMutex l = m_cam->lock();
+			m_cam->m_bad_frame_list.push_back(f);
+		}
+		SortedIntList::const_iterator it, end = finfo.finished.end();
+		for (it = finfo.finished.begin(); it != end; ++it)
+			m_cam->frameFinished(*it);
+	} catch (Exception& e) {
+		ostringstream err_msg;
+		err_msg << "BufferThread::processRecvPort: " << e;
+		Event::Code err_code = Event::CamOverrun;
+		Event *event = new Event(Hardware, Event::Error, Event::Camera, 
+					 err_code, err_msg.str());
+		DEB_EVENT(*event) << DEB_VAR1(*event);
+		m_cam->reportEvent(event);
+	}
+}
+
+
 Camera::AcqThread::AcqThread(Camera *cam)
 	: m_cam(cam), m_cond(m_cam->m_cond), m_state(m_cam->m_state),
 	  m_frame_queue(m_cam->m_frame_queue)
@@ -964,10 +1072,17 @@ void Camera::prepareAcq()
 	int nb_buffers;
 	m_buffer_cb_mgr->getNbBuffers(nb_buffers);
 
+	m_recv_ports = m_model->getRecvPorts();
+	int nb_ports = m_recv_list.size() * m_recv_ports;
+	if (!m_buffer_thread) {
+		int buffer_size = 1000;
+		m_buffer_thread = new BufferThread[nb_ports];
+		for (int i = 0; i < nb_ports; ++i)
+			m_buffer_thread[i].init(this, i, buffer_size);
+	}
+
 	{
 		AutoMutex l = lock();
-		m_recv_ports = m_model->getRecvPorts();
-		int nb_ports = m_recv_list.size() * m_recv_ports;
 		m_frame_map.setNbItems(nb_ports);
 		m_frame_map.setBufferSize(nb_buffers);
 		m_frame_map.clear();
@@ -1037,25 +1152,18 @@ void Camera::processRecvPort(int port_idx, FrameType frame, char *dptr,
 	}
 	FrameMap::FinishInfo finfo;
 	finfo = m_frame_map.frameItemFinished(frame, port_idx, true, valid);
-	if ((finfo.nb_lost > 0) && !m_tol_lost_packets)
-		THROW_HW_ERROR(Error) << "lost frames: "
-				      << "port_idx=" << port_idx
-				      << ", first=" << finfo.first_lost
-				      << ", nb=" << finfo.nb_lost;
-	FrameType f = finfo.first_lost;
-	for (int i = 0; i < finfo.nb_lost; ++i, ++f) {
-		char *bptr = getFrameBufferPtr(f);
-		m_model->processRecvPort(port_idx, f, NULL, dsize, bptr);
-		AutoMutex l = lock();
-		m_bad_frame_list.push_back(f);
-	}
-	SortedIntList::const_iterator it, end = finfo.finished.end();
-	for (it = finfo.finished.begin(); it != end; ++it) {
-		Timestamp t0 = Timestamp::now();
-		frameFinished(*it);
-		Timestamp t1 = Timestamp::now();
-		m_lock_stats.add(t1 - t0);
-	}
+	if ((finfo.nb_lost == 0) && (finfo.finished.size() == 0))
+		return;
+
+	Timestamp t0 = Timestamp::now();
+	BufferThread& buffer = m_buffer_thread[port_idx];
+	int idx;
+	BufferThread::FinishInfo *buffer_finfo;
+	buffer.getNewFrameEntry(idx, buffer_finfo);
+	*buffer_finfo = finfo;
+	buffer.putNewFrameEntry(idx, buffer_finfo);
+	Timestamp t1 = Timestamp::now();
+	m_lock_stats.add(t1 - t0);
 }
 
 void Camera::frameFinished(FrameType frame)
