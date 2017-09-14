@@ -354,7 +354,9 @@ ostream& lima::SlsDetector::operator <<(ostream& os,
 	const double& f = s.factor;
 	os << "<";
 	os << "min=" << int(s.min() * f) << ", max=" << int(s.max() * f) << ", "
-	   << "ave=" << int(s.ave() * f) << ", std=" << int(s.std() * f);
+	   << "ave=" << int(s.ave() * f) << ", std=" << int(s.std() * f) << ", "
+	   << "n=" << s.n();
+
 	return os << ">";
 }
 
@@ -442,15 +444,21 @@ void Camera::Receiver::portCallback(FrameType frame, int port, char *dptr,
 
 	Timestamp t0 = Timestamp::now();
 
+	int port_idx = m_cam->getPortIndex(m_idx, port);
+	Timestamp& last_t0 = m_cam->m_port_core_ts[port_idx];
+	if (last_t0.isSet())
+		m_cam->m_port_core_stats.add(t0 - last_t0);
+	last_t0 = t0;
+
 	try {
 		if (frame >= m_cam->m_nb_frames)
 			THROW_HW_ERROR(Error) << "Invalid " 
 					      << DEB_VAR2(frame, DebHex(frame));
-		int port_idx = m_cam->getPortIndex(m_idx, port);
 		m_cam->processRecvPort(port_idx, frame, dptr, dsize);
 	} catch (Exception& e) {
 		ostringstream err_msg;
-		err_msg << "Receiver::frameCallback: " << e;
+		err_msg << "Receiver::frameCallback: " << e << ": "
+			<< DEB_VAR3(m_idx, frame, port);
 		Event::Code err_code = Event::CamOverrun;
 		Event *event = new Event(Hardware, Event::Error, Event::Camera, 
 					 err_code, err_msg.str());
@@ -538,6 +546,7 @@ void Camera::AcqThread::threadFunction()
 	IntList bfl = m_cam->getSortedBadFrameList();
 	DEB_ALWAYS() << "bad_frames=" << bfl.size() << ": "
 		     << PrettyIntList(bfl);
+	DEB_ALWAYS() << DEB_VAR1(m_cam->m_port_core_stats);
 	DEB_ALWAYS() << DEB_VAR1(m_cam->m_lock_stats);
 	DEB_ALWAYS() << DEB_VAR1(m_cam->m_port_cb_stats);
 
@@ -967,6 +976,8 @@ void Camera::prepareAcq()
 			m_frame_queue.pop();
 		m_bad_frame_list.clear();
 		m_bad_frame_list.reserve(16 * 1024);
+		m_port_core_ts.assign(nb_ports, Timestamp());
+		m_port_core_stats.reset();
 		m_lock_stats.reset();
 		m_port_cb_stats.reset();
 	}

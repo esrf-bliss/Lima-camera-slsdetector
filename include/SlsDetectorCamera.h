@@ -583,6 +583,8 @@ private:
 	double m_abort_sleep_time;
 	bool m_tol_lost_packets;
 	IntList m_bad_frame_list;
+	std::vector<Timestamp> m_port_core_ts;
+	Stats m_port_core_stats;
 	Stats m_lock_stats;
 	Stats m_port_cb_stats;
 	TimeRangesChangedCallback *m_time_ranges_cb;
