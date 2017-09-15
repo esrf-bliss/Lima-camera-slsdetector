@@ -244,56 +244,85 @@ Camera::FrameMap::frameItemFinished(FrameType frame, int item, bool no_check,
 	return finfo;
 }
 
-Camera::Stats::Stats(double f)
+Camera::SimpleStat::SimpleStat(double f)
 	: factor(f)
 {
 	reset();
 }
 
+void Camera::SimpleStat::reset()
+{
+	AutoMutex l(lock);
+	xmin = 1e9;
+	xmax = xacc = xacc2 = 0;
+	xn = 0;
+}
+
+void Camera::SimpleStat::add(double x) {
+	AutoMutex l(lock);
+	x *= factor;
+	xmin = std::min(xmin, x);
+	xmax = std::max(xmax, x);
+	xacc += x;
+	xacc2 += pow(x, 2);
+	xn++;
+}
+
+Camera::SimpleStat& Camera::SimpleStat::operator =(const SimpleStat& o)
+{
+	if (&o == this)
+		return *this;
+
+	AutoMutex l(o.lock);
+	xmin = o.xmin;
+	xmax = o.xmax;
+	xacc = o.xacc;
+	xacc2 = o.xacc2;
+	xn = o.xn;
+	factor = o.factor;
+	return *this;
+}
+
+int Camera::SimpleStat::n() const
+{ 
+	AutoMutex l(lock);
+	return xn; 
+}
+
+double Camera::SimpleStat::min() const
+{ 
+	AutoMutex l(lock);
+	return xmin;
+}
+
+double Camera::SimpleStat::max() const
+{
+	AutoMutex l(lock);
+	return xmax; 
+}
+
+double Camera::SimpleStat::ave() const
+{ 
+	AutoMutex l(lock);
+	return xn ? (xacc / xn) : 0; 
+}
+
+double Camera::SimpleStat::std() const
+{ 
+	AutoMutex l(lock);
+	return xn ? sqrt(xacc2 / xn - pow(ave(), 2)) : 0; 
+}
+
+Camera::Stats::Stats()
+	: cb_period(1e6), new_finish(1e6), cb_exec(1e6), recv_exec(1e6)
+{}
+
 void Camera::Stats::reset()
 {
-	tmin = 1e9;
-	tmax = tacc = tacc2 = 0;
-	tn = 0;
-}
-
-void Camera::Stats::add(double elapsed) {
-	AutoMutex l(lock);
-	tmin = std::min(tmin, elapsed);
-	tmax = std::max(tmax, elapsed);
-	tacc += elapsed;
-	tacc2 += pow(elapsed, 2);
-	tn++;
-}
-
-int Camera::Stats::n() const
-{ 
-	AutoMutex l(lock);
-	return tn; 
-}
-
-double Camera::Stats::min() const
-{ 
-	AutoMutex l(lock);
-	return tmin;
-}
-
-double Camera::Stats::max() const
-{
-	AutoMutex l(lock);
-	return tmax; 
-}
-
-double Camera::Stats::ave() const
-{ 
-	AutoMutex l(lock);
-	return tn ? (tacc / tn) : 0; 
-}
-
-double Camera::Stats::std() const
-{ 
-	AutoMutex l(lock);
-	return tn ? sqrt(tacc2 / tn - pow(ave(), 2)) : 0; 
+	cb_period.reset();
+	new_finish.reset();
+	cb_exec.reset();
+	recv_exec.reset();
 }
 
 ostream& lima::SlsDetector::operator <<(ostream& os, Camera::State state)
@@ -349,14 +378,23 @@ ostream& lima::SlsDetector::operator <<(ostream& os,
 }
 
 ostream& lima::SlsDetector::operator <<(ostream& os, 
+					const Camera::SimpleStat& s)
+{
+	os << "<";
+	os << "min=" << int(s.min()) << ", max=" << int(s.max()) << ", "
+	   << "ave=" << int(s.ave()) << ", std=" << int(s.std()) << ", "
+	   << "n=" << s.n();
+	return os << ">";
+}
+
+ostream& lima::SlsDetector::operator <<(ostream& os, 
 					const Camera::Stats& s)
 {
-	const double& f = s.factor;
 	os << "<";
-	os << "min=" << int(s.min() * f) << ", max=" << int(s.max() * f) << ", "
-	   << "ave=" << int(s.ave() * f) << ", std=" << int(s.std() * f) << ", "
-	   << "n=" << s.n();
-
+	os << "cb_period=" << s.cb_period << ", "
+	   << "new_finish=" << s.new_finish << ", "
+	   << "cb_exec=" << s.cb_exec << ", "
+	   << "recv_exec=" << s.recv_exec;
 	return os << ">";
 }
 
@@ -445,9 +483,12 @@ void Camera::Receiver::portCallback(FrameType frame, int port, char *dptr,
 	Timestamp t0 = Timestamp::now();
 
 	int port_idx = m_cam->getPortIndex(m_idx, port);
-	Timestamp& last_t0 = m_cam->m_port_core_ts[port_idx];
+	Timestamp& last_t0 = m_cam->m_stat_last_t0[port_idx];
 	if (last_t0.isSet())
-		m_cam->m_port_core_stats.add(t0 - last_t0);
+		m_cam->m_stats.cb_period.add(t0 - last_t0);
+	Timestamp& last_t1 = m_cam->m_stat_last_t1[port_idx];
+	if (last_t1.isSet())
+		m_cam->m_stats.recv_exec.add(t0 - last_t1);
 	last_t0 = t0;
 
 	try {
@@ -467,7 +508,8 @@ void Camera::Receiver::portCallback(FrameType frame, int port, char *dptr,
 	}
 
 	Timestamp t1 = Timestamp::now();
-	m_cam->m_port_cb_stats.add(t1 - t0);
+	m_cam->m_stats.cb_exec.add(t1 - t0);
+	last_t1 = t1;
 }
 
 Camera::BufferThread::BufferThread()
@@ -654,9 +696,7 @@ void Camera::AcqThread::threadFunction()
 	IntList bfl = m_cam->getSortedBadFrameList();
 	DEB_ALWAYS() << "bad_frames=" << bfl.size() << ": "
 		     << PrettyIntList(bfl);
-	DEB_ALWAYS() << DEB_VAR1(m_cam->m_port_core_stats);
-	DEB_ALWAYS() << DEB_VAR1(m_cam->m_lock_stats);
-	DEB_ALWAYS() << DEB_VAR1(m_cam->m_port_cb_stats);
+	DEB_ALWAYS() << DEB_VAR1(m_cam->m_stats);
 
 	m_state = Stopped;
 	m_cond.broadcast();
@@ -1091,10 +1131,9 @@ void Camera::prepareAcq()
 			m_frame_queue.pop();
 		m_bad_frame_list.clear();
 		m_bad_frame_list.reserve(16 * 1024);
-		m_port_core_ts.assign(nb_ports, Timestamp());
-		m_port_core_stats.reset();
-		m_lock_stats.reset();
-		m_port_cb_stats.reset();
+		m_stat_last_t0.assign(nb_ports, Timestamp());
+		m_stat_last_t1.assign(nb_ports, Timestamp());
+		m_stats.reset();
 	}
 
 	m_model->prepareAcq();
@@ -1163,7 +1202,7 @@ void Camera::processRecvPort(int port_idx, FrameType frame, char *dptr,
 	*buffer_finfo = finfo;
 	buffer.putNewFrameEntry(idx, buffer_finfo);
 	Timestamp t1 = Timestamp::now();
-	m_lock_stats.add(t1 - t0);
+	m_stats.new_finish.add(t1 - t0);
 }
 
 void Camera::frameFinished(FrameType frame)
@@ -1556,3 +1595,9 @@ void Camera::unregisterTimeRangesChangedCallback(TimeRangesChangedCallback& cb)
 	cb.m_cam = NULL;
 }
 
+void Camera::getStats(Stats& stats)
+{
+	DEB_MEMBER_FUNCT();
+	stats = m_stats;
+	DEB_RETURN() << DEB_VAR1(stats);
+}

@@ -307,21 +307,31 @@ public:
 		CounterList m_frame_item_count;
 	};
 
-	struct Stats {
-		double tmin, tmax, tacc, tacc2;
-		int tn;
+	struct SimpleStat {
+		double xmin, xmax, xacc, xacc2;
+		int xn;
 		double factor;
 		mutable Mutex lock;
 
-		Stats(double f = 1e6);
+		SimpleStat(double f = 1);
 		void reset();
-		void add(double elapsed);
+		void add(double x);
+		SimpleStat& operator =(const SimpleStat& o);
 
 		int n() const;
 		double min() const;
 		double max() const;
 		double ave() const;
 		double std() const;
+	};
+
+	struct Stats {
+		SimpleStat cb_period;
+		SimpleStat new_finish;
+		SimpleStat cb_exec;
+		SimpleStat recv_exec;
+		Stats();
+		void reset();
 	};
 
 	Camera(std::string config_fname);
@@ -419,6 +429,8 @@ public:
 
 	void registerTimeRangesChangedCallback(TimeRangesChangedCallback& cb);
 	void unregisterTimeRangesChangedCallback(TimeRangesChangedCallback& cb);
+
+	void getStats(Stats& stats);
 
 private:
 	typedef RegEx::SingleMatchType SingleMatch;
@@ -645,10 +657,9 @@ private:
 	double m_abort_sleep_time;
 	bool m_tol_lost_packets;
 	IntList m_bad_frame_list;
-	std::vector<Timestamp> m_port_core_ts;
-	Stats m_port_core_stats;
-	Stats m_lock_stats;
-	Stats m_port_cb_stats;
+	std::vector<Timestamp> m_stat_last_t0;
+	std::vector<Timestamp> m_stat_last_t1;
+	Stats m_stats;
 	TimeRangesChangedCallback *m_time_ranges_cb;
 };
 
@@ -658,6 +669,7 @@ std::ostream& operator <<(std::ostream& os, Camera::Type type);
 std::ostream& operator <<(std::ostream& os, const Camera::FrameMap& m);
 std::ostream& operator <<(std::ostream& os, const Camera::SortedIntList& l);
 std::ostream& operator <<(std::ostream& os, const Camera::FrameArray& a);
+std::ostream& operator <<(std::ostream& os, const Camera::SimpleStat& s);
 std::ostream& operator <<(std::ostream& os, const Camera::Stats& s);
 
 typedef PrettyList<Camera::IntList> PrettyIntList;

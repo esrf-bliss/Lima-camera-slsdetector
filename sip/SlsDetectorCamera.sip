@@ -140,6 +140,37 @@ public:
 		FrameMap();
 	};
 
+
+	struct SimpleStat {
+		double xmin;
+		double xmax;
+		double xacc;
+		double xacc2;
+		int xn;
+		double factor;
+		Mutex lock;
+
+		SimpleStat(double f = 1);
+		void reset();
+		void add(double x);
+		//SimpleStat& operator =(const SimpleStat& o);
+
+		int n() const;
+		double min() const;
+		double max() const;
+		double ave() const;
+		double std() const;
+	};
+
+	struct Stats {
+		SlsDetector::Camera::SimpleStat cb_period;
+		SlsDetector::Camera::SimpleStat new_finish;
+		SlsDetector::Camera::SimpleStat cb_exec;
+		SlsDetector::Camera::SimpleStat recv_exec;
+		Stats();
+		void reset();
+	};
+
 	Camera(std::string config_fname);
 	virtual ~Camera();
 
@@ -221,6 +252,8 @@ public:
 	void prepareAcq();
 	void startAcq();
 	void stopAcq();
+
+	void getStats(SlsDetector::Camera::Stats& stats /Out/);
 };
 
 
