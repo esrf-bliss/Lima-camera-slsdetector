@@ -1501,18 +1501,14 @@ void Camera::getValidReadoutFlags(IntList& flag_list, NameList& flag_name_list)
 	flag_list.clear();
 	flag_name_list.clear();
 
-#define add_valid_flags(x) \
-	do { \
-		addValidReadoutFlags(&deb, x, flag_list, flag_name_list); \
-	} while (0)
-
 	if (!m_model)
 		return;
 
 	IntList aux_list;
 	ReadoutFlags flags = Defs::Normal;
 	if (m_model->checkReadoutFlags(flags, aux_list, true))
-		add_valid_flags(flags);
+		addValidReadoutFlags(DEB_PTR(), flags, flag_list, 
+				     flag_name_list);
 
 	ReadoutFlags flag_mask = m_model->getReadoutFlagsMask();
 	IntList det_flags;
@@ -1531,7 +1527,8 @@ void Camera::getValidReadoutFlags(IntList& flag_list, NameList& flag_name_list)
 				flags = ReadoutFlags(flags | det_flags[i]);
 		}
 		if (m_model->checkReadoutFlags(flags, aux_list, true))
-			add_valid_flags(flags);
+			addValidReadoutFlags(DEB_PTR(), flags, flag_list, 
+					     flag_name_list);
 	}
 }
 
