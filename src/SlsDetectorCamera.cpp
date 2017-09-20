@@ -1105,7 +1105,10 @@ void Camera::prepareAcq()
 	if (getState() != Idle)
 		THROW_HW_ERROR(Error) << "Camera is not idle";
 
-	if (m_lat_time > 0)
+	bool need_period = !m_nb_frames || (m_nb_frames > 1);
+	need_period &= ((m_trig_mode == Defs::Auto) || 
+			(m_trig_mode == Defs::BurstTrigger));
+	if (need_period && (m_lat_time > 0))
 		setFramePeriod(m_exp_time + m_lat_time);
 
 	int nb_buffers;
