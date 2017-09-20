@@ -28,10 +28,17 @@
 #include <limits.h>
 #include <algorithm>
 #include <cmath>
+#include <sys/syscall.h>
 
 using namespace std;
 using namespace lima;
 using namespace lima::SlsDetector;
+
+
+pid_t gettid() {
+	return syscall(SYS_gettid);
+}
+
 
 Camera::TimeRangesChangedCallback::TimeRangesChangedCallback()
 	: m_cam(NULL)
@@ -45,6 +52,100 @@ Camera::TimeRangesChangedCallback::~TimeRangesChangedCallback()
 
 	if (m_cam)
 		m_cam->unregisterTimeRangesChangedCallback(*this);
+}
+
+int Camera::CPUAffinity::findNbCPUs()
+{
+	int nb_cpus = 0;
+	const char *proc_file_name = "/proc/cpuinfo";
+	ifstream proc_file(proc_file_name);
+	while (proc_file) {
+		char buffer[1024];
+		proc_file.getline(buffer, sizeof(buffer));
+		istringstream is(buffer);
+		string t;
+		is >> t;
+		if (t == "processor")
+			++nb_cpus;
+	}
+	return nb_cpus;
+}
+
+int Camera::CPUAffinity::getNbCPUs()
+{
+	static int nb_cpus = 0;
+	EXEC_ONCE(nb_cpus = findNbCPUs());
+	return nb_cpus;
+}
+
+void Camera::CPUAffinity::initCPUSet(cpu_set_t& cpu_set) const
+{
+	CPU_ZERO(&cpu_set);
+	uint64_t mask = *this;
+	for (unsigned int i = 0; i < sizeof(mask) * 8; ++i) {
+		if ((mask >> i) & 1)
+			CPU_SET(i, &cpu_set);
+	}
+}
+
+void Camera::CPUAffinity::applyToTask(pid_t task, bool incl_threads) const
+{
+	DEB_MEMBER_FUNCT();
+
+	if (incl_threads) {
+		ostringstream os;
+		uint64_t mask = *this;
+		os << "taskset -ap " << hex << showbase << mask << " " 
+		   << dec << noshowbase << task;
+		DEB_ALWAYS() << "executing: '" << os.str() << "'";
+		int ret = system(os.str().c_str());
+		if (ret != 0)
+			THROW_HW_ERROR(Error) << "Error setting task "
+					      << task << " and threads "
+					      << "CPU affinity";
+	} else {
+		cpu_set_t cpu_set;
+		initCPUSet(cpu_set);
+		DEB_ALWAYS() << "setting " << task << " CPU mask: " << *this;
+		int ret = sched_setaffinity(task, sizeof(cpu_set), &cpu_set);
+		if (ret != 0)
+			THROW_HW_ERROR(Error) << "Error setting task "
+					      << task << " CPU affinity";
+	}
+}
+
+void Camera::SystemCPUAffinity::applyAndSet(const SystemCPUAffinity& o)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(o);
+
+	if (!m_cam)
+		THROW_HW_ERROR(InvalidValue) << "apply without camera";
+
+	if (o.lima != lima) {
+		pid_t pid = getpid();
+		o.lima.applyToTask(pid, true);
+		lima = o.lima;
+		recv = o.lima;
+	}
+
+	if (o.recv != recv) {
+		cpu_set_t cpu_set;
+		o.recv.initCPUSet(cpu_set);
+		Camera::RecvList& recv_list = m_cam->m_recv_list;
+		for (unsigned int i = 0; i < recv_list.size(); ++i) {
+			DEB_ALWAYS() << "setting recv " << i << " "
+				     << "CPU mask to " << o.recv;
+			slsReceiverUsers *recv = recv_list[i]->m_recv;
+			recv->setThreadCPUAffinity(sizeof(cpu_set),
+						   &cpu_set, &cpu_set);
+		}
+		for (int i = 0; i < m_cam->getTotNbPorts(); ++i) {
+			pid_t tid = m_cam->m_buffer_thread[i].getTID();
+			o.recv.applyToTask(tid, false);
+		}
+		recv = o.recv;
+	}
 }
 
 Camera::FrameType Camera::getLatestFrame(const FrameArray& l)
@@ -397,6 +498,33 @@ ostream& lima::SlsDetector::operator <<(ostream& os,
 	return os << ">";
 }
 
+ostream& lima::SlsDetector::operator <<(ostream& os, 
+					const Camera::CPUAffinity& a)
+{
+	return os << hex << showbase << uint64_t(a) << dec << noshowbase;
+}
+
+ostream& lima::SlsDetector::operator <<(ostream& os, 
+					const Camera::SystemCPUAffinity& a)
+{
+	os << "<";
+	os << "recv=" << a.recv << ", lima=" << a.lima << ", other=" << a.other;
+	return os << ">";
+}
+
+ostream& 
+lima::SlsDetector::operator <<(ostream& os, 
+			       const Camera::PixelDepthCPUAffinityMap& m)
+{
+	os << "[";
+	bool first = true;
+	Camera::PixelDepthCPUAffinityMap::const_iterator it, end = m.end();
+	for (it = m.begin(); it != end; ++it, first=false)
+		os << (!first ? ", " : "") << it->first << ": " << it->second;
+	return os << "]";
+
+}
+
 Camera::Receiver::Receiver(Camera *cam, int idx, int rx_port)
 	: m_cam(cam), m_idx(idx), m_rx_port(rx_port)
 {
@@ -567,6 +695,8 @@ void Camera::BufferThread::threadFunction()
 {
 	DEB_MEMBER_FUNCT();
 
+	m_tid = gettid();
+
 	AutoMutex l = lock();
 
 	m_end = false;
@@ -732,7 +862,8 @@ Camera::Camera(string config_fname)
 	  m_new_frame_timeout(1),
 	  m_abort_sleep_time(0.1),
 	  m_tol_lost_packets(true),
-	  m_time_ranges_cb(NULL)
+	  m_time_ranges_cb(NULL),
+	  m_system_cpu_affinity(this)
 {
 	DEB_CONSTRUCTOR();
 
@@ -750,6 +881,11 @@ Camera::Camera(string config_fname)
 	m_det->setReceiverFifoDepth(m_recv_fifo_depth);
 
 	m_pixel_depth = PixelDepth(m_det->setDynamicRange(-1));
+
+	SystemCPUAffinity system_cpu_affinity;
+	system_cpu_affinity.recv = 0xfc0;
+	system_cpu_affinity.lima = 0xfc0;
+	m_cpu_affinity_map[PixelDepth4] = system_cpu_affinity;
 
 	setSettings(Defs::Standard);
 	setTrigMode(Defs::Auto);
@@ -1034,6 +1170,9 @@ void Camera::setPixelDepth(PixelDepth pixel_depth)
 	m_det->setDynamicRange(pixel_depth);
 	m_pixel_depth = pixel_depth;
 
+	// receiver threads are restarted after DR change
+	m_system_cpu_affinity.recv = m_system_cpu_affinity.lima;
+
 	if (m_model) {
 		updateImageSize();
 		updateTimeRanges();
@@ -1128,13 +1267,15 @@ void Camera::prepareAcq()
 	m_buffer_cb_mgr->getNbBuffers(nb_buffers);
 
 	m_recv_ports = m_model->getRecvPorts();
-	int nb_ports = m_recv_list.size() * m_recv_ports;
+	int nb_ports = getTotNbPorts();
 	if (!m_buffer_thread) {
 		int buffer_size = 1000;
 		m_buffer_thread = new BufferThread[nb_ports];
 		for (int i = 0; i < nb_ports; ++i)
 			m_buffer_thread[i].init(this, i, buffer_size);
 	}
+
+	m_system_cpu_affinity.applyAndSet(m_cpu_affinity_map[m_pixel_depth]);
 
 	{
 		AutoMutex l = lock();
@@ -1615,3 +1756,19 @@ void Camera::getStats(Stats& stats)
 	stats = m_stats;
 	DEB_RETURN() << DEB_VAR1(stats);
 }
+
+void Camera::setPixelDepthCPUAffinityMap(PixelDepthCPUAffinityMap aff_map)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(aff_map);
+	m_cpu_affinity_map = aff_map;
+}
+
+void Camera::getPixelDepthCPUAffinityMap(PixelDepthCPUAffinityMap& aff_map)
+{
+	DEB_MEMBER_FUNCT();
+	aff_map = m_cpu_affinity_map;
+	DEB_RETURN() << DEB_VAR1(aff_map);
+}
+
+

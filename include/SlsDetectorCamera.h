@@ -154,6 +154,53 @@ public:
 		Camera *m_cam;
 	};
 
+	class CPUAffinity 
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "CPUAffinity", 
+				  "SlsDetector::Camera");
+	public:
+		CPUAffinity(uint64_t m = 0) : m_mask(m) 
+		{}
+
+		static int getNbCPUs();
+
+		static uint64_t allCPUs()
+		{ return (uint64_t(1) << getNbCPUs()) - 1; }
+
+		void initCPUSet(cpu_set_t& cpu_set) const;
+		void applyToTask(pid_t task, bool incl_threads = true) const;
+
+		operator uint64_t() const
+		{ return m_mask ? m_mask : allCPUs(); }
+
+		CPUAffinity& operator =(uint64_t m)
+		{ m_mask = m; return *this; }
+
+	private:
+		static int findNbCPUs();
+		uint64_t m_mask;
+	};
+
+	struct SystemCPUAffinity {
+	private:
+		DEB_CLASS_NAMESPC(DebModCamera, "SystemCPUAffinity", 
+				  "SlsDetector::Camera");
+	public:
+		CPUAffinity recv;
+		CPUAffinity lima;
+		CPUAffinity other;
+
+		SystemCPUAffinity(Camera *cam = NULL) : m_cam(cam)
+		{}
+		
+		void applyAndSet(const SystemCPUAffinity& o);
+
+	private:
+		Camera *m_cam;
+	};
+	typedef std::map<PixelDepth, SystemCPUAffinity> 
+						PixelDepthCPUAffinityMap;
+
 	static bool isValidFrame(FrameType frame)
 	{ return (frame != FrameType(-1)); }
 
@@ -410,6 +457,9 @@ public:
 	int getNbDetSubModules()
 	{ return m_det->getNMods(); }
 
+	int getTotNbPorts()
+	{ return m_recv_list.size() * m_recv_ports; }
+
 	int getPortIndex(int recv_idx, int port)
 	{ return recv_idx * m_recv_ports + port; }
 
@@ -490,6 +540,9 @@ public:
 	void unregisterTimeRangesChangedCallback(TimeRangesChangedCallback& cb);
 
 	void getStats(Stats& stats);
+
+	void setPixelDepthCPUAffinityMap(PixelDepthCPUAffinityMap aff_map);
+	void getPixelDepthCPUAffinityMap(PixelDepthCPUAffinityMap& aff_map);
 
 private:
 	typedef RegEx::SingleMatchType SingleMatch;
@@ -592,6 +645,9 @@ private:
 			m_cond.broadcast();
 		}
 
+		pid_t getTID()
+		{ return m_tid; }
+
 	protected:
 		virtual void start();
 		virtual void threadFunction();
@@ -611,6 +667,7 @@ private:
 
 		Camera *m_cam;
 		int m_port_idx;
+		pid_t m_tid;
 		bool m_end;
 		Cond m_cond;
 		int m_size;
@@ -639,6 +696,7 @@ private:
 	};
 
 	friend class Model;
+	friend class SystemCPUAffinity;
 
 	void setModel(Model *model);
 
@@ -720,6 +778,8 @@ private:
 	std::vector<Timestamp> m_stat_last_t1;
 	Stats m_stats;
 	TimeRangesChangedCallback *m_time_ranges_cb;
+	PixelDepthCPUAffinityMap m_cpu_affinity_map;
+	SystemCPUAffinity m_system_cpu_affinity;
 };
 
 std::ostream& operator <<(std::ostream& os, Camera::State state);
@@ -730,6 +790,23 @@ std::ostream& operator <<(std::ostream& os, const Camera::SortedIntList& l);
 std::ostream& operator <<(std::ostream& os, const Camera::FrameArray& a);
 std::ostream& operator <<(std::ostream& os, const Camera::SimpleStat& s);
 std::ostream& operator <<(std::ostream& os, const Camera::Stats& s);
+std::ostream& operator <<(std::ostream& os, const Camera::CPUAffinity& a);
+std::ostream& operator <<(std::ostream& os, const Camera::SystemCPUAffinity& a);
+std::ostream& operator <<(std::ostream& os, 
+			  const Camera::PixelDepthCPUAffinityMap& m);
+
+inline
+bool operator ==(const Camera::CPUAffinity& a, const Camera::CPUAffinity& b)
+{
+	return uint64_t(a) == uint64_t(b);
+}
+
+inline
+bool operator !=(const Camera::CPUAffinity& a, const Camera::CPUAffinity& b)
+{
+	return !(a == b);
+}
+
 
 typedef PrettyList<Camera::IntList> PrettyIntList;
 typedef PrettyList<Camera::SortedIntList> PrettySortedList;
