@@ -253,16 +253,15 @@ Camera::SimpleStat::SimpleStat(double f)
 void Camera::SimpleStat::reset()
 {
 	AutoMutex l(lock);
-	xmin = 1e9;
-	xmax = xacc = xacc2 = 0;
+	xmin = xmax = xacc = xacc2 = 0;
 	xn = 0;
 }
 
 void Camera::SimpleStat::add(double x) {
 	AutoMutex l(lock);
 	x *= factor;
-	xmin = std::min(xmin, x);
-	xmax = std::max(xmax, x);
+	xmin = xn ? std::min(xmin, x) : x;
+	xmax = xn ? std::max(xmax, x) : x;
 	xacc += x;
 	xacc2 += pow(x, 2);
 	xn++;
