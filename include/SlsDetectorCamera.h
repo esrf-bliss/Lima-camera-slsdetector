@@ -440,7 +440,6 @@ private:
 
 	typedef std::vector<std::string> StringList;
 	typedef std::map<int, int> RecvPortMap;
-	typedef std::map<int, int> FrameRecvMap;
 
 	typedef std::queue<int> FrameQueue;
 

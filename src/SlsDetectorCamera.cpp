@@ -264,7 +264,7 @@ void Camera::SimpleStat::add(double x) {
 	xmax = xn ? std::max(xmax, x) : x;
 	xacc += x;
 	xacc2 += pow(x, 2);
-	xn++;
+	++xn;
 }
 
 Camera::SimpleStat& Camera::SimpleStat::operator =(const SimpleStat& o)
@@ -371,7 +371,7 @@ ostream& lima::SlsDetector::operator <<(ostream& os,
 					const Camera::FrameArray& a)
 {
 	os << "[";
-	for (unsigned int i = 0; i < a.size(); i++)
+	for (unsigned int i = 0; i < a.size(); ++i)
 		os << (i ? ", " : "") << a[i];
 	return os << "]";
 }
