@@ -525,7 +525,7 @@ private:
 			finfo = &m_finfo_array[idx];
 		}
 
-		void putNewFrameEntry(int idx, FinishInfo* finfo)
+		void putNewFrameEntry(int idx, FinishInfo* /*finfo*/)
 		{
 			DEB_MEMBER_FUNCT();
 			AutoMutex l = lock();
