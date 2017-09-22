@@ -198,6 +198,7 @@ public:
 	private:
 		Camera *m_cam;
 	};
+
 	typedef std::map<PixelDepth, SystemCPUAffinity> 
 						PixelDepthCPUAffinityMap;
 

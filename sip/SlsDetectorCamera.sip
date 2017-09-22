@@ -20,6 +20,85 @@
 // along with this program; if not, see <http://www.gnu.org/licenses/>.
 //###########################################################################
 
+// namespace SlsDetector
+// {
+// class Camera
+// {
+// public:
+//   typedef std::map<PixelDepth, SystemCPUAffinity> PixelDepthCPUAffinityMap;
+// };
+// };
+
+%MappedType SlsDetector::Camera::PixelDepthCPUAffinityMap
+{
+%TypeHeaderCode
+#include <map>
+#include "SlsDetectorCamera.h"
+#include "sipAPIlimaslsdetector.h"
+
+using namespace std;
+using namespace lima;
+using namespace lima::SlsDetector;
+
+typedef Camera::PixelDepth CPP_KeyType;
+typedef Camera::SystemCPUAffinity CPP_ValueType;
+typedef Camera::PixelDepthCPUAffinityMap CPP_MapType;
+#define SIP_ValueType sipType_SlsDetector_Camera_SystemCPUAffinity
+%End
+
+%ConvertToTypeCode
+	PyObject *key, *value;
+	SIP_SSIZE_T pos;
+
+	if (sipIsErr == NULL) {
+		bool ok = PyDict_Check(sipPy);
+		pos = 0;
+		while (ok && PyDict_Next(sipPy, &pos, &key, &value))
+			ok = (PyInt_Check(key) && 
+			      sipCanConvertToType(value, SIP_ValueType, 
+						  SIP_NOT_NONE));
+		return ok;
+	}
+
+	*sipCppPtr = new CPP_MapType();
+	pos = 0;
+	while (PyDict_Next(sipPy, &pos, &key, &value)) {
+		CPP_KeyType cpp_key = CPP_KeyType(PyInt_AS_LONG(key));
+		void *p = sipConvertToType(value, SIP_ValueType, NULL, 
+					   SIP_NOT_NONE, NULL, sipIsErr);
+		CPP_ValueType *cpp_value = static_cast<CPP_ValueType *>(p);
+		CPP_MapType::value_type map_value(cpp_key, *cpp_value);
+		(*sipCppPtr)->insert(map_value);
+	}
+	return sipGetState(sipTransferObj);
+%End
+
+%ConvertFromTypeCode
+	PyObject* sip_map = PyDict_New();
+
+	CPP_MapType::iterator it, end = sipCpp->end();
+	for (it = sipCpp->begin();  it != end; ++it) {
+		PyObject *key = PyInt_FromLong(it->first);
+		if (key == NULL)
+			goto error;
+		PyObject *value = sipConvertFromType(&it->second, SIP_ValueType,
+						     sipTransferObj);
+		if (value == NULL) {
+			Py_DECREF(key);
+			goto error;
+		}
+		PyDict_SetItem(sip_map, key, value);
+		Py_DECREF(value);
+		Py_DECREF(key);
+	}
+	return sip_map;
+error:
+	Py_DECREF(sip_map);
+	return NULL;
+%End
+};
+
+
 namespace SlsDetector
 {
 
@@ -59,6 +138,35 @@ public:
 		double min_frame_period;
 		double max_frame_period;
 	};
+
+	class CPUAffinity 
+	{
+	public:
+		CPUAffinity(unsigned long m = 0);
+
+		static int getNbCPUs();
+		static unsigned long allCPUs();
+
+		void applyToTask(int task, bool incl_threads = true) const;
+
+		operator unsigned long() const;
+
+		//CPUAffinity& operator =(unsigned long m);
+	};
+
+	struct SystemCPUAffinity {
+		SlsDetector::Camera::CPUAffinity recv;
+		SlsDetector::Camera::CPUAffinity lima;
+		SlsDetector::Camera::CPUAffinity other;
+
+		SystemCPUAffinity(SlsDetector::Camera *cam = NULL);
+		
+		void applyAndSet(const SlsDetector::Camera::SystemCPUAffinity& o);
+	};
+
+	//typedef std::map<SlsDetector::Camera::PixelDepth, 
+	//		 SlsDetector::Camera::SystemCPUAffinity> 
+	//					PixelDepthCPUAffinityMap;
 
 	static bool isValidFrame(unsigned long frame);
 	static unsigned long latestFrame(unsigned long a, unsigned long b);
@@ -254,6 +362,11 @@ public:
 	void stopAcq();
 
 	void getStats(SlsDetector::Camera::Stats& stats /Out/);
+
+	void setPixelDepthCPUAffinityMap(
+		SlsDetector::Camera::PixelDepthCPUAffinityMap aff_map);
+	void getPixelDepthCPUAffinityMap(
+		SlsDetector::Camera::PixelDepthCPUAffinityMap& aff_map /Out/);
 };
 
 
