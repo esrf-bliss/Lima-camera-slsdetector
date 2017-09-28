@@ -882,11 +882,6 @@ Camera::Camera(string config_fname)
 
 	m_pixel_depth = PixelDepth(m_det->setDynamicRange(-1));
 
-	SystemCPUAffinity system_cpu_affinity;
-	system_cpu_affinity.recv = 0xfc0;
-	system_cpu_affinity.lima = 0xfc0;
-	m_cpu_affinity_map[PixelDepth4] = system_cpu_affinity;
-
 	setSettings(Defs::Standard);
 	setTrigMode(Defs::Auto);
 	setNbFrames(1);
