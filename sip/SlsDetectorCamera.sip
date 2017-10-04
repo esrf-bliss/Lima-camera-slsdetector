@@ -144,14 +144,27 @@ public:
 	public:
 		CPUAffinity(unsigned long m = 0);
 
-		static int getNbCPUs();
-		static unsigned long allCPUs();
+		static bool UseSudo;
+		static int getNbCPUs(bool max_nb = false);
+		static unsigned long allCPUs(bool max_nb = false);
 
-		void applyToTask(int task, bool incl_threads = true) const;
+		//void initCPUSet(cpu_set_t& cpu_set) const;
+		void applyToTask(int task, bool incl_threads = true,
+				 bool use_taskset = true) const;
 
 		operator unsigned long() const;
 
 		//CPUAffinity& operator =(unsigned long m);
+	};
+
+	class ProcCPUAffinityMgr
+	{
+	public:
+		ProcCPUAffinityMgr();
+		~ProcCPUAffinityMgr();
+
+		static std::vector<int> getProcList(
+			SlsDetector::Camera::CPUAffinity cpu_affinity = 0);
 	};
 
 	struct SystemCPUAffinity {

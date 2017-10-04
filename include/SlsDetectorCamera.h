@@ -115,7 +115,8 @@ public:
 	};
 
 	typedef uint64_t FrameType;
-	typedef std::vector<std::string> NameList;
+	typedef std::vector<std::string> StringList;
+	typedef StringList NameList;
 	typedef std::vector<int> IntList;
 	typedef std::vector<double> FloatList;
 	typedef std::set<int> SortedIntList;
@@ -154,6 +155,52 @@ public:
 		Camera *m_cam;
 	};
 
+	class Glob
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Glob", "SlsDetector::Camera");
+	public:
+		Glob(std::string pattern = "");
+		Glob& operator =(std::string pattern);
+
+		static StringList find(std::string pattern);
+		static StringList split(std::string path);
+
+		int getNbEntries() const
+		{ return m_found_list.size(); }
+
+		StringList getPathList() const
+		{ return m_found_list; }
+
+		StringList getSubPathList(int idx) const;
+
+	private:
+		std::string m_pattern;
+		StringList m_found_list;
+	};
+
+	class NumericGlob
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "NumericGlob", 
+				  "SlsDetector::Camera");
+	public:
+		typedef std::pair<int, std::string> IntString;
+		typedef std::vector<IntString> IntStringList;
+
+		NumericGlob(std::string pattern_prefix, 
+			    std::string pattern_suffix = "");
+
+		int getNbEntries() const
+		{ return m_glob.getNbEntries(); }
+
+		IntStringList getIntPathList() const;
+
+	private:
+		int m_nb_idx;
+		int m_prefix_len;
+		int m_suffix_len;
+		Glob m_glob;
+	};
+
 	class CPUAffinity 
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "CPUAffinity", 
@@ -162,13 +209,15 @@ public:
 		CPUAffinity(uint64_t m = 0) : m_mask(m) 
 		{}
 
-		static int getNbCPUs();
+		static bool UseSudo;
+		static int getNbCPUs(bool max_nb = false);
 
-		static uint64_t allCPUs()
-		{ return (uint64_t(1) << getNbCPUs()) - 1; }
+		static uint64_t allCPUs(bool max_nb = false)
+		{ return (uint64_t(1) << getNbCPUs(max_nb)) - 1; }
 
 		void initCPUSet(cpu_set_t& cpu_set) const;
-		void applyToTask(pid_t task, bool incl_threads = true) const;
+		void applyToTask(pid_t task, bool incl_threads = true,
+				 bool use_taskset = true) const;
 
 		operator uint64_t() const
 		{ return m_mask ? m_mask : allCPUs(); }
@@ -177,8 +226,29 @@ public:
 		{ m_mask = m; return *this; }
 
 	private:
+		void applyWithTaskset(pid_t task, bool incl_threads) const;
+		void applyWithSetAffinity(pid_t task, bool incl_threads) const;
+
 		static int findNbCPUs();
+		static int findMaxNbCPUs();
 		uint64_t m_mask;
+	};
+
+	class ProcCPUAffinityMgr
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "ProcCPUAffinityMgr", 
+				  "SlsDetector::Camera");
+	public:
+		typedef IntList ProcList;
+
+		ProcCPUAffinityMgr();
+		~ProcCPUAffinityMgr();
+
+		static ProcList getProcList(CPUAffinity cpu_affinity = 0);
+
+	private:
+		int m_lima_pid;
+		ProcList m_other_pid_list;
 	};
 
 	struct SystemCPUAffinity {
@@ -551,7 +621,6 @@ private:
 	typedef RegEx::MatchListType MatchList;
 	typedef MatchList::const_iterator MatchListIt;
 
-	typedef std::vector<std::string> StringList;
 	typedef std::map<int, int> RecvPortMap;
 
 	typedef std::queue<int> FrameQueue;
@@ -796,10 +865,17 @@ std::ostream& operator <<(std::ostream& os, const Camera::SystemCPUAffinity& a);
 std::ostream& operator <<(std::ostream& os, 
 			  const Camera::PixelDepthCPUAffinityMap& m);
 
+inline int operator <(const Camera::NumericGlob::IntString& a,
+		      const Camera::NumericGlob::IntString& b)
+{
+	return (a.first < b.first);
+}
+
 inline
 bool operator ==(const Camera::CPUAffinity& a, const Camera::CPUAffinity& b)
 {
-	return uint64_t(a) == uint64_t(b);
+	uint64_t mask = Camera::CPUAffinity::allCPUs();
+	return (uint64_t(a) & mask) == (uint64_t(b) & mask);
 }
 
 inline
