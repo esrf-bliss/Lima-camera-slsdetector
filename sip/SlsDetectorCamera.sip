@@ -202,7 +202,7 @@ public:
 	std::string getCmd(const std::string& s, int idx = -1);
 
 	int getFramesCaught();
-	std::string getStatus();
+	SlsDetector::Defs::DetStatus getDetStatus();
 
 	void setTrigMode(SlsDetector::Defs::TrigMode  trig_mode);
 	void getTrigMode(SlsDetector::Defs::TrigMode& trig_mode /Out/);

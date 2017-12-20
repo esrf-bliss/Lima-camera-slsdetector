@@ -154,12 +154,23 @@ enum ReadoutFlags {
 	Safe         = slsDetectorDefs::SAFE,
 };
 
+enum DetStatus {
+	Idle         = slsDetectorDefs::IDLE,
+	Error        = slsDetectorDefs::ERROR,
+	Waiting      = slsDetectorDefs::WAITING,
+	RunFinished  = slsDetectorDefs::RUN_FINISHED,
+	Transmitting = slsDetectorDefs::TRANSMITTING,
+	Running      = slsDetectorDefs::RUNNING,
+	Stopped      = slsDetectorDefs::STOPPED,
+};
+
 std::ostream& operator <<(std::ostream& os, TrigMode trig_mode);
 std::ostream& operator <<(std::ostream& os, Settings settings);
 std::ostream& operator <<(std::ostream& os, DACIndex dac_idx);
 std::ostream& operator <<(std::ostream& os, ADCIndex adc_idx);
 std::ostream& operator <<(std::ostream& os, ClockDiv clock_div);
 std::ostream& operator <<(std::ostream& os, ReadoutFlags flags);
+std::ostream& operator <<(std::ostream& os, DetStatus status);
 
 } // namespace Defs
 

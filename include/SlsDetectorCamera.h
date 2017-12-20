@@ -97,6 +97,7 @@ public:
 	typedef Defs::ADCIndex ADCIndex;
 	typedef Defs::ClockDiv ClockDiv;
 	typedef Defs::ReadoutFlags ReadoutFlags;
+	typedef Defs::DetStatus DetStatus;
 
 	enum State {
 		Idle, Init, Starting, Running, StopReq, Stopping, Stopped,
@@ -380,7 +381,7 @@ public:
 	std::string getCmd(const std::string& s, int idx = -1);
 
 	int getFramesCaught();
-	std::string getStatus();
+	DetStatus getDetStatus();
 
 	void setTrigMode(TrigMode  trig_mode);
 	void getTrigMode(TrigMode& trig_mode);

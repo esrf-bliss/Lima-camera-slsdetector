@@ -677,17 +677,18 @@ void Camera::AcqThread::threadFunction()
 		}
 	} while (m_state != StopReq);
 
-	FrameType last_frame = m_cam->getLastReceivedFrame();
-	bool was_acquiring = (last_frame != m_cam->m_nb_frames - 1);
-	DEB_TRACE() << DEB_VAR2(last_frame, was_acquiring);
-
 	m_state = Stopping;
 	{
 		AutoMutexUnlock u(l);
-		DEB_TRACE() << "calling stopAcquisition";
-		det->stopAcquisition();
-		if (was_acquiring)
-			Sleep(m_cam->m_abort_sleep_time);
+		if (m_cam->getDetStatus() == Defs::Running) {
+			DEB_TRACE() << "calling stopAcquisition";
+			det->stopAcquisition();
+			Timestamp t0 = Timestamp::now();
+			while (m_cam->getDetStatus() != Defs::Idle)
+				Sleep(m_cam->m_abort_sleep_time);
+			double milli_sec = (Timestamp::now() - t0) * 1e3;
+			DEB_TRACE() << "Abort -> Idle: " << DEB_VAR1(milli_sec);
+		}
 		DEB_TRACE() << "calling stopReceiver";
 		det->stopReceiver();
 	}
@@ -720,7 +721,7 @@ Camera::Camera(string config_fname)
 	  m_raw_mode(false),
 	  m_state(Idle),
 	  m_new_frame_timeout(1),
-	  m_abort_sleep_time(1),
+	  m_abort_sleep_time(0.1),
 	  m_tol_lost_packets(true),
 	  m_time_ranges_cb(NULL)
 {
@@ -1280,10 +1281,12 @@ int Camera::getFramesCaught()
 	return frames_caught;
 }
 
-string Camera::getStatus()
+Camera::DetStatus Camera::getDetStatus()
 {
 	DEB_MEMBER_FUNCT();
-	return getCmd("status");
+	DetStatus status = DetStatus(m_det->getRunStatus());
+	DEB_RETURN() << DEB_VAR1(status);
+	return status;
 }
 
 void Camera::setDAC(int sub_mod_idx, DACIndex dac_idx, int val, bool milli_volt)

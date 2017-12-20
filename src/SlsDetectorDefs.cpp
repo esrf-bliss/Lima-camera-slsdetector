@@ -193,3 +193,18 @@ ostream& lima::SlsDetector::Defs::operator <<(ostream& os, ReadoutFlags flags)
 	return os;
 }
 
+ostream& lima::SlsDetector::Defs::operator <<(ostream& os, DetStatus status)
+{
+	const char *name = "Unknown";
+	switch (status) {
+	case Idle:		name = "Idle";			break;
+	case Error:		name = "Error";			break;
+	case Waiting:		name = "Waiting";		break;
+	case RunFinished:	name = "RunFinished";		break;
+	case Transmitting:	name = "Transmitting";		break;
+	case Running:		name = "Running";		break;
+	case Stopped:		name = "Stopped";		break;
+	}
+	return os << name;
+}
+

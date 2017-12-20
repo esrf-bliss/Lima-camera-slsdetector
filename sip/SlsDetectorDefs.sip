@@ -152,6 +152,16 @@ enum ReadoutFlags {
 	Safe         = SAFE,
 };
 
+enum DetStatus {
+	Idle         = IDLE,
+	Error        = ERROR,
+	Waiting      = WAITING,
+	RunFinished  = RUN_FINISHED,
+	Transmitting = TRANSMITTING,
+	Running      = RUNNING,
+	Stopped      = STOPPED,
+};
+
 }; // namespace Defs
 
 }; // namespace SlsDetector
