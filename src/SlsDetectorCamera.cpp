@@ -586,7 +586,7 @@ void Camera::BufferThread::threadFunction()
 	}
 }
 
-void Camera::BufferThread:: processFinishInfo(FinishInfo& finfo)
+void Camera::BufferThread::processFinishInfo(FinishInfo& finfo)
 {
 	DEB_MEMBER_FUNCT();
 
