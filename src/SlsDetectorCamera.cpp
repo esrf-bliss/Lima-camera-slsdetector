@@ -656,6 +656,8 @@ void Camera::AcqThread::threadFunction()
 	m_state = Running;
 	m_cond.broadcast();
 
+	SeqFilter seq_filter;
+
 	do {
 		while ((m_state != StopReq) && m_frame_queue.empty()) {
 			if (!m_cond.wait(m_cam->m_new_frame_timeout)) {
@@ -666,11 +668,17 @@ void Camera::AcqThread::threadFunction()
 		if (!m_frame_queue.empty()) {
 			FrameType frame = m_frame_queue.front();
 			m_frame_queue.pop();
-			bool cont_acq;
-			{
+			DEB_TRACE() << DEB_VAR1(frame);
+			seq_filter.addVal(frame);
+			SeqFilter::Range frames = seq_filter.getSeqRange();
+			bool cont_acq = true;
+			if (frames.nb > 0) {
 				AutoMutexUnlock u(l);
-				DEB_TRACE() << DEB_VAR1(frame);
-				cont_acq = newFrameReady(frame);
+				int f = frames.first;
+				do {
+					DEB_TRACE() << DEB_VAR1(f);
+					cont_acq = newFrameReady(f);
+				} while ((++f != frames.end()) && cont_acq);
 			}
 			if (!cont_acq)
 				m_state = StopReq;

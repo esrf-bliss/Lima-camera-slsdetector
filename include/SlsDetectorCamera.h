@@ -308,6 +308,64 @@ public:
 		CounterList m_frame_item_count;
 	};
 
+	class SeqFilter {
+	public:
+		struct Range {
+			int first;
+			int nb;
+
+			Range()
+			{
+				reset();
+			}
+
+			void reset(int new_first = 0)
+			{
+				first = new_first;
+				nb = 0;
+			}
+
+			int end()
+			{
+				return first + nb;
+			}
+
+			bool tryExtend(int val)
+			{
+				bool ok = (val == end());
+				if (ok)
+					nb++;
+				return ok;
+			}
+		};
+
+		void addVal(int new_val)
+		{
+			SortedIntList& w = m_waiting;
+			if (!m_seq_range.tryExtend(new_val)) {
+				w.insert(new_val);
+			} else {
+				while (!w.empty()) {
+					SortedIntList::iterator wit = w.begin();
+					if (!m_seq_range.tryExtend(*wit))
+						break;
+					w.erase(wit);
+				}
+			}
+		}
+
+		Range getSeqRange() 
+		{
+			Range ret = m_seq_range;
+			m_seq_range.reset(m_seq_range.end());
+			return ret;
+		}
+
+	private:
+		Range m_seq_range;
+		SortedIntList m_waiting;
+	};
+
 	struct SimpleStat {
 		double xmin, xmax, xacc, xacc2;
 		int xn;
