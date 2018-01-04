@@ -155,6 +155,8 @@ public:
 		operator unsigned long() const;
 
 		//CPUAffinity& operator =(unsigned long m);
+
+		bool isDefault() const;
 	};
 
 	class ProcCPUAffinityMgr
@@ -163,8 +165,17 @@ public:
 		ProcCPUAffinityMgr();
 		~ProcCPUAffinityMgr();
 
+		enum Filter {
+			All, MatchAffinity, NoMatchAffinity,
+		};
+
 		static std::vector<int> getProcList(
+			SlsDetector::Camera::ProcCPUAffinityMgr::Filter filter
+				= SlsDetector::Camera::ProcCPUAffinityMgr::All,
 			SlsDetector::Camera::CPUAffinity cpu_affinity = 0);
+
+		void setOtherCPUAffinity(
+			SlsDetector::Camera::CPUAffinity affinity);
 	};
 
 	struct SystemCPUAffinity {

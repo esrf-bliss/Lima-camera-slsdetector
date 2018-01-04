@@ -30,7 +30,8 @@
 #include <cmath>
 #include <sys/syscall.h>
 #include <glob.h>
-
+#include <signal.h>
+#include <sys/wait.h>
 
 using namespace std;
 using namespace lima;
@@ -251,8 +252,8 @@ void Camera::CPUAffinity::applyWithTaskset(pid_t task, bool incl_threads) const
 	const char *all_tasks_opt = incl_threads ? "-a " : "";
 	os << "taskset " << all_tasks_opt
 	   << "-p " << hex << showbase << mask << " " 
-	   << dec << noshowbase << task;
-	DEB_ALWAYS() << "executing: '" << os.str() << "'";
+	   << dec << noshowbase << task << " > /dev/null 2>&1";
+	DEB_TRACE() << "executing: '" << os.str() << "'";
 	int ret = system(os.str().c_str());
 	if (ret != 0) {
 		const char *th = incl_threads ? "and threads " : "";
@@ -298,17 +299,176 @@ void Camera::CPUAffinity::applyWithSetAffinity(pid_t task, bool incl_threads)
 	}
 }
 
-Camera::ProcCPUAffinityMgr::ProcCPUAffinityMgr()
+Camera::ProcCPUAffinityMgr::WatchDog::WatchDog()
 {
 	DEB_CONSTRUCTOR();
 
 	m_lima_pid = getpid();
-	ProcList proc_list = getProcList();
-	ProcList::iterator it, end = proc_list.end();
-	it = find(proc_list.begin(), end, m_lima_pid);
-	if (it != end)
-		proc_list.erase(it);
-	m_other_pid_list = proc_list;
+
+	m_child_pid = fork();
+	if (m_child_pid == 0) {
+		m_child_pid = getpid();
+		DEB_TRACE() << DEB_VAR2(m_lima_pid, m_child_pid);
+
+		m_cmd_pipe.close(Pipe::WriteFd);
+		m_res_pipe.close(Pipe::ReadFd);
+
+		signal(SIGINT, SIG_IGN);
+		signal(SIGTERM, sigTermHandler);
+
+		childFunction();
+		_exit(0);
+	} else {
+		m_cmd_pipe.close(Pipe::ReadFd);
+		m_res_pipe.close(Pipe::WriteFd);
+
+		sendChildCmd(Init);
+		DEB_TRACE() << "Child is ready";
+	}
+}
+
+Camera::ProcCPUAffinityMgr::WatchDog::~WatchDog()
+{
+	DEB_DESTRUCTOR();
+
+	if (!childEnded()) {
+		sendChildCmd(CleanUp);
+		waitpid(m_child_pid, NULL, 0);
+	}
+}
+
+void Camera::ProcCPUAffinityMgr::WatchDog::sigTermHandler(int /*signo*/)
+{
+}
+
+bool Camera::ProcCPUAffinityMgr::WatchDog::childEnded()
+{
+	return (waitpid(m_child_pid, NULL, WNOHANG) != 0);
+}
+
+void Camera::ProcCPUAffinityMgr::WatchDog::sendChildCmd(Cmd cmd, Arg arg)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(cmd, DebHex(arg));
+
+	if (childEnded())
+		THROW_HW_ERROR(Error) << "Watchdog child process killed: " 
+				      << m_child_pid;
+	Packet packet = {cmd, arg};
+	void *p = static_cast<void *>(&packet);
+	string s(static_cast<char *>(p), sizeof(packet));
+	m_cmd_pipe.write(s);
+
+	s = m_res_pipe.read(1);
+	Cmd res = Cmd(s.data()[0]);
+	if (res != Ok)
+		THROW_HW_ERROR(Error) << "Invalid watchdog child ack";
+	DEB_TRACE() << "Watchdog child acknowledged Ok";
+}
+
+Camera::ProcCPUAffinityMgr::WatchDog::Packet
+Camera::ProcCPUAffinityMgr::WatchDog::readParentCmd()
+{
+	DEB_MEMBER_FUNCT();
+	Packet packet;
+	string s = m_cmd_pipe.read(sizeof(packet));
+	if (s.empty())
+		THROW_HW_ERROR(Error) << "Watchdog cmd pipe closed/intr";
+	memcpy(&packet, s.data(), s.size());
+	DEB_RETURN() << DEB_VAR2(packet.cmd, DebHex(packet.arg));
+	return packet;
+}
+
+void Camera::ProcCPUAffinityMgr::WatchDog::ackParentCmd()
+{
+	DEB_MEMBER_FUNCT();
+	m_res_pipe.write(string(1, Ok));
+}
+
+void Camera::ProcCPUAffinityMgr::WatchDog::childFunction()
+{
+	DEB_MEMBER_FUNCT();
+
+	Packet first = readParentCmd();
+	if (first.cmd != Init) {
+		DEB_ERROR() << "Invalid watchdog init cmd: " << first.cmd;
+		return;
+	}
+	ackParentCmd();
+
+	bool last_was_clean = false;
+	bool cleanup_req = false;
+
+	try {
+		do {
+			Packet packet = readParentCmd();
+			if (packet.cmd == SetAffinity) {
+				CPUAffinity cpu_affinity = packet.arg;
+				affinitySetter(cpu_affinity);
+				ackParentCmd();
+				last_was_clean = cpu_affinity.isDefault();
+			} else if (packet.cmd == CleanUp) {
+				cleanup_req = true;
+			}
+		} while (!cleanup_req);
+
+	} catch (...) {
+		DEB_ALWAYS() << "Watchdog parent and/or child killed!";
+	}
+
+	DEB_TRACE() << "Clean-up";
+	if (!last_was_clean)
+		affinitySetter(CPUAffinity());
+
+	if (cleanup_req)
+		ackParentCmd(); 
+}
+
+void 
+Camera::ProcCPUAffinityMgr::WatchDog::affinitySetter(CPUAffinity cpu_affinity)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(cpu_affinity);
+
+	ProcList proc_list = getOtherProcList(cpu_affinity);
+	if (proc_list.empty())
+		return;
+
+	DEB_ALWAYS() << "Setting CPUAffinity for " << PrettyIntList(proc_list)
+		     << " to " << cpu_affinity;
+	ProcList::const_iterator it, end = proc_list.end();
+	for (it = proc_list.begin(); it != end; ++it)
+		cpu_affinity.applyToTask(*it);
+}
+
+Camera::ProcCPUAffinityMgr::ProcList 
+Camera::ProcCPUAffinityMgr::WatchDog::getOtherProcList(CPUAffinity cpu_affinity)
+{
+	DEB_MEMBER_FUNCT();
+
+	ProcList proc_list = getProcList(NoMatchAffinity, cpu_affinity);
+	pid_t ignore_proc_list[] = { m_lima_pid, m_child_pid, 0 };
+	for (pid_t *p = ignore_proc_list; *p; ++p) {
+		ProcList::iterator it, end = proc_list.end();
+		it = find(proc_list.begin(), end, *p);
+		if (it != end)
+			proc_list.erase(it);
+	}
+
+	return proc_list;
+}
+
+void 
+Camera::ProcCPUAffinityMgr::WatchDog::setOtherCPUAffinity(CPUAffinity cpu_affinity)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(cpu_affinity);
+	sendChildCmd(SetAffinity, cpu_affinity);
+}
+
+Camera::ProcCPUAffinityMgr::ProcCPUAffinityMgr()
+{
+	DEB_CONSTRUCTOR();
 }
 
 Camera::ProcCPUAffinityMgr::~ProcCPUAffinityMgr()
@@ -317,10 +477,10 @@ Camera::ProcCPUAffinityMgr::~ProcCPUAffinityMgr()
 }
 
 Camera::ProcCPUAffinityMgr::ProcList
-Camera::ProcCPUAffinityMgr::getProcList(CPUAffinity cpu_affinity)
+Camera::ProcCPUAffinityMgr::getProcList(Filter filter, CPUAffinity cpu_affinity)
 {
 	DEB_STATIC_FUNCT();
-	DEB_PARAM() << DEB_VAR1(cpu_affinity);
+	DEB_PARAM() << DEB_VAR2(filter, cpu_affinity);
 
 	ProcList proc_list;
 	NumericGlob proc_glob("/proc/", "/status");
@@ -330,7 +490,7 @@ Camera::ProcCPUAffinityMgr::getProcList(CPUAffinity cpu_affinity)
 		int pid = it->first;
 		const string& fname = it->second;
 		bool has_vm = false;
-		bool has_good_affinity = false;
+		bool has_good_affinity = (filter == All);
 		ifstream status_file(fname.c_str());
 		while (status_file) {
 			string s;
@@ -338,18 +498,20 @@ Camera::ProcCPUAffinityMgr::getProcList(CPUAffinity cpu_affinity)
 			RegEx re;
 			FullMatch full_match;
 
-			re = "VmSize:?";
+			re = "VmSize:?$";
 			if (re.match(s, full_match)) {
 				has_vm = true;
 				continue;
 			}
 
-			re = "Cpus_allowed:?";
-			if (re.match(s, full_match)) {
+			re = "Cpus_allowed:?$";
+			if (re.match(s, full_match) && (filter != All)) {
 				uint64_t int_affinity;
 				status_file >> hex >> int_affinity >> dec;
 				CPUAffinity affinity = int_affinity;
-				has_good_affinity = (affinity == cpu_affinity);
+				bool aff_match = (affinity == cpu_affinity);
+				bool filt_match = (filter == MatchAffinity);
+				has_good_affinity = (aff_match == filt_match);
 				continue;
 			}
 		}
@@ -358,8 +520,22 @@ Camera::ProcCPUAffinityMgr::getProcList(CPUAffinity cpu_affinity)
 			proc_list.push_back(pid);
 	}
 
-	DEB_RETURN() << DEB_VAR1(PrettyList<ProcList>(proc_list));
+	if (DEB_CHECK_ANY(DebTypeReturn))
+		DEB_RETURN() << DEB_VAR1(PrettyList<ProcList>(proc_list));
 	return proc_list;
+}
+
+void Camera::ProcCPUAffinityMgr::setOtherCPUAffinity(CPUAffinity cpu_affinity)
+{
+	DEB_MEMBER_FUNCT();
+
+	if (!m_watchdog || m_watchdog->childEnded())
+		m_watchdog = new WatchDog();
+
+	m_watchdog->setOtherCPUAffinity(cpu_affinity);
+
+	if (cpu_affinity.isDefault())
+		m_watchdog = NULL;
 }
 
 
@@ -395,6 +571,12 @@ void Camera::SystemCPUAffinity::applyAndSet(const SystemCPUAffinity& o)
 		}
 		recv = o.recv;
 	}
+
+	if (!m_proc_mgr)
+		m_proc_mgr = new ProcCPUAffinityMgr();
+
+	m_proc_mgr->setOtherCPUAffinity(o.other);
+	other = o.other;
 }
 
 Camera::FrameType Camera::getLatestFrame(const FrameArray& l)

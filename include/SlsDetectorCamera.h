@@ -33,6 +33,7 @@
 #include "lima/HwBufferMgr.h"
 #include "lima/HwMaxImageSizeCallback.h"
 #include "lima/Event.h"
+#include "lima/SimplePipe.h"
 
 #include <set>
 #include <queue>
@@ -225,6 +226,9 @@ public:
 		CPUAffinity& operator =(uint64_t m)
 		{ m_mask = m; return *this; }
 
+		bool isDefault() const
+		{ return !m_mask || (m_mask == allCPUs()); }
+
 	private:
 		void applyWithTaskset(pid_t task, bool incl_threads) const;
 		void applyWithSetAffinity(pid_t task, bool incl_threads) const;
@@ -241,14 +245,61 @@ public:
 	public:
 		typedef IntList ProcList;
 
+		enum Filter {
+			All, MatchAffinity, NoMatchAffinity,
+		};
+
 		ProcCPUAffinityMgr();
 		~ProcCPUAffinityMgr();
 
-		static ProcList getProcList(CPUAffinity cpu_affinity = 0);
+		static ProcList getProcList(Filter filter = All, 
+					    CPUAffinity cpu_affinity = 0);
+
+		void setOtherCPUAffinity(CPUAffinity cpu_affinity);
 
 	private:
-		int m_lima_pid;
-		ProcList m_other_pid_list;
+		class WatchDog
+		{
+			DEB_CLASS_NAMESPC(DebModCamera, "WatchDog", 
+					  "SlsDetector::"
+					  "Camera::ProcCPUAffinityMgr");
+		public:
+			WatchDog();
+			~WatchDog();
+
+			bool childEnded();
+			void setOtherCPUAffinity(CPUAffinity cpu_affinity);
+
+		private:
+			enum Cmd {
+				Init, SetAffinity, CleanUp, Ok,
+			};
+
+			typedef uint64_t Arg;
+
+			struct Packet {
+				Cmd cmd;
+				Arg arg;
+			};
+			
+			static void sigTermHandler(int signo);
+
+			void childFunction();
+			void affinitySetter(CPUAffinity cpu_affinity);
+
+			ProcList getOtherProcList(CPUAffinity cpu_affinity);
+
+			void sendChildCmd(Cmd cmd, Arg arg = 0);
+			Packet readParentCmd();
+			void ackParentCmd();
+
+			Pipe m_cmd_pipe;
+			Pipe m_res_pipe;
+			pid_t m_lima_pid;
+			pid_t m_child_pid;
+		};
+
+		AutoPtr<WatchDog> m_watchdog;
 	};
 
 	struct SystemCPUAffinity {
@@ -267,6 +318,7 @@ public:
 
 	private:
 		Camera *m_cam;
+		AutoPtr<ProcCPUAffinityMgr> m_proc_mgr;
 	};
 
 	typedef std::map<PixelDepth, SystemCPUAffinity> 
