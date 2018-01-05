@@ -1004,7 +1004,8 @@ void Camera::updateTimeRanges()
 				time_ranges.max_lat_time,
 				time_ranges.min_frame_period,
 				time_ranges.max_frame_period);
-	m_time_ranges_cb->timeRangesChanged(time_ranges);
+	if (m_time_ranges_cb)
+		m_time_ranges_cb->timeRangesChanged(time_ranges);
 }
 
 void Camera::setPixelDepth(PixelDepth pixel_depth)
