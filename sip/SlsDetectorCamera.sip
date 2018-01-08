@@ -47,12 +47,10 @@ typedef Camera::PixelDepthCPUAffinityMap CPP_MapType;
 %End
 
 %ConvertToTypeCode
-	PyObject *key, *value;
-	SIP_SSIZE_T pos;
-
 	if (sipIsErr == NULL) {
 		bool ok = PyDict_Check(sipPy);
-		pos = 0;
+		PyObject *key, *value;
+		SIP_SSIZE_T pos = 0;
 		while (ok && PyDict_Next(sipPy, &pos, &key, &value))
 			ok = (PyInt_Check(key) && 
 			      sipCanConvertToType(value, SIP_ValueType, 
@@ -60,16 +58,28 @@ typedef Camera::PixelDepthCPUAffinityMap CPP_MapType;
 		return ok;
 	}
 
-	*sipCppPtr = new CPP_MapType();
-	pos = 0;
+	CPP_MapType *cpp_map = new CPP_MapType();
+
+	PyObject *key, *value;
+	SIP_SSIZE_T pos = 0;
 	while (PyDict_Next(sipPy, &pos, &key, &value)) {
 		CPP_KeyType cpp_key = CPP_KeyType(PyInt_AS_LONG(key));
+		int state;
 		void *p = sipConvertToType(value, SIP_ValueType, NULL, 
-					   SIP_NOT_NONE, NULL, sipIsErr);
+					   SIP_NOT_NONE, &state, sipIsErr);
 		CPP_ValueType *cpp_value = static_cast<CPP_ValueType *>(p);
+		if (*sipIsErr) {
+			sipReleaseType(cpp_value, SIP_ValueType, state);
+			delete cpp_map;
+			return 0;
+		}		   
+
 		CPP_MapType::value_type map_value(cpp_key, *cpp_value);
-		(*sipCppPtr)->insert(map_value);
+		cpp_map->insert(map_value);
+		sipReleaseType(cpp_value, SIP_ValueType, state);
 	}
+	*sipCppPtr = cpp_map;
+
 	return sipGetState(sipTransferObj);
 %End
 
@@ -81,9 +91,11 @@ typedef Camera::PixelDepthCPUAffinityMap CPP_MapType;
 		PyObject *key = PyInt_FromLong(it->first);
 		if (key == NULL)
 			goto error;
-		PyObject *value = sipConvertFromType(&it->second, SIP_ValueType,
-						     sipTransferObj);
+		CPP_ValueType *new_val = new CPP_ValueType(it->second);
+		PyObject *value = sipConvertFromNewType(new_val, SIP_ValueType,
+							NULL);
 		if (value == NULL) {
+			delete new_val;
 			Py_DECREF(key);
 			goto error;
 		}
@@ -182,15 +194,21 @@ public:
 		SlsDetector::Camera::CPUAffinity recv;
 		SlsDetector::Camera::CPUAffinity lima;
 		SlsDetector::Camera::CPUAffinity other;
-
-		SystemCPUAffinity(SlsDetector::Camera *cam = NULL);
-		
-		void applyAndSet(const SlsDetector::Camera::SystemCPUAffinity& o);
 	};
 
 	//typedef std::map<SlsDetector::Camera::PixelDepth, 
 	//		 SlsDetector::Camera::SystemCPUAffinity> 
 	//					PixelDepthCPUAffinityMap;
+
+	class SystemCPUAffinityMgr
+	{
+	public:
+		SystemCPUAffinityMgr(SlsDetector::Camera *cam = NULL);
+		
+		void applyAndSet(
+			const SlsDetector::Camera::SystemCPUAffinity& o);
+		void updateRecvRestart();
+	};
 
 	static bool isValidFrame(unsigned long frame);
 	static unsigned long latestFrame(unsigned long a, unsigned long b);

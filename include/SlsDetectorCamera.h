@@ -303,26 +303,29 @@ public:
 	};
 
 	struct SystemCPUAffinity {
-	private:
-		DEB_CLASS_NAMESPC(DebModCamera, "SystemCPUAffinity", 
-				  "SlsDetector::Camera");
-	public:
 		CPUAffinity recv;
 		CPUAffinity lima;
 		CPUAffinity other;
-
-		SystemCPUAffinity(Camera *cam = NULL) : m_cam(cam)
-		{}
-		
-		void applyAndSet(const SystemCPUAffinity& o);
-
-	private:
-		Camera *m_cam;
-		AutoPtr<ProcCPUAffinityMgr> m_proc_mgr;
 	};
 
 	typedef std::map<PixelDepth, SystemCPUAffinity> 
 						PixelDepthCPUAffinityMap;
+
+	struct SystemCPUAffinityMgr {
+	private:
+		DEB_CLASS_NAMESPC(DebModCamera, "SystemCPUAffinityMgr", 
+				  "SlsDetector::Camera");
+	public:
+		SystemCPUAffinityMgr(Camera *cam = NULL);
+	
+		void applyAndSet(const SystemCPUAffinity& o);
+		void updateRecvRestart();
+
+	private:
+		Camera *m_cam;
+		SystemCPUAffinity m_last;
+		AutoPtr<ProcCPUAffinityMgr> m_proc_mgr;
+	};
 
 	static bool isValidFrame(FrameType frame)
 	{ return (frame != FrameType(-1)); }
@@ -818,7 +821,7 @@ private:
 	};
 
 	friend class Model;
-	friend class SystemCPUAffinity;
+	friend class SystemCPUAffinityMgr;
 
 	void setModel(Model *model);
 
@@ -901,7 +904,7 @@ private:
 	Stats m_stats;
 	TimeRangesChangedCallback *m_time_ranges_cb;
 	PixelDepthCPUAffinityMap m_cpu_affinity_map;
-	SystemCPUAffinity m_system_cpu_affinity;
+	SystemCPUAffinityMgr m_system_cpu_affinity_mgr;
 };
 
 std::ostream& operator <<(std::ostream& os, Camera::State state);
