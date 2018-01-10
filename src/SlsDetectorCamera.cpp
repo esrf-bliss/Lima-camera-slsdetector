@@ -721,6 +721,7 @@ bool Camera::AcqThread::newFrameReady(FrameType frame)
 
 Camera::Camera(string config_fname) 
 	: m_model(NULL),
+	  m_recv_fifo_depth(1000),
 	  m_nb_frames(1),
 	  m_lat_time(0),
 	  m_recv_ports(0),
@@ -745,6 +746,8 @@ Camera::Camera(string config_fname)
 	DEB_TRACE() << "Reading configuration file";
 	const char *fname = m_input_data->config_file_name.c_str();
 	m_det->readConfigurationFile(fname);
+
+	m_det->setReceiverFifoDepth(m_recv_fifo_depth);
 
 	m_pixel_depth = PixelDepth(m_det->setDynamicRange(-1));
 

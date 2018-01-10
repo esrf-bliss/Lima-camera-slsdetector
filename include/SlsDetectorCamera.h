@@ -695,6 +695,7 @@ private:
 	AutoPtr<AppInputData> m_input_data;
 	RecvList m_recv_list;
 	AutoPtr<multiSlsDetector> m_det;
+	int m_recv_fifo_depth;
 	TrigMode m_trig_mode;
 	FrameType m_nb_frames;
 	double m_exp_time;
