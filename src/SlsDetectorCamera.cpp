@@ -438,6 +438,7 @@ Camera::ProcCPUAffinityMgr::WatchDog::affinitySetter(CPUAffinity cpu_affinity)
 	ProcList::const_iterator it, end = proc_list.end();
 	for (it = proc_list.begin(); it != end; ++it)
 		cpu_affinity.applyToTask(*it);
+	DEB_ALWAYS() << "Done!";
 }
 
 Camera::ProcCPUAffinityMgr::ProcList 
@@ -1385,6 +1386,15 @@ void Camera::setModel(Model *model)
 	if (!m_model)
 		return;
 
+	m_recv_ports = m_model->getRecvPorts();
+	int nb_ports = getTotNbPorts();
+	if (!m_buffer_thread) {
+		int buffer_size = 1000;
+		m_buffer_thread = new BufferThread[nb_ports];
+		for (int i = 0; i < nb_ports; ++i)
+			m_buffer_thread[i].init(this, i, buffer_size);
+	}
+
 	setPixelDepth(m_pixel_depth);
 	setSettings(m_settings);
 }
@@ -1584,6 +1594,19 @@ void Camera::updateTimeRanges()
 		m_time_ranges_cb->timeRangesChanged(time_ranges);
 }
 
+void Camera::updateCPUAffinity(bool recv_restarted)
+{
+	DEB_MEMBER_FUNCT();
+
+	// receiver threads are restarted after DR change
+	if (recv_restarted)
+		m_system_cpu_affinity_mgr.updateRecvRestart();
+
+	// apply the corresponding SystemCPUAffinity
+	SystemCPUAffinity system_affinity = m_cpu_affinity_map[m_pixel_depth];
+	m_system_cpu_affinity_mgr.applyAndSet(system_affinity);
+}
+
 void Camera::setPixelDepth(PixelDepth pixel_depth)
 {
 	DEB_MEMBER_FUNCT();
@@ -1607,12 +1630,10 @@ void Camera::setPixelDepth(PixelDepth pixel_depth)
 	m_det->setDynamicRange(pixel_depth);
 	m_pixel_depth = pixel_depth;
 
-	// receiver threads are restarted after DR change
-	m_system_cpu_affinity_mgr.updateRecvRestart();
-
 	if (m_model) {
 		updateImageSize();
 		updateTimeRanges();
+		updateCPUAffinity(true);
 	}
 }
 
@@ -1702,18 +1723,7 @@ void Camera::prepareAcq()
 
 	int nb_buffers;
 	m_buffer_cb_mgr->getNbBuffers(nb_buffers);
-
-	m_recv_ports = m_model->getRecvPorts();
 	int nb_ports = getTotNbPorts();
-	if (!m_buffer_thread) {
-		int buffer_size = 1000;
-		m_buffer_thread = new BufferThread[nb_ports];
-		for (int i = 0; i < nb_ports; ++i)
-			m_buffer_thread[i].init(this, i, buffer_size);
-	}
-
-	SystemCPUAffinity system_affinity = m_cpu_affinity_map[m_pixel_depth];
-	m_system_cpu_affinity_mgr.applyAndSet(system_affinity);
 
 	{
 		AutoMutex l = lock();
@@ -2200,13 +2210,12 @@ void Camera::setPixelDepthCPUAffinityMap(PixelDepthCPUAffinityMap aff_map)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(aff_map);
 	m_cpu_affinity_map = aff_map;
+	updateCPUAffinity(false);
 }
 
 void Camera::getPixelDepthCPUAffinityMap(PixelDepthCPUAffinityMap& aff_map)
 {
 	DEB_MEMBER_FUNCT();
-	// force initialisation of the current pixel depth in map
-	m_cpu_affinity_map[m_pixel_depth];
 	aff_map = m_cpu_affinity_map;
 	DEB_RETURN() << DEB_VAR1(aff_map);
 }

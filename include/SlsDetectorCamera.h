@@ -830,6 +830,7 @@ private:
 
 	void updateImageSize();
 	void updateTimeRanges();
+	void updateCPUAffinity(bool recv_restarted);
 
 	static int64_t NSec(double x)
 	{ return int64_t(x * 1e9); }
