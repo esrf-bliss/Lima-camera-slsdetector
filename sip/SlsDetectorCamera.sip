@@ -178,10 +178,14 @@ public:
 		~ProcCPUAffinityMgr();
 
 		enum Filter {
-			All, MatchAffinity, NoMatchAffinity,
+			All, MatchAffinity, NoMatchAffinity, ThisProc=0x10
 		};
 
 		static std::vector<int> getProcList(
+			SlsDetector::Camera::ProcCPUAffinityMgr::Filter filter
+				= SlsDetector::Camera::ProcCPUAffinityMgr::All,
+			SlsDetector::Camera::CPUAffinity cpu_affinity = 0);
+		static std::vector<int> getThreadList(
 			SlsDetector::Camera::ProcCPUAffinityMgr::Filter filter
 				= SlsDetector::Camera::ProcCPUAffinityMgr::All,
 			SlsDetector::Camera::CPUAffinity cpu_affinity = 0);
@@ -203,11 +207,33 @@ public:
 	class SystemCPUAffinityMgr
 	{
 	public:
+		class ProcessingFinishedEvent
+		{
+		public:
+			ProcessingFinishedEvent(
+				SlsDetector::Camera::SystemCPUAffinityMgr *mgr);
+			~ProcessingFinishedEvent();
+
+			void processingFinished();
+
+			void registerStatusCallback(CtControl *ct_control);
+		};
+
 		SystemCPUAffinityMgr(SlsDetector::Camera *cam = NULL);
+		~SystemCPUAffinityMgr();
 		
 		void applyAndSet(
 			const SlsDetector::Camera::SystemCPUAffinity& o);
 		void updateRecvRestart();
+
+		SlsDetector::Camera::SystemCPUAffinityMgr::
+		ProcessingFinishedEvent *getProcessingFinishedEvent();
+
+		void prepareAcq();
+		void startAcq();
+		void stopAcq();
+		void recvFinished();
+		void limaFinished();
 	};
 
 	static bool isValidFrame(unsigned long frame);
@@ -409,6 +435,9 @@ public:
 		SlsDetector::Camera::PixelDepthCPUAffinityMap aff_map);
 	void getPixelDepthCPUAffinityMap(
 		SlsDetector::Camera::PixelDepthCPUAffinityMap& aff_map /Out/);
+
+	SlsDetector::Camera::SystemCPUAffinityMgr::ProcessingFinishedEvent *
+		getProcessingFinishedEvent();
 };
 
 

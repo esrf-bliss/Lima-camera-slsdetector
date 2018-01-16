@@ -22,6 +22,7 @@
 
 #include "SlsDetectorCamera.h"
 #include "lima/Timestamp.h"
+#include "lima/CtAcquisition.h"
 
 #include "multiSlsDetectorCommand.h"
 
@@ -233,6 +234,9 @@ void Camera::CPUAffinity::applyToTask(pid_t task, bool incl_threads,
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR3(task, incl_threads, use_taskset);
 
+	if (kill(task, 0) != 0)
+		return;
+
 	if (use_taskset)
 		applyWithTaskset(task, incl_threads);
 	else
@@ -288,7 +292,7 @@ void Camera::CPUAffinity::applyWithSetAffinity(pid_t task, bool incl_threads)
 	initCPUSet(cpu_set);
 	IntList::const_iterator it, end = task_list.end();
 	for (it = task_list.begin(); it != end; ++it) {
-		DEB_ALWAYS() << "setting " << task << " CPU mask: " << *this;
+		DEB_TRACE() << "setting " << task << " CPU mask: " << *this;
 		int ret = sched_setaffinity(task, sizeof(cpu_set), &cpu_set);
 		if (ret != 0) {
 			const char *th = incl_threads ? "and threads " : "";
@@ -441,7 +445,7 @@ Camera::ProcCPUAffinityMgr::WatchDog::affinitySetter(CPUAffinity cpu_affinity)
 	DEB_ALWAYS() << "Done!";
 }
 
-Camera::ProcCPUAffinityMgr::ProcList 
+Camera::ProcList 
 Camera::ProcCPUAffinityMgr::WatchDog::getOtherProcList(CPUAffinity cpu_affinity)
 {
 	DEB_MEMBER_FUNCT();
@@ -476,14 +480,20 @@ Camera::ProcCPUAffinityMgr::~ProcCPUAffinityMgr()
 	DEB_DESTRUCTOR();
 }
 
-Camera::ProcCPUAffinityMgr::ProcList
+Camera::ProcList
 Camera::ProcCPUAffinityMgr::getProcList(Filter filter, CPUAffinity cpu_affinity)
 {
 	DEB_STATIC_FUNCT();
 	DEB_PARAM() << DEB_VAR2(filter, cpu_affinity);
 
 	ProcList proc_list;
-	NumericGlob proc_glob("/proc/", "/status");
+	bool this_proc = filter & ThisProc;
+	filter = Filter(filter & ~ThisProc);
+	ostringstream os;
+	os << "/proc/";
+	if (this_proc)
+		os << getpid() << "/task/";
+	NumericGlob proc_glob(os.str(), "/status");
 	NumericGlob::IntStringList list = proc_glob.getIntPathList();
 	NumericGlob::IntStringList::const_iterator it, end = list.end();
 	for (it = list.begin(); it != end; ++it) {
@@ -525,6 +535,16 @@ Camera::ProcCPUAffinityMgr::getProcList(Filter filter, CPUAffinity cpu_affinity)
 	return proc_list;
 }
 
+
+Camera::ProcList
+Camera::ProcCPUAffinityMgr::getThreadList(Filter filter, 
+					  CPUAffinity cpu_affinity)
+{
+	DEB_STATIC_FUNCT();
+	DEB_PARAM() << DEB_VAR2(filter, cpu_affinity);
+	return getProcList(Filter(filter | ThisProc), cpu_affinity);
+}
+
 void Camera::ProcCPUAffinityMgr::setOtherCPUAffinity(CPUAffinity cpu_affinity)
 {
 	DEB_MEMBER_FUNCT();
@@ -538,10 +558,79 @@ void Camera::ProcCPUAffinityMgr::setOtherCPUAffinity(CPUAffinity cpu_affinity)
 		m_watchdog = NULL;
 }
 
-Camera::SystemCPUAffinityMgr::SystemCPUAffinityMgr(Camera *cam)
-  : m_cam(cam)
+Camera::SystemCPUAffinityMgr::
+ProcessingFinishedEvent::ProcessingFinishedEvent(SystemCPUAffinityMgr *mgr)
+	: m_mgr(mgr), m_cb(this), m_ct(NULL)
 {
 	DEB_CONSTRUCTOR();
+
+	m_nb_frames = 0;
+}
+
+Camera::SystemCPUAffinityMgr::
+ProcessingFinishedEvent::~ProcessingFinishedEvent()
+{
+	DEB_DESTRUCTOR();
+	if (m_mgr)
+		m_mgr->m_proc_finished = NULL;
+}
+
+
+void Camera::SystemCPUAffinityMgr::ProcessingFinishedEvent::prepareAcq()
+{
+	DEB_MEMBER_FUNCT();
+	if (m_ct) {
+		CtAcquisition *acq = m_ct->acquisition();
+		acq->getAcqNbFrames(m_nb_frames);
+	}
+}
+
+void Camera::SystemCPUAffinityMgr::ProcessingFinishedEvent::processingFinished()
+{
+	DEB_MEMBER_FUNCT();
+	if (m_mgr)
+		m_mgr->limaFinished();
+}
+
+void Camera::SystemCPUAffinityMgr::
+ProcessingFinishedEvent::registerStatusCallback(CtControl *ct)
+{
+	DEB_MEMBER_FUNCT();
+	if (m_ct)
+		THROW_HW_ERROR(Error) << "StatusCallback already registered";
+
+	ct->registerImageStatusCallback(m_cb);
+	m_ct = ct;
+}
+
+void Camera::SystemCPUAffinityMgr::
+ProcessingFinishedEvent::imageStatusChanged(
+					const CtControl::ImageStatus& status)
+{
+	DEB_MEMBER_FUNCT();
+
+	int last_frame = status.LastImageAcquired;
+	if ((last_frame == m_nb_frames - 1) && 
+	    (status.LastImageReady == last_frame))
+		processingFinished();
+}
+
+Camera::SystemCPUAffinityMgr::SystemCPUAffinityMgr(Camera *cam)
+	: m_cam(cam), m_proc_finished(NULL)
+{
+	DEB_CONSTRUCTOR();
+
+	m_state = Ready;
+}
+
+Camera::SystemCPUAffinityMgr::~SystemCPUAffinityMgr()
+{
+	DEB_DESTRUCTOR();
+
+	setLimaAffinity(CPUAffinity());
+
+	if (m_proc_finished)
+		m_proc_finished->m_mgr = NULL;
 }
 
 void Camera::SystemCPUAffinityMgr::applyAndSet(const SystemCPUAffinity& o)
@@ -552,42 +641,159 @@ void Camera::SystemCPUAffinityMgr::applyAndSet(const SystemCPUAffinity& o)
 	if (!m_cam)
 		THROW_HW_ERROR(InvalidValue) << "apply without camera";
 
-	if (o.lima != m_last.lima) {
-		pid_t pid = getpid();
-		o.lima.applyToTask(pid, true);
-		m_last.lima = o.lima;
-		m_last.recv = o.lima;
-	}
-
-	if (o.recv != m_last.recv) {
-		cpu_set_t cpu_set;
-		o.recv.initCPUSet(cpu_set);
-		Camera::RecvList& recv_list = m_cam->m_recv_list;
-		for (unsigned int i = 0; i < recv_list.size(); ++i) {
-			DEB_ALWAYS() << "setting recv " << i << " "
-				     << "CPU mask to " << o.recv;
-			slsReceiverUsers *recv = recv_list[i]->m_recv;
-			recv->setThreadCPUAffinity(sizeof(cpu_set),
-						   &cpu_set, &cpu_set);
-		}
-		for (int i = 0; i < m_cam->getTotNbPorts(); ++i) {
-			pid_t tid = m_cam->m_buffer_thread[i].getTID();
-			o.recv.applyToTask(tid, false);
-		}
-		m_last.recv = o.recv;
-	}
+	setLimaAffinity(o.lima);
+	setRecvAffinity(o.recv);
 
 	if (!m_proc_mgr)
 		m_proc_mgr = new ProcCPUAffinityMgr();
 
 	m_proc_mgr->setOtherCPUAffinity(o.other);
-	m_last.other = o.other;
+	m_curr.other = o.other;
+
+	m_set = o;
+}
+
+void Camera::SystemCPUAffinityMgr::setLimaAffinity(CPUAffinity lima_affinity)
+{
+	DEB_MEMBER_FUNCT();
+
+	if (lima_affinity == m_curr.lima)
+		return;
+
+	if (m_lima_tids.size()) {
+		ProcList::const_iterator it, end = m_lima_tids.end();
+		for (it = m_lima_tids.begin(); it != end; ++it)
+			lima_affinity.applyToTask(*it, false, false);
+	} else {
+		pid_t pid = getpid();
+		lima_affinity.applyToTask(pid, true);
+		m_curr.recv = lima_affinity;
+	}
+	m_curr.lima = lima_affinity;
+}
+
+void Camera::SystemCPUAffinityMgr::setRecvAffinity(CPUAffinity recv_affinity)
+{
+	DEB_MEMBER_FUNCT();
+
+	if (recv_affinity == m_curr.recv)
+		return;
+
+	cpu_set_t cpu_set;
+	recv_affinity.initCPUSet(cpu_set);
+	Camera::RecvList& recv_list = m_cam->m_recv_list;
+	for (unsigned int i = 0; i < recv_list.size(); ++i) {
+		DEB_TRACE() << "setting recv " << i << " "
+			     << "CPU mask to " << recv_affinity;
+		slsReceiverUsers *recv = recv_list[i]->m_recv;
+		recv->setThreadCPUAffinity(sizeof(cpu_set),
+					   &cpu_set, &cpu_set);
+	}
+	for (int i = 0; i < m_cam->getTotNbPorts(); ++i) {
+		pid_t tid = m_cam->m_buffer_thread[i].getTID();
+		recv_affinity.applyToTask(tid, false);
+	}
+	m_curr.recv = recv_affinity;
 }
 
 void Camera::SystemCPUAffinityMgr::updateRecvRestart()
 {
 	DEB_MEMBER_FUNCT();
-	m_last.recv = m_last.lima;
+	m_curr.recv = m_curr.lima;
+}
+
+Camera::SystemCPUAffinityMgr::ProcessingFinishedEvent *
+Camera::SystemCPUAffinityMgr::getProcessingFinishedEvent()
+{
+	DEB_MEMBER_FUNCT();
+	if (!m_proc_finished)
+		m_proc_finished = new ProcessingFinishedEvent(this);
+	return m_proc_finished;
+}
+
+void Camera::SystemCPUAffinityMgr::prepareAcq()
+{
+	DEB_MEMBER_FUNCT();
+	AutoMutex l = lock();
+	if (m_state == Changing)
+		THROW_HW_ERROR(Error) << "SystemCPUAffinityMgr Changing Lima";
+	if (m_state != Ready)
+		m_cond.wait(1);
+	if (m_state != Ready)
+		THROW_HW_ERROR(Error) << "SystemCPUAffinityMgr is not Ready: "
+				      << "missing ProcessingFinishedEvent";
+
+	if (m_proc_finished)
+		m_proc_finished->prepareAcq();
+	m_lima_tids.clear();
+}
+
+void Camera::SystemCPUAffinityMgr::startAcq()
+{
+	DEB_MEMBER_FUNCT();
+	AutoMutex l = lock();
+	m_state = Acquiring;
+}
+
+void Camera::SystemCPUAffinityMgr::stopAcq()
+{
+	DEB_MEMBER_FUNCT();
+	if (m_proc_finished)
+		limaFinished();
+}
+
+void Camera::SystemCPUAffinityMgr::recvFinished()
+{
+	DEB_MEMBER_FUNCT();
+
+	AutoMutex l = lock();
+	if (!m_proc_finished)
+		m_state = Ready;
+	if (m_state == Ready) 
+		return;
+
+	if (m_curr.lima != m_curr.recv) {
+		m_state = Changing;
+		AutoMutexUnlock u(l);
+		ProcCPUAffinityMgr::Filter filter;
+		filter = ProcCPUAffinityMgr::MatchAffinity;
+		m_lima_tids = ProcCPUAffinityMgr::getThreadList(filter,
+								m_curr.lima);
+		DEB_ALWAYS() << "Lima TIDs: " << PrettyIntList(m_lima_tids);
+		CPUAffinity lima_affinity = (uint64_t(m_curr.lima) | 
+					     uint64_t(m_curr.recv));
+		DEB_ALWAYS() << "Allowing Lima to run on Recv CPUs: " 
+			     << lima_affinity;
+		setLimaAffinity(lima_affinity);
+	}
+
+	m_state = Processing;
+	m_cond.broadcast();
+}
+
+void Camera::SystemCPUAffinityMgr::limaFinished()
+{
+	DEB_MEMBER_FUNCT();
+
+	AutoMutex l = lock();
+	if (m_state == Acquiring)
+		m_state = Ready;
+	while ((m_state != Processing) && (m_state != Ready))
+		m_cond.wait();
+	if (m_state == Ready)
+		return;
+
+	if (m_curr.lima != m_set.lima) {
+		m_state = Restoring;
+		AutoMutexUnlock u(l);
+		DEB_ALWAYS() << "Restoring Lima to dedicated CPUs: " 
+			     << m_set.lima;
+		setLimaAffinity(m_set.lima);
+		setRecvAffinity(m_set.recv);
+	}
+
+	m_state = Ready;
+	m_cond.broadcast();
 }
 
 Camera::FrameType Camera::getLatestFrame(const FrameArray& l)
@@ -1217,6 +1423,7 @@ void Camera::AcqThread::threadFunction()
 	multiSlsDetector *det = m_cam->m_det;
 
 	AutoMutex l = m_cam->lock();
+	m_cam->m_system_cpu_affinity_mgr.startAcq();
 	{
 		AutoMutexUnlock u(l);
 		DEB_TRACE() << "calling startReceiver";
@@ -1276,6 +1483,8 @@ void Camera::AcqThread::threadFunction()
 	DEB_ALWAYS() << "bad_frames=" << bfl.size() << ": "
 		     << PrettyIntList(bfl);
 	DEB_ALWAYS() << DEB_VAR1(m_cam->m_stats);
+
+	m_cam->m_system_cpu_affinity_mgr.recvFinished();
 
 	m_state = Stopped;
 	m_cond.broadcast();
@@ -1741,6 +1950,7 @@ void Camera::prepareAcq()
 	}
 
 	m_model->prepareAcq();
+	m_system_cpu_affinity_mgr.prepareAcq();
 
 	// recv->resetAcquisitionCount()
 	m_det->resetFramesCaught();
@@ -1763,6 +1973,8 @@ void Camera::startAcq()
 void Camera::stopAcq()
 {
 	DEB_MEMBER_FUNCT();
+
+	m_system_cpu_affinity_mgr.stopAcq();
 
 	AutoMutex l = lock();
 	if (getEffectiveState() != Running)
@@ -2218,4 +2430,11 @@ void Camera::getPixelDepthCPUAffinityMap(PixelDepthCPUAffinityMap& aff_map)
 	DEB_MEMBER_FUNCT();
 	aff_map = m_cpu_affinity_map;
 	DEB_RETURN() << DEB_VAR1(aff_map);
+}
+
+Camera::SystemCPUAffinityMgr::
+ProcessingFinishedEvent *Camera::getProcessingFinishedEvent()
+{
+	DEB_MEMBER_FUNCT();
+	return m_system_cpu_affinity_mgr.getProcessingFinishedEvent();
 }

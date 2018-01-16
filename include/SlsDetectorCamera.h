@@ -34,6 +34,7 @@
 #include "lima/HwMaxImageSizeCallback.h"
 #include "lima/Event.h"
 #include "lima/SimplePipe.h"
+#include "lima/CtControl.h"
 
 #include <set>
 #include <queue>
@@ -122,6 +123,7 @@ public:
 	typedef std::vector<double> FloatList;
 	typedef std::set<int> SortedIntList;
 	typedef std::vector<FrameType> FrameArray;
+	typedef IntList ProcList;
 
 	struct TimeRanges {
 		TimeRanges() :
@@ -243,16 +245,16 @@ public:
 		DEB_CLASS_NAMESPC(DebModCamera, "ProcCPUAffinityMgr", 
 				  "SlsDetector::Camera");
 	public:
-		typedef IntList ProcList;
-
 		enum Filter {
-			All, MatchAffinity, NoMatchAffinity,
+			All, MatchAffinity, NoMatchAffinity, ThisProc=0x10,
 		};
 
 		ProcCPUAffinityMgr();
 		~ProcCPUAffinityMgr();
 
 		static ProcList getProcList(Filter filter = All, 
+					    CPUAffinity cpu_affinity = 0);
+		static ProcList getThreadList(Filter filter = All, 
 					    CPUAffinity cpu_affinity = 0);
 
 		void setOtherCPUAffinity(CPUAffinity cpu_affinity);
@@ -311,20 +313,87 @@ public:
 	typedef std::map<PixelDepth, SystemCPUAffinity> 
 						PixelDepthCPUAffinityMap;
 
-	struct SystemCPUAffinityMgr {
-	private:
+	class SystemCPUAffinityMgr 
+	{
 		DEB_CLASS_NAMESPC(DebModCamera, "SystemCPUAffinityMgr", 
 				  "SlsDetector::Camera");
 	public:
+		class ProcessingFinishedEvent
+		{
+		DEB_CLASS_NAMESPC(DebModCamera, "ProcessingFinishedEvent", 
+				  "SlsDetector::Camera::SystemCPUAffinityMgr");
+		public:
+			ProcessingFinishedEvent(SystemCPUAffinityMgr *mgr);
+			~ProcessingFinishedEvent();
+
+			void prepareAcq();
+			void processingFinished();
+
+			void registerStatusCallback(CtControl *ct_control);
+
+		private:
+			friend class SystemCPUAffinityMgr;
+
+			class ImageStatusCallback : 
+				public CtControl::ImageStatusCallback
+			{
+			public:
+				ImageStatusCallback(
+					ProcessingFinishedEvent *proc_finished)
+					: m_proc_finished(proc_finished) 
+				{}
+			protected:
+				virtual void imageStatusChanged(
+					const CtControl::ImageStatus& status)
+				{ m_proc_finished->imageStatusChanged(status); }
+			private:
+				ProcessingFinishedEvent *m_proc_finished;
+			};
+
+			void imageStatusChanged(
+				const CtControl::ImageStatus& status);
+
+			SystemCPUAffinityMgr *m_mgr;
+			ImageStatusCallback m_cb;
+			int m_nb_frames;
+			CtControl *m_ct;
+		};
+
 		SystemCPUAffinityMgr(Camera *cam = NULL);
-	
+		~SystemCPUAffinityMgr();
+
 		void applyAndSet(const SystemCPUAffinity& o);
 		void updateRecvRestart();
 
+		ProcessingFinishedEvent *getProcessingFinishedEvent();
+
+		void prepareAcq();
+		void startAcq();
+		void stopAcq();
+		void recvFinished();
+		void limaFinished();
+
 	private:
+		friend class ProcessingFinishedEvent;
+
+		enum State {
+			Ready, Acquiring, Changing, Processing, Restoring,
+		};
+
+		void setLimaAffinity(CPUAffinity lima_affinity);
+		void setRecvAffinity(CPUAffinity recv_affinity);
+
+		AutoMutex lock()
+		{ return AutoMutex(m_cond.mutex()); }
+
 		Camera *m_cam;
-		SystemCPUAffinity m_last;
+		ProcList m_lima_tids;
+		SystemCPUAffinity m_curr;
+		SystemCPUAffinity m_set;
 		AutoPtr<ProcCPUAffinityMgr> m_proc_mgr;
+		Cond m_cond;
+		State m_state;
+		ProcessingFinishedEvent *m_proc_finished;
 	};
 
 	static bool isValidFrame(FrameType frame)
@@ -669,6 +738,9 @@ public:
 
 	void setPixelDepthCPUAffinityMap(PixelDepthCPUAffinityMap aff_map);
 	void getPixelDepthCPUAffinityMap(PixelDepthCPUAffinityMap& aff_map);
+
+	SystemCPUAffinityMgr::ProcessingFinishedEvent *
+		getProcessingFinishedEvent();
 
 private:
 	typedef RegEx::SingleMatchType SingleMatch;
