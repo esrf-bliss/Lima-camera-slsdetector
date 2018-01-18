@@ -1506,6 +1506,13 @@ Camera::AcqThread::AcqThread(Camera *cam)
 	DEB_CONSTRUCTOR();
 	m_state = Starting;
 	start();
+
+	struct sched_param param;
+	param.sched_priority = 50;
+	int ret = pthread_setschedparam(m_thread, SCHED_RR, &param);
+	if (ret != 0)
+		DEB_ERROR() << "Could not set real-time priority!!";
+
 	while (m_state != Running)
 		m_cond.wait();
 }
