@@ -326,7 +326,6 @@ public:
 			ProcessingFinishedEvent(SystemCPUAffinityMgr *mgr);
 			~ProcessingFinishedEvent();
 
-			void prepareAcq();
 			void processingFinished();
 
 			void registerStatusCallback(CtControl *ct_control);
@@ -350,13 +349,24 @@ public:
 				ProcessingFinishedEvent *m_proc_finished;
 			};
 
+			void prepareAcq();
+			void stopAcq();
+
+			void limitUpdateRate();
+			void updateLastCallbackTimestamp();
+			Timestamp getLastCallbackTimestamp();
+
 			void imageStatusChanged(
 				const CtControl::ImageStatus& status);
 
 			SystemCPUAffinityMgr *m_mgr;
 			ImageStatusCallback m_cb;
-			int m_nb_frames;
 			CtControl *m_ct;
+			int m_nb_frames;
+			bool m_cnt_act;
+			bool m_saving_act;
+			bool m_stopped;
+			Timestamp m_last_cb_ts;
 		};
 
 		SystemCPUAffinityMgr(Camera *cam = NULL);
@@ -372,6 +382,7 @@ public:
 		void stopAcq();
 		void recvFinished();
 		void limaFinished();
+		void waitLimaFinished();
 
 	private:
 		friend class ProcessingFinishedEvent;
@@ -394,6 +405,7 @@ public:
 		Cond m_cond;
 		State m_state;
 		ProcessingFinishedEvent *m_proc_finished;
+		double m_lima_finished_timeout;
 	};
 
 	static bool isValidFrame(FrameType frame)

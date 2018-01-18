@@ -23,6 +23,8 @@
 #include "SlsDetectorCamera.h"
 #include "lima/Timestamp.h"
 #include "lima/CtAcquisition.h"
+#include "lima/CtSaving.h"
+#include "lima/SoftOpExternalMgr.h"
 
 #include "multiSlsDetectorCommand.h"
 
@@ -565,6 +567,10 @@ ProcessingFinishedEvent::ProcessingFinishedEvent(SystemCPUAffinityMgr *mgr)
 	DEB_CONSTRUCTOR();
 
 	m_nb_frames = 0;
+	m_cnt_act = false;
+	m_saving_act = false;
+	m_stopped = false;
+	m_last_cb_ts = Timestamp::now();
 }
 
 Camera::SystemCPUAffinityMgr::
@@ -575,14 +581,60 @@ ProcessingFinishedEvent::~ProcessingFinishedEvent()
 		m_mgr->m_proc_finished = NULL;
 }
 
-
 void Camera::SystemCPUAffinityMgr::ProcessingFinishedEvent::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
-	if (m_ct) {
-		CtAcquisition *acq = m_ct->acquisition();
-		acq->getAcqNbFrames(m_nb_frames);
+	if (!m_ct)
+		return;
+
+	CtAcquisition *acq = m_ct->acquisition();
+	acq->getAcqNbFrames(m_nb_frames);
+
+	SoftOpExternalMgr *extOp = m_ct->externalOperation();
+	if (DEB_CHECK_ANY(DebTypeTrace)) {
+		typedef list<string> NameList;
+		typedef map<int, NameList> OpStageNameListMap;
+		OpStageNameListMap active_op;
+		extOp->getActiveOp(active_op);
+		OpStageNameListMap::const_iterator mit, mend = active_op.end();
+		ostringstream os;
+		os << "{";
+		for (mit = active_op.begin(); mit != mend; ++mend) {
+			const int& stage = mit->first;
+			os << stage << ": [";
+			const NameList& name_list = mit->second;
+			NameList::const_iterator lit, lend = name_list.end();
+			const char *sep = "";
+			for (lit = name_list.begin(); lit != lend; ++lit) {
+				const string& name = *lit;
+				os << sep << name;
+				sep = ",";
+			}
+			os << "]";
+		}
+		os << "}";
+		DEB_TRACE() << "extOp->getActiveOp()=" << os.str();
 	}
+
+	bool extOp_link_task_act, extOp_sink_task_act;
+	extOp->isTaskActive(extOp_link_task_act, extOp_sink_task_act);
+	DEB_TRACE() << DEB_VAR2(extOp_link_task_act, extOp_sink_task_act);
+	m_cnt_act = extOp_sink_task_act;
+
+	CtSaving *saving = m_ct->saving();
+	CtSaving::SavingMode mode;
+	saving->getSavingMode(mode);
+	m_saving_act = (mode != CtSaving::Manual);
+
+	DEB_TRACE() << DEB_VAR3(m_nb_frames, m_saving_act, m_cnt_act);
+
+	m_stopped = false;
+}
+
+void Camera::SystemCPUAffinityMgr::ProcessingFinishedEvent::stopAcq()
+{
+	DEB_MEMBER_FUNCT();
+	m_stopped = true;
 }
 
 void Camera::SystemCPUAffinityMgr::ProcessingFinishedEvent::processingFinished()
@@ -604,19 +656,49 @@ ProcessingFinishedEvent::registerStatusCallback(CtControl *ct)
 }
 
 void Camera::SystemCPUAffinityMgr::
+ProcessingFinishedEvent::limitUpdateRate()
+{
+	Timestamp next_ts = m_last_cb_ts + Timestamp(1.0 / 10);
+	double remaining = next_ts - Timestamp::now();
+	if (remaining > 0)
+		Sleep(remaining);
+}
+
+void Camera::SystemCPUAffinityMgr::
+ProcessingFinishedEvent::updateLastCallbackTimestamp()
+{
+	m_last_cb_ts = Timestamp::now();
+}
+
+Timestamp Camera::SystemCPUAffinityMgr::
+ProcessingFinishedEvent::getLastCallbackTimestamp()
+{
+	return m_last_cb_ts;
+}
+
+void Camera::SystemCPUAffinityMgr::
 ProcessingFinishedEvent::imageStatusChanged(
 					const CtControl::ImageStatus& status)
 {
 	DEB_MEMBER_FUNCT();
 
+	limitUpdateRate();
+	updateLastCallbackTimestamp();
+
+	int max_frame = m_nb_frames - 1; 
 	int last_frame = status.LastImageAcquired;
-	if ((last_frame == m_nb_frames - 1) && 
-	    (status.LastImageReady == last_frame))
+	bool finished = (m_stopped || (last_frame == max_frame));
+	finished &= (status.LastImageReady == last_frame);
+	finished &= (!m_cnt_act || (status.LastCounterReady == last_frame));
+	finished &= (m_stopped || !m_saving_act || 
+		     (status.LastImageSaved == last_frame));
+	if (finished)
 		processingFinished();
 }
 
 Camera::SystemCPUAffinityMgr::SystemCPUAffinityMgr(Camera *cam)
-	: m_cam(cam), m_proc_finished(NULL)
+	: m_cam(cam), m_proc_finished(NULL), 
+	  m_lima_finished_timeout(3)
 {
 	DEB_CONSTRUCTOR();
 
@@ -663,6 +745,7 @@ void Camera::SystemCPUAffinityMgr::setLimaAffinity(CPUAffinity lima_affinity)
 	if (m_lima_tids.size()) {
 		ProcList::const_iterator it, end = m_lima_tids.end();
 		for (it = m_lima_tids.begin(); it != end; ++it)
+			// do not use taskset!
 			lima_affinity.applyToTask(*it, false, false);
 	} else {
 		pid_t pid = getpid();
@@ -715,14 +798,9 @@ void Camera::SystemCPUAffinityMgr::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
 	AutoMutex l = lock();
-	if (m_state == Changing)
-		THROW_HW_ERROR(Error) << "SystemCPUAffinityMgr Changing Lima";
-	if (m_state != Ready)
-		m_cond.wait(1);
 	if (m_state != Ready)
 		THROW_HW_ERROR(Error) << "SystemCPUAffinityMgr is not Ready: "
 				      << "missing ProcessingFinishedEvent";
-
 	if (m_proc_finished)
 		m_proc_finished->prepareAcq();
 	m_lima_tids.clear();
@@ -739,7 +817,7 @@ void Camera::SystemCPUAffinityMgr::stopAcq()
 {
 	DEB_MEMBER_FUNCT();
 	if (m_proc_finished)
-		limaFinished();
+		m_proc_finished->stopAcq();
 }
 
 void Camera::SystemCPUAffinityMgr::recvFinished()
@@ -794,6 +872,31 @@ void Camera::SystemCPUAffinityMgr::limaFinished()
 
 	m_state = Ready;
 	m_cond.broadcast();
+}
+
+void Camera::SystemCPUAffinityMgr::waitLimaFinished()
+{
+	DEB_MEMBER_FUNCT();
+
+	if (!m_proc_finished)
+		return;
+
+	m_proc_finished->updateLastCallbackTimestamp();
+
+	AutoMutex l = lock();
+	while (m_state != Ready) {
+		if (m_cond.wait(1))
+			continue;
+
+		AutoMutexUnlock u(l);
+		Timestamp ts = m_proc_finished->getLastCallbackTimestamp();
+		double elapsed = Timestamp::now() - ts;
+		if (elapsed < m_lima_finished_timeout)
+			continue;
+
+		DEB_ERROR() << "No ImageStatusCallback in " << elapsed << " s";
+		limaFinished();
+	}
 }
 
 Camera::FrameType Camera::getLatestFrame(const FrameArray& l)
@@ -1412,7 +1515,7 @@ void Camera::AcqThread::stop(bool wait)
 	DEB_MEMBER_FUNCT();
 	m_state = StopReq;
 	m_cond.broadcast();
-	while (wait && (m_state != Stopped))
+	while (wait && (m_state != Stopped) && (m_state != Idle))
 		m_cond.wait();
 }
 
@@ -1435,6 +1538,7 @@ void Camera::AcqThread::threadFunction()
 	m_cond.broadcast();
 
 	SeqFilter seq_filter;
+	bool had_frames = false;
 
 	do {
 		while ((m_state != StopReq) && m_frame_queue.empty()) {
@@ -1456,6 +1560,7 @@ void Camera::AcqThread::threadFunction()
 				do {
 					DEB_TRACE() << DEB_VAR1(f);
 					cont_acq = newFrameReady(f);
+					had_frames = true;
 				} while ((++f != frames.end()) && cont_acq);
 			}
 			if (!cont_acq)
@@ -1484,7 +1589,11 @@ void Camera::AcqThread::threadFunction()
 		     << PrettyIntList(bfl);
 	DEB_ALWAYS() << DEB_VAR1(m_cam->m_stats);
 
-	m_cam->m_system_cpu_affinity_mgr.recvFinished();
+	if (had_frames) {
+		AutoMutexUnlock u(l);
+		m_cam->m_system_cpu_affinity_mgr.recvFinished();
+		m_cam->m_system_cpu_affinity_mgr.waitLimaFinished();
+	}
 
 	m_state = Stopped;
 	m_cond.broadcast();

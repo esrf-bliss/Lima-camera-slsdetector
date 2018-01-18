@@ -234,6 +234,7 @@ public:
 		void stopAcq();
 		void recvFinished();
 		void limaFinished();
+		void waitLimaFinished();
 	};
 
 	static bool isValidFrame(unsigned long frame);
