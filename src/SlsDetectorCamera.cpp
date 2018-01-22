@@ -22,16 +22,29 @@
 
 #include "SlsDetectorCamera.h"
 #include "lima/Timestamp.h"
+#include "lima/CtAcquisition.h"
+#include "lima/CtSaving.h"
+#include "lima/SoftOpExternalMgr.h"
 
 #include "multiSlsDetectorCommand.h"
 
 #include <limits.h>
 #include <algorithm>
 #include <cmath>
+#include <sys/syscall.h>
+#include <glob.h>
+#include <signal.h>
+#include <sys/wait.h>
 
 using namespace std;
 using namespace lima;
 using namespace lima::SlsDetector;
+
+
+pid_t gettid() {
+	return syscall(SYS_gettid);
+}
+
 
 Camera::TimeRangesChangedCallback::TimeRangesChangedCallback()
 	: m_cam(NULL)
@@ -47,11 +60,873 @@ Camera::TimeRangesChangedCallback::~TimeRangesChangedCallback()
 		m_cam->unregisterTimeRangesChangedCallback(*this);
 }
 
+Camera::Glob::Glob(string pattern)
+	: m_pattern(pattern)
+{
+	DEB_CONSTRUCTOR();
+	if (!m_pattern.empty())
+		m_found_list = find(m_pattern);
+}
+
+Camera::Glob& Camera::Glob::operator =(std::string pattern)
+{
+	if (!pattern.empty())
+		m_found_list = find(pattern);
+	else
+		m_found_list.clear();
+	m_pattern = pattern;
+	return *this;
+}
+
+Camera::StringList Camera::Glob::find(string pattern)
+{
+	DEB_STATIC_FUNCT();
+	DEB_PARAM() << DEB_VAR1(pattern);
+
+	glob_t glob_data;
+	int ret = glob(pattern.c_str(), 0, NULL, &glob_data);
+	if (ret == GLOB_NOMATCH)
+		return StringList();
+	else if (ret != 0)
+		THROW_HW_ERROR(Error) << "Error in glob: " << ret;
+
+	StringList found;
+	try {
+		char **begin = glob_data.gl_pathv;
+		found.assign(begin, begin + glob_data.gl_pathc);
+	} catch (...) {
+		globfree(&glob_data);
+		throw;
+	}
+	globfree(&glob_data);
+	return found;
+}
+
+Camera::StringList Camera::Glob::split(string path)
+{
+	DEB_STATIC_FUNCT();
+	DEB_PARAM() << DEB_VAR1(path);
+
+	StringList split;
+	if (path.empty())
+		return split;
+	size_t i = 0;
+	if (path[i] == '/') {
+		split.push_back("/");
+		++i;
+	}
+	size_t end = path.size();
+	while (i < end) {
+		size_t sep = path.find("/", i);
+		split.push_back(path.substr(i, sep - i));
+		i = (sep == string::npos) ? end : (sep + 1);
+	}
+	if (DEB_CHECK_ANY(DebTypeReturn)) {
+		ostringstream os;
+		os << "[";
+		for (unsigned int i = 0; i < split.size(); ++i)
+			os << (i ? "," : "") << '"' << split[i] << '"';
+		os << "]";
+		DEB_RETURN() << "split=" << os.str();
+	}
+	return split;
+}
+
+Camera::StringList Camera::Glob::getSubPathList(int idx) const
+{
+	StringList sub_path_list;
+	StringList::const_iterator it, end = m_found_list.end();
+	for (it = m_found_list.begin(); it != end; ++it)
+		sub_path_list.push_back(split(*it).at(idx));
+	return sub_path_list;
+}
+
+Camera::NumericGlob::NumericGlob(string pattern_prefix, string pattern_suffix)
+	: m_prefix_len(0), m_suffix_len(0)
+{
+	DEB_CONSTRUCTOR();
+	if (pattern_prefix.empty())
+		THROW_HW_ERROR(InvalidValue) << "Empty pattern prefix";
+
+	StringList prefix_dir_list = Glob::split(pattern_prefix);
+	m_nb_idx = prefix_dir_list.size();
+	if (*pattern_prefix.rbegin() != '/') {
+		--m_nb_idx;
+		m_prefix_len = prefix_dir_list.back().size();
+	}
+	if (!pattern_suffix.empty() && (pattern_suffix[0] != '/'))
+		m_suffix_len = Glob::split(pattern_suffix)[0].size();
+	DEB_TRACE() << DEB_VAR3(m_nb_idx, m_prefix_len, m_suffix_len);
+	m_glob = pattern_prefix + "[0-9]*" + pattern_suffix;
+}
+
+Camera::NumericGlob::IntStringList Camera::NumericGlob::getIntPathList() const
+{
+	DEB_MEMBER_FUNCT();
+	IntStringList list;
+	StringList path_list = m_glob.getPathList();
+	StringList::const_iterator pit = path_list.begin();
+	StringList sub_path_list = m_glob.getSubPathList(m_nb_idx);
+	StringList::const_iterator it, end = sub_path_list.end();
+	for (it = sub_path_list.begin(); it != end; ++it, ++pit) {
+		size_t l = (*it).size() - m_prefix_len - m_suffix_len;
+		string s = (*it).substr(m_prefix_len, l);
+		int nb;
+		istringstream(s) >> nb;
+		DEB_TRACE() << DEB_VAR2(nb, *pit);
+		list.push_back(IntString(nb, *pit));
+	}
+	sort(list.begin(), list.end());
+	return list;
+}
+
+bool Camera::CPUAffinity::UseSudo = true;
+
+int Camera::CPUAffinity::findNbCPUs()
+{
+	DEB_STATIC_FUNCT();
+	int nb_cpus = 0;
+	const char *proc_file_name = "/proc/cpuinfo";
+	ifstream proc_file(proc_file_name);
+	while (proc_file) {
+		char buffer[1024];
+		proc_file.getline(buffer, sizeof(buffer));
+		istringstream is(buffer);
+		string t;
+		is >> t;
+		if (t == "processor")
+			++nb_cpus;
+	}
+	DEB_RETURN() << DEB_VAR1(nb_cpus);
+	return nb_cpus;
+}
+
+int Camera::CPUAffinity::findMaxNbCPUs()
+{
+	DEB_STATIC_FUNCT();
+	NumericGlob proc_glob("/proc/sys/kernel/sched_domain/cpu");
+	int max_nb_cpus = proc_glob.getNbEntries();
+	DEB_RETURN() << DEB_VAR1(max_nb_cpus);
+	return max_nb_cpus;
+}
+
+int Camera::CPUAffinity::getNbCPUs(bool max_nb)
+{
+	static int nb_cpus = 0;
+	EXEC_ONCE(nb_cpus = findNbCPUs());
+	static int max_nb_cpus = 0;
+	EXEC_ONCE(max_nb_cpus = findMaxNbCPUs());
+	int cpus = (max_nb && max_nb_cpus) ? max_nb_cpus : nb_cpus;
+	return cpus;
+}
+
+std::string Camera::CPUAffinity::getProcDir(bool local_threads)
+{
+	DEB_STATIC_FUNCT();
+	DEB_PARAM() << DEB_VAR1(local_threads);
+	ostringstream os;
+	os << "/proc/";
+	if (local_threads)
+		os << getpid() << "/task/";
+	string proc_dir = os.str();
+	DEB_RETURN() << DEB_VAR1(proc_dir);
+	return proc_dir;
+}
+
+std::string Camera::CPUAffinity::getTaskProcDir(pid_t task, bool is_thread)
+{
+	DEB_STATIC_FUNCT();
+	DEB_PARAM() << DEB_VAR2(task, is_thread);
+	ostringstream os;
+	os << getProcDir(is_thread) << task << "/";
+	string proc_dir = os.str();
+	DEB_RETURN() << DEB_VAR1(proc_dir);
+	return proc_dir;
+}
+
+void Camera::CPUAffinity::initCPUSet(cpu_set_t& cpu_set) const
+{
+	CPU_ZERO(&cpu_set);
+	uint64_t mask = *this;
+	for (unsigned int i = 0; i < sizeof(mask) * 8; ++i) {
+		if ((mask >> i) & 1)
+			CPU_SET(i, &cpu_set);
+	}
+}
+
+void Camera::CPUAffinity::applyToTask(pid_t task, bool incl_threads,
+				      bool use_taskset) const
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR3(task, incl_threads, use_taskset);
+
+	string proc_status = getTaskProcDir(task, !incl_threads) + "status";
+	if (access(proc_status.c_str(), F_OK) != 0)
+		return;
+
+	if (use_taskset)
+		applyWithTaskset(task, incl_threads);
+	else
+		applyWithSetAffinity(task, incl_threads);
+}
+
+void Camera::CPUAffinity::applyWithTaskset(pid_t task, bool incl_threads) const
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(task, incl_threads);
+
+	ostringstream os;
+	uint64_t mask = *this;
+	if (UseSudo)
+		os << "sudo ";
+	const char *all_tasks_opt = incl_threads ? "-a " : "";
+	os << "taskset " << all_tasks_opt
+	   << "-p " << hex << showbase << mask << " " 
+	   << dec << noshowbase << task;
+	if (!DEB_CHECK_ANY(DebTypeTrace))
+		os << " > /dev/null 2>&1";
+	DEB_TRACE() << "executing: '" << os.str() << "'";
+	int ret = system(os.str().c_str());
+	if (ret != 0) {
+		const char *th = incl_threads ? "and threads " : "";
+		THROW_HW_ERROR(Error) << "Error setting task " << task 
+				      << " " << th << "CPU affinity";
+	}
+}
+
+void Camera::CPUAffinity::applyWithSetAffinity(pid_t task, bool incl_threads)
+									const
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(task, incl_threads);
+
+	IntList task_list;
+	if (incl_threads) {
+		string proc_dir = getTaskProcDir(task, false) + "task/";
+		NumericGlob proc_glob(proc_dir);
+		typedef NumericGlob::IntStringList IntStringList;
+		IntStringList list = proc_glob.getIntPathList();
+		if (list.empty())
+			THROW_HW_ERROR(Error) << "Cannot find task " << task 
+					      << " threads";
+		IntStringList::const_iterator it, end = list.end();
+		for (it = list.begin(); it != end; ++it)
+			task_list.push_back(it->first);
+	} else {
+		task_list.push_back(task);
+	}
+
+	cpu_set_t cpu_set;
+	initCPUSet(cpu_set);
+	IntList::const_iterator it, end = task_list.end();
+	for (it = task_list.begin(); it != end; ++it) {
+		DEB_TRACE() << "setting " << task << " CPU mask: " << *this;
+		int ret = sched_setaffinity(task, sizeof(cpu_set), &cpu_set);
+		if (ret != 0) {
+			const char *th = incl_threads ? "and threads " : "";
+			THROW_HW_ERROR(Error) << "Error setting task " << task 
+					      << " " << th << "CPU affinity";
+		}
+	}
+}
+
+Camera::ProcCPUAffinityMgr::WatchDog::WatchDog()
+{
+	DEB_CONSTRUCTOR();
+
+	m_lima_pid = getpid();
+
+	m_child_pid = fork();
+	if (m_child_pid == 0) {
+		m_child_pid = getpid();
+		DEB_TRACE() << DEB_VAR2(m_lima_pid, m_child_pid);
+
+		m_cmd_pipe.close(Pipe::WriteFd);
+		m_res_pipe.close(Pipe::ReadFd);
+
+		signal(SIGINT, SIG_IGN);
+		signal(SIGTERM, sigTermHandler);
+
+		childFunction();
+		_exit(0);
+	} else {
+		m_cmd_pipe.close(Pipe::ReadFd);
+		m_res_pipe.close(Pipe::WriteFd);
+
+		sendChildCmd(Init);
+		DEB_TRACE() << "Child is ready";
+	}
+}
+
+Camera::ProcCPUAffinityMgr::WatchDog::~WatchDog()
+{
+	DEB_DESTRUCTOR();
+
+	if (!childEnded()) {
+		sendChildCmd(CleanUp);
+		waitpid(m_child_pid, NULL, 0);
+	}
+}
+
+void Camera::ProcCPUAffinityMgr::WatchDog::sigTermHandler(int /*signo*/)
+{
+}
+
+bool Camera::ProcCPUAffinityMgr::WatchDog::childEnded()
+{
+	return (waitpid(m_child_pid, NULL, WNOHANG) != 0);
+}
+
+void Camera::ProcCPUAffinityMgr::WatchDog::sendChildCmd(Cmd cmd, Arg arg)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(cmd, DebHex(arg));
+
+	if (childEnded())
+		THROW_HW_ERROR(Error) << "Watchdog child process killed: " 
+				      << m_child_pid;
+	Packet packet = {cmd, arg};
+	void *p = static_cast<void *>(&packet);
+	string s(static_cast<char *>(p), sizeof(packet));
+	m_cmd_pipe.write(s);
+
+	s = m_res_pipe.read(1);
+	Cmd res = Cmd(s.data()[0]);
+	if (res != Ok)
+		THROW_HW_ERROR(Error) << "Invalid watchdog child ack";
+	DEB_TRACE() << "Watchdog child acknowledged Ok";
+}
+
+Camera::ProcCPUAffinityMgr::WatchDog::Packet
+Camera::ProcCPUAffinityMgr::WatchDog::readParentCmd()
+{
+	DEB_MEMBER_FUNCT();
+	Packet packet;
+	string s = m_cmd_pipe.read(sizeof(packet));
+	if (s.empty())
+		THROW_HW_ERROR(Error) << "Watchdog cmd pipe closed/intr";
+	memcpy(&packet, s.data(), s.size());
+	DEB_RETURN() << DEB_VAR2(packet.cmd, DebHex(packet.arg));
+	return packet;
+}
+
+void Camera::ProcCPUAffinityMgr::WatchDog::ackParentCmd()
+{
+	DEB_MEMBER_FUNCT();
+	m_res_pipe.write(string(1, Ok));
+}
+
+void Camera::ProcCPUAffinityMgr::WatchDog::childFunction()
+{
+	DEB_MEMBER_FUNCT();
+
+	Packet first = readParentCmd();
+	if (first.cmd != Init) {
+		DEB_ERROR() << "Invalid watchdog init cmd: " << first.cmd;
+		return;
+	}
+	ackParentCmd();
+
+	bool last_was_clean = false;
+	bool cleanup_req = false;
+
+	try {
+		do {
+			Packet packet = readParentCmd();
+			if (packet.cmd == SetAffinity) {
+				CPUAffinity cpu_affinity = packet.arg;
+				affinitySetter(cpu_affinity);
+				ackParentCmd();
+				last_was_clean = cpu_affinity.isDefault();
+			} else if (packet.cmd == CleanUp) {
+				cleanup_req = true;
+			}
+		} while (!cleanup_req);
+
+	} catch (...) {
+		DEB_ALWAYS() << "Watchdog parent and/or child killed!";
+	}
+
+	DEB_TRACE() << "Clean-up";
+	if (!last_was_clean)
+		affinitySetter(CPUAffinity());
+
+	if (cleanup_req)
+		ackParentCmd(); 
+}
+
+void 
+Camera::ProcCPUAffinityMgr::WatchDog::affinitySetter(CPUAffinity cpu_affinity)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(cpu_affinity);
+
+	ProcList proc_list = getOtherProcList(cpu_affinity);
+	if (proc_list.empty())
+		return;
+
+	DEB_ALWAYS() << "Setting CPUAffinity for " << PrettyIntList(proc_list)
+		     << " to " << cpu_affinity;
+	ProcList::const_iterator it, end = proc_list.end();
+	for (it = proc_list.begin(); it != end; ++it)
+		cpu_affinity.applyToTask(*it);
+	DEB_ALWAYS() << "Done!";
+}
+
+Camera::ProcList 
+Camera::ProcCPUAffinityMgr::WatchDog::getOtherProcList(CPUAffinity cpu_affinity)
+{
+	DEB_MEMBER_FUNCT();
+
+	ProcList proc_list = getProcList(NoMatchAffinity, cpu_affinity);
+	pid_t ignore_proc_list[] = { m_lima_pid, m_child_pid, 0 };
+	for (pid_t *p = ignore_proc_list; *p; ++p) {
+		ProcList::iterator it, end = proc_list.end();
+		it = find(proc_list.begin(), end, *p);
+		if (it != end)
+			proc_list.erase(it);
+	}
+
+	return proc_list;
+}
+
+void 
+Camera::ProcCPUAffinityMgr::WatchDog::setOtherCPUAffinity(CPUAffinity cpu_affinity)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(cpu_affinity);
+	sendChildCmd(SetAffinity, cpu_affinity);
+}
+
+Camera::ProcCPUAffinityMgr::ProcCPUAffinityMgr()
+{
+	DEB_CONSTRUCTOR();
+}
+
+Camera::ProcCPUAffinityMgr::~ProcCPUAffinityMgr()
+{
+	DEB_DESTRUCTOR();
+}
+
+Camera::ProcList
+Camera::ProcCPUAffinityMgr::getProcList(Filter filter, CPUAffinity cpu_affinity)
+{
+	DEB_STATIC_FUNCT();
+	DEB_PARAM() << DEB_VAR2(filter, cpu_affinity);
+
+	ProcList proc_list;
+	bool this_proc = filter & ThisProc;
+	filter = Filter(filter & ~ThisProc);
+	string proc_dir = CPUAffinity::getProcDir(this_proc);
+	NumericGlob proc_glob(proc_dir, "/status");
+	NumericGlob::IntStringList list = proc_glob.getIntPathList();
+	NumericGlob::IntStringList::const_iterator it, end = list.end();
+	for (it = list.begin(); it != end; ++it) {
+		int pid = it->first;
+		const string& fname = it->second;
+		bool has_vm = false;
+		bool has_good_affinity = (filter == All);
+		ifstream status_file(fname.c_str());
+		while (status_file) {
+			string s;
+			status_file >> s;
+			RegEx re;
+			FullMatch full_match;
+
+			re = "VmSize:?$";
+			if (re.match(s, full_match)) {
+				has_vm = true;
+				continue;
+			}
+
+			re = "Cpus_allowed:?$";
+			if (re.match(s, full_match) && (filter != All)) {
+				uint64_t int_affinity;
+				status_file >> hex >> int_affinity >> dec;
+				CPUAffinity affinity = int_affinity;
+				bool aff_match = (affinity == cpu_affinity);
+				bool filt_match = (filter == MatchAffinity);
+				has_good_affinity = (aff_match == filt_match);
+				continue;
+			}
+		}
+		DEB_TRACE() << DEB_VAR3(pid, has_vm, has_good_affinity);
+		if (has_vm && has_good_affinity)
+			proc_list.push_back(pid);
+	}
+
+	if (DEB_CHECK_ANY(DebTypeReturn))
+		DEB_RETURN() << DEB_VAR1(PrettyList<ProcList>(proc_list));
+	return proc_list;
+}
+
+
+Camera::ProcList
+Camera::ProcCPUAffinityMgr::getThreadList(Filter filter, 
+					  CPUAffinity cpu_affinity)
+{
+	DEB_STATIC_FUNCT();
+	DEB_PARAM() << DEB_VAR2(filter, cpu_affinity);
+	return getProcList(Filter(filter | ThisProc), cpu_affinity);
+}
+
+void Camera::ProcCPUAffinityMgr::setOtherCPUAffinity(CPUAffinity cpu_affinity)
+{
+	DEB_MEMBER_FUNCT();
+
+	if (!m_watchdog || m_watchdog->childEnded())
+		m_watchdog = new WatchDog();
+
+	m_watchdog->setOtherCPUAffinity(cpu_affinity);
+
+	if (cpu_affinity.isDefault())
+		m_watchdog = NULL;
+}
+
+Camera::SystemCPUAffinityMgr::
+ProcessingFinishedEvent::ProcessingFinishedEvent(SystemCPUAffinityMgr *mgr)
+	: m_mgr(mgr), m_cb(this), m_ct(NULL)
+{
+	DEB_CONSTRUCTOR();
+
+	m_nb_frames = 0;
+	m_cnt_act = false;
+	m_saving_act = false;
+	m_stopped = false;
+	m_last_cb_ts = Timestamp::now();
+}
+
+Camera::SystemCPUAffinityMgr::
+ProcessingFinishedEvent::~ProcessingFinishedEvent()
+{
+	DEB_DESTRUCTOR();
+	if (m_mgr)
+		m_mgr->m_proc_finished = NULL;
+}
+
+void Camera::SystemCPUAffinityMgr::ProcessingFinishedEvent::prepareAcq()
+{
+	DEB_MEMBER_FUNCT();
+	if (!m_ct)
+		return;
+
+	CtAcquisition *acq = m_ct->acquisition();
+	acq->getAcqNbFrames(m_nb_frames);
+
+	SoftOpExternalMgr *extOp = m_ct->externalOperation();
+	if (DEB_CHECK_ANY(DebTypeTrace)) {
+		typedef list<string> NameList;
+		typedef map<int, NameList> OpStageNameListMap;
+		OpStageNameListMap active_op;
+		extOp->getActiveOp(active_op);
+		OpStageNameListMap::const_iterator mit, mend = active_op.end();
+		ostringstream os;
+		os << "{";
+		for (mit = active_op.begin(); mit != mend; ++mend) {
+			const int& stage = mit->first;
+			os << stage << ": [";
+			const NameList& name_list = mit->second;
+			NameList::const_iterator lit, lend = name_list.end();
+			const char *sep = "";
+			for (lit = name_list.begin(); lit != lend; ++lit) {
+				const string& name = *lit;
+				os << sep << name;
+				sep = ",";
+			}
+			os << "]";
+		}
+		os << "}";
+		DEB_TRACE() << "extOp->getActiveOp()=" << os.str();
+	}
+
+	bool extOp_link_task_act, extOp_sink_task_act;
+	extOp->isTaskActive(extOp_link_task_act, extOp_sink_task_act);
+	DEB_TRACE() << DEB_VAR2(extOp_link_task_act, extOp_sink_task_act);
+	m_cnt_act = extOp_sink_task_act;
+
+	CtSaving *saving = m_ct->saving();
+	CtSaving::SavingMode mode;
+	saving->getSavingMode(mode);
+	m_saving_act = (mode != CtSaving::Manual);
+
+	DEB_TRACE() << DEB_VAR3(m_nb_frames, m_saving_act, m_cnt_act);
+
+	m_stopped = false;
+}
+
+void Camera::SystemCPUAffinityMgr::ProcessingFinishedEvent::stopAcq()
+{
+	DEB_MEMBER_FUNCT();
+	m_stopped = true;
+}
+
+void Camera::SystemCPUAffinityMgr::ProcessingFinishedEvent::processingFinished()
+{
+	DEB_MEMBER_FUNCT();
+	if (m_mgr)
+		m_mgr->limaFinished();
+}
+
+void Camera::SystemCPUAffinityMgr::
+ProcessingFinishedEvent::registerStatusCallback(CtControl *ct)
+{
+	DEB_MEMBER_FUNCT();
+	if (m_ct)
+		THROW_HW_ERROR(Error) << "StatusCallback already registered";
+
+	ct->registerImageStatusCallback(m_cb);
+	m_ct = ct;
+}
+
+void Camera::SystemCPUAffinityMgr::
+ProcessingFinishedEvent::limitUpdateRate()
+{
+	Timestamp next_ts = m_last_cb_ts + Timestamp(1.0 / 10);
+	double remaining = next_ts - Timestamp::now();
+	if (remaining > 0)
+		Sleep(remaining);
+}
+
+void Camera::SystemCPUAffinityMgr::
+ProcessingFinishedEvent::updateLastCallbackTimestamp()
+{
+	m_last_cb_ts = Timestamp::now();
+}
+
+Timestamp Camera::SystemCPUAffinityMgr::
+ProcessingFinishedEvent::getLastCallbackTimestamp()
+{
+	return m_last_cb_ts;
+}
+
+void Camera::SystemCPUAffinityMgr::
+ProcessingFinishedEvent::imageStatusChanged(
+					const CtControl::ImageStatus& status)
+{
+	DEB_MEMBER_FUNCT();
+
+	limitUpdateRate();
+	updateLastCallbackTimestamp();
+
+	int max_frame = m_nb_frames - 1; 
+	int last_frame = status.LastImageAcquired;
+	bool finished = (m_stopped || (last_frame == max_frame));
+	finished &= (status.LastImageReady == last_frame);
+	finished &= (!m_cnt_act || (status.LastCounterReady == last_frame));
+	finished &= (m_stopped || !m_saving_act || 
+		     (status.LastImageSaved == last_frame));
+	if (finished)
+		processingFinished();
+}
+
+Camera::SystemCPUAffinityMgr::SystemCPUAffinityMgr(Camera *cam)
+	: m_cam(cam), m_proc_finished(NULL), 
+	  m_lima_finished_timeout(3)
+{
+	DEB_CONSTRUCTOR();
+
+	m_state = Ready;
+}
+
+Camera::SystemCPUAffinityMgr::~SystemCPUAffinityMgr()
+{
+	DEB_DESTRUCTOR();
+
+	setLimaAffinity(CPUAffinity());
+
+	if (m_proc_finished)
+		m_proc_finished->m_mgr = NULL;
+}
+
+void Camera::SystemCPUAffinityMgr::applyAndSet(const SystemCPUAffinity& o)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(o);
+
+	if (!m_cam)
+		THROW_HW_ERROR(InvalidValue) << "apply without camera";
+
+	setLimaAffinity(o.lima);
+	setRecvAffinity(o.recv);
+
+	if (!m_proc_mgr)
+		m_proc_mgr = new ProcCPUAffinityMgr();
+
+	m_proc_mgr->setOtherCPUAffinity(o.other);
+	m_curr.other = o.other;
+
+	m_set = o;
+}
+
+void Camera::SystemCPUAffinityMgr::setLimaAffinity(CPUAffinity lima_affinity)
+{
+	DEB_MEMBER_FUNCT();
+
+	if (lima_affinity == m_curr.lima)
+		return;
+
+	if (m_lima_tids.size()) {
+		ProcList::const_iterator it, end = m_lima_tids.end();
+		for (it = m_lima_tids.begin(); it != end; ++it)
+			// do not use taskset!
+			lima_affinity.applyToTask(*it, false, false);
+	} else {
+		pid_t pid = getpid();
+		lima_affinity.applyToTask(pid, true);
+		m_curr.recv = lima_affinity;
+	}
+	m_curr.lima = lima_affinity;
+}
+
+void Camera::SystemCPUAffinityMgr::setRecvAffinity(CPUAffinity recv_affinity)
+{
+	DEB_MEMBER_FUNCT();
+
+	if (recv_affinity == m_curr.recv)
+		return;
+
+	cpu_set_t cpu_set;
+	recv_affinity.initCPUSet(cpu_set);
+	Camera::RecvList& recv_list = m_cam->m_recv_list;
+	for (unsigned int i = 0; i < recv_list.size(); ++i) {
+		DEB_TRACE() << "setting recv " << i << " "
+			     << "CPU mask to " << recv_affinity;
+		slsReceiverUsers *recv = recv_list[i]->m_recv;
+		recv->setThreadCPUAffinity(sizeof(cpu_set),
+					   &cpu_set, &cpu_set);
+	}
+	for (int i = 0; i < m_cam->getTotNbPorts(); ++i) {
+		pid_t tid = m_cam->m_buffer_thread[i].getTID();
+		recv_affinity.applyToTask(tid, false);
+	}
+	m_curr.recv = recv_affinity;
+}
+
+void Camera::SystemCPUAffinityMgr::updateRecvRestart()
+{
+	DEB_MEMBER_FUNCT();
+	m_curr.recv = m_curr.lima;
+}
+
+Camera::SystemCPUAffinityMgr::ProcessingFinishedEvent *
+Camera::SystemCPUAffinityMgr::getProcessingFinishedEvent()
+{
+	DEB_MEMBER_FUNCT();
+	if (!m_proc_finished)
+		m_proc_finished = new ProcessingFinishedEvent(this);
+	return m_proc_finished;
+}
+
+void Camera::SystemCPUAffinityMgr::prepareAcq()
+{
+	DEB_MEMBER_FUNCT();
+	AutoMutex l = lock();
+	if (m_state != Ready)
+		THROW_HW_ERROR(Error) << "SystemCPUAffinityMgr is not Ready: "
+				      << "missing ProcessingFinishedEvent";
+	if (m_proc_finished)
+		m_proc_finished->prepareAcq();
+	m_lima_tids.clear();
+}
+
+void Camera::SystemCPUAffinityMgr::startAcq()
+{
+	DEB_MEMBER_FUNCT();
+	AutoMutex l = lock();
+	m_state = Acquiring;
+}
+
+void Camera::SystemCPUAffinityMgr::stopAcq()
+{
+	DEB_MEMBER_FUNCT();
+	if (m_proc_finished)
+		m_proc_finished->stopAcq();
+}
+
+void Camera::SystemCPUAffinityMgr::recvFinished()
+{
+	DEB_MEMBER_FUNCT();
+
+	AutoMutex l = lock();
+	if (!m_proc_finished)
+		m_state = Ready;
+	if (m_state == Ready) 
+		return;
+
+	if (m_curr.lima != m_curr.recv) {
+		m_state = Changing;
+		AutoMutexUnlock u(l);
+		ProcCPUAffinityMgr::Filter filter;
+		filter = ProcCPUAffinityMgr::MatchAffinity;
+		m_lima_tids = ProcCPUAffinityMgr::getThreadList(filter,
+								m_curr.lima);
+		DEB_ALWAYS() << "Lima TIDs: " << PrettyIntList(m_lima_tids);
+		CPUAffinity lima_affinity = (uint64_t(m_curr.lima) | 
+					     uint64_t(m_curr.recv));
+		DEB_ALWAYS() << "Allowing Lima to run on Recv CPUs: " 
+			     << lima_affinity;
+		setLimaAffinity(lima_affinity);
+	}
+
+	m_state = Processing;
+	m_cond.broadcast();
+}
+
+void Camera::SystemCPUAffinityMgr::limaFinished()
+{
+	DEB_MEMBER_FUNCT();
+
+	AutoMutex l = lock();
+	if (m_state == Acquiring)
+		m_state = Ready;
+	while ((m_state != Processing) && (m_state != Ready))
+		m_cond.wait();
+	if (m_state == Ready)
+		return;
+
+	if (m_curr.lima != m_set.lima) {
+		m_state = Restoring;
+		AutoMutexUnlock u(l);
+		DEB_ALWAYS() << "Restoring Lima to dedicated CPUs: " 
+			     << m_set.lima;
+		setLimaAffinity(m_set.lima);
+		setRecvAffinity(m_set.recv);
+	}
+
+	m_state = Ready;
+	m_cond.broadcast();
+}
+
+void Camera::SystemCPUAffinityMgr::waitLimaFinished()
+{
+	DEB_MEMBER_FUNCT();
+
+	if (!m_proc_finished)
+		return;
+
+	m_proc_finished->updateLastCallbackTimestamp();
+
+	AutoMutex l = lock();
+	while (m_state != Ready) {
+		if (m_cond.wait(1))
+			continue;
+
+		AutoMutexUnlock u(l);
+		Timestamp ts = m_proc_finished->getLastCallbackTimestamp();
+		double elapsed = Timestamp::now() - ts;
+		if (elapsed < m_lima_finished_timeout)
+			continue;
+
+		DEB_ERROR() << "No ImageStatusCallback in " << elapsed << " s";
+		limaFinished();
+	}
+}
+
 Camera::FrameType Camera::getLatestFrame(const FrameArray& l)
 {
 	DEB_STATIC_FUNCT();
 
-	FrameType last_frame = l[0];
+	FrameType last_frame = !l.empty() ? l[0] : -1;
 	for (unsigned int i = 1; i < l.size(); ++i)
 		updateLatestFrame(last_frame, l[i]);
 
@@ -63,7 +938,7 @@ Camera::FrameType Camera::getOldestFrame(const FrameArray& l)
 {
 	DEB_STATIC_FUNCT();
 
-	FrameType first_frame = l[0];
+	FrameType first_frame = !l.empty() ? l[0] : -1;
 	for (unsigned int i = 1; i < l.size(); ++i)
 		updateOldestFrame(first_frame, l[i]);
 
@@ -397,6 +1272,32 @@ ostream& lima::SlsDetector::operator <<(ostream& os,
 	return os << ">";
 }
 
+ostream& lima::SlsDetector::operator <<(ostream& os, 
+					const Camera::CPUAffinity& a)
+{
+	return os << hex << showbase << uint64_t(a) << dec << noshowbase;
+}
+
+ostream& lima::SlsDetector::operator <<(ostream& os, 
+					const Camera::SystemCPUAffinity& a)
+{
+	os << "<";
+	os << "recv=" << a.recv << ", lima=" << a.lima << ", other=" << a.other;
+	return os << ">";
+}
+
+ostream& 
+lima::SlsDetector::operator <<(ostream& os, 
+			       const Camera::PixelDepthCPUAffinityMap& m)
+{
+	os << "[";
+	bool first = true;
+	Camera::PixelDepthCPUAffinityMap::const_iterator it, end = m.end();
+	for (it = m.begin(); it != end; ++it, first=false)
+		os << (!first ? ", " : "") << it->first << ": " << it->second;
+	return os << "]";
+}
+
 Camera::Receiver::Receiver(Camera *cam, int idx, int rx_port)
 	: m_cam(cam), m_idx(idx), m_rx_port(rx_port)
 {
@@ -567,6 +1468,8 @@ void Camera::BufferThread::threadFunction()
 {
 	DEB_MEMBER_FUNCT();
 
+	m_tid = gettid();
+
 	AutoMutex l = lock();
 
 	m_end = false;
@@ -626,6 +1529,13 @@ Camera::AcqThread::AcqThread(Camera *cam)
 	DEB_CONSTRUCTOR();
 	m_state = Starting;
 	start();
+
+	struct sched_param param;
+	param.sched_priority = 50;
+	int ret = pthread_setschedparam(m_thread, SCHED_RR, &param);
+	if (ret != 0)
+		DEB_ERROR() << "Could not set real-time priority!!";
+
 	while (m_state != Running)
 		m_cond.wait();
 }
@@ -635,7 +1545,7 @@ void Camera::AcqThread::stop(bool wait)
 	DEB_MEMBER_FUNCT();
 	m_state = StopReq;
 	m_cond.broadcast();
-	while (wait && (m_state != Stopped))
+	while (wait && (m_state != Stopped) && (m_state != Idle))
 		m_cond.wait();
 }
 
@@ -646,6 +1556,7 @@ void Camera::AcqThread::threadFunction()
 	multiSlsDetector *det = m_cam->m_det;
 
 	AutoMutex l = m_cam->lock();
+	m_cam->m_system_cpu_affinity_mgr.startAcq();
 	{
 		AutoMutexUnlock u(l);
 		DEB_TRACE() << "calling startReceiver";
@@ -657,6 +1568,7 @@ void Camera::AcqThread::threadFunction()
 	m_cond.broadcast();
 
 	SeqFilter seq_filter;
+	bool had_frames = false;
 
 	do {
 		while ((m_state != StopReq) && m_frame_queue.empty()) {
@@ -678,6 +1590,7 @@ void Camera::AcqThread::threadFunction()
 				do {
 					DEB_TRACE() << DEB_VAR1(f);
 					cont_acq = newFrameReady(f);
+					had_frames = true;
 				} while ((++f != frames.end()) && cont_acq);
 			}
 			if (!cont_acq)
@@ -706,6 +1619,12 @@ void Camera::AcqThread::threadFunction()
 		     << PrettyIntList(bfl);
 	DEB_ALWAYS() << DEB_VAR1(m_cam->m_stats);
 
+	if (had_frames) {
+		AutoMutexUnlock u(l);
+		m_cam->m_system_cpu_affinity_mgr.recvFinished();
+		m_cam->m_system_cpu_affinity_mgr.waitLimaFinished();
+	}
+
 	m_state = Stopped;
 	m_cond.broadcast();
 }
@@ -732,9 +1651,12 @@ Camera::Camera(string config_fname)
 	  m_new_frame_timeout(1),
 	  m_abort_sleep_time(0.1),
 	  m_tol_lost_packets(true),
-	  m_time_ranges_cb(NULL)
+	  m_time_ranges_cb(NULL),
+	  m_system_cpu_affinity_mgr(this)
 {
 	DEB_CONSTRUCTOR();
+
+	CPUAffinity::getNbCPUs();
 
 	m_input_data = new AppInputData(config_fname);
 
@@ -811,6 +1733,15 @@ void Camera::setModel(Model *model)
 	m_model = model;
 	if (!m_model)
 		return;
+
+	m_recv_ports = m_model->getRecvPorts();
+	int nb_ports = getTotNbPorts();
+	if (!m_buffer_thread) {
+		int buffer_size = 1000;
+		m_buffer_thread = new BufferThread[nb_ports];
+		for (int i = 0; i < nb_ports; ++i)
+			m_buffer_thread[i].init(this, i, buffer_size);
+	}
 
 	setPixelDepth(m_pixel_depth);
 	setSettings(m_settings);
@@ -1011,6 +1942,19 @@ void Camera::updateTimeRanges()
 		m_time_ranges_cb->timeRangesChanged(time_ranges);
 }
 
+void Camera::updateCPUAffinity(bool recv_restarted)
+{
+	DEB_MEMBER_FUNCT();
+
+	// receiver threads are restarted after DR change
+	if (recv_restarted)
+		m_system_cpu_affinity_mgr.updateRecvRestart();
+
+	// apply the corresponding SystemCPUAffinity
+	SystemCPUAffinity system_affinity = m_cpu_affinity_map[m_pixel_depth];
+	m_system_cpu_affinity_mgr.applyAndSet(system_affinity);
+}
+
 void Camera::setPixelDepth(PixelDepth pixel_depth)
 {
 	DEB_MEMBER_FUNCT();
@@ -1037,6 +1981,7 @@ void Camera::setPixelDepth(PixelDepth pixel_depth)
 	if (m_model) {
 		updateImageSize();
 		updateTimeRanges();
+		updateCPUAffinity(true);
 	}
 }
 
@@ -1126,15 +2071,7 @@ void Camera::prepareAcq()
 
 	int nb_buffers;
 	m_buffer_cb_mgr->getNbBuffers(nb_buffers);
-
-	m_recv_ports = m_model->getRecvPorts();
-	int nb_ports = m_recv_list.size() * m_recv_ports;
-	if (!m_buffer_thread) {
-		int buffer_size = 1000;
-		m_buffer_thread = new BufferThread[nb_ports];
-		for (int i = 0; i < nb_ports; ++i)
-			m_buffer_thread[i].init(this, i, buffer_size);
-	}
+	int nb_ports = getTotNbPorts();
 
 	{
 		AutoMutex l = lock();
@@ -1152,6 +2089,7 @@ void Camera::prepareAcq()
 	}
 
 	m_model->prepareAcq();
+	m_system_cpu_affinity_mgr.prepareAcq();
 
 	// recv->resetAcquisitionCount()
 	m_det->resetFramesCaught();
@@ -1174,6 +2112,8 @@ void Camera::startAcq()
 void Camera::stopAcq()
 {
 	DEB_MEMBER_FUNCT();
+
+	m_system_cpu_affinity_mgr.stopAcq();
 
 	AutoMutex l = lock();
 	if (getEffectiveState() != Running)
@@ -1206,7 +2146,7 @@ void Camera::processRecvPort(int port_idx, FrameType frame, char *dptr,
 	}
 	FrameMap::FinishInfo finfo;
 	finfo = m_frame_map.frameItemFinished(frame, port_idx, true, valid);
-	if ((finfo.nb_lost == 0) && (finfo.finished.size() == 0))
+	if ((finfo.nb_lost == 0) && finfo.finished.empty())
 		return;
 
 	Timestamp t0 = Timestamp::now();
@@ -1614,4 +2554,26 @@ void Camera::getStats(Stats& stats)
 	DEB_MEMBER_FUNCT();
 	stats = m_stats;
 	DEB_RETURN() << DEB_VAR1(stats);
+}
+
+void Camera::setPixelDepthCPUAffinityMap(PixelDepthCPUAffinityMap aff_map)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(aff_map);
+	m_cpu_affinity_map = aff_map;
+	updateCPUAffinity(false);
+}
+
+void Camera::getPixelDepthCPUAffinityMap(PixelDepthCPUAffinityMap& aff_map)
+{
+	DEB_MEMBER_FUNCT();
+	aff_map = m_cpu_affinity_map;
+	DEB_RETURN() << DEB_VAR1(aff_map);
+}
+
+Camera::SystemCPUAffinityMgr::
+ProcessingFinishedEvent *Camera::getProcessingFinishedEvent()
+{
+	DEB_MEMBER_FUNCT();
+	return m_system_cpu_affinity_mgr.getProcessingFinishedEvent();
 }

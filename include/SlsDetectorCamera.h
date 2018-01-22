@@ -33,6 +33,8 @@
 #include "lima/HwBufferMgr.h"
 #include "lima/HwMaxImageSizeCallback.h"
 #include "lima/Event.h"
+#include "lima/SimplePipe.h"
+#include "lima/CtControl.h"
 
 #include <set>
 #include <queue>
@@ -115,11 +117,13 @@ public:
 	};
 
 	typedef uint64_t FrameType;
-	typedef std::vector<std::string> NameList;
+	typedef std::vector<std::string> StringList;
+	typedef StringList NameList;
 	typedef std::vector<int> IntList;
 	typedef std::vector<double> FloatList;
 	typedef std::set<int> SortedIntList;
 	typedef std::vector<FrameType> FrameArray;
+	typedef IntList ProcList;
 
 	struct TimeRanges {
 		TimeRanges() :
@@ -152,6 +156,259 @@ public:
 	private:
 		friend class Camera;
 		Camera *m_cam;
+	};
+
+	class Glob
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Glob", "SlsDetector::Camera");
+	public:
+		Glob(std::string pattern = "");
+		Glob& operator =(std::string pattern);
+
+		static StringList find(std::string pattern);
+		static StringList split(std::string path);
+
+		int getNbEntries() const
+		{ return m_found_list.size(); }
+
+		StringList getPathList() const
+		{ return m_found_list; }
+
+		StringList getSubPathList(int idx) const;
+
+	private:
+		std::string m_pattern;
+		StringList m_found_list;
+	};
+
+	class NumericGlob
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "NumericGlob", 
+				  "SlsDetector::Camera");
+	public:
+		typedef std::pair<int, std::string> IntString;
+		typedef std::vector<IntString> IntStringList;
+
+		NumericGlob(std::string pattern_prefix, 
+			    std::string pattern_suffix = "");
+
+		int getNbEntries() const
+		{ return m_glob.getNbEntries(); }
+
+		IntStringList getIntPathList() const;
+
+	private:
+		int m_nb_idx;
+		int m_prefix_len;
+		int m_suffix_len;
+		Glob m_glob;
+	};
+
+	class CPUAffinity 
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "CPUAffinity", 
+				  "SlsDetector::Camera");
+	public:
+		CPUAffinity(uint64_t m = 0) : m_mask(m) 
+		{}
+
+		static bool UseSudo;
+		static int getNbCPUs(bool max_nb = false);
+
+		static uint64_t allCPUs(bool max_nb = false)
+		{ return (uint64_t(1) << getNbCPUs(max_nb)) - 1; }
+
+		void initCPUSet(cpu_set_t& cpu_set) const;
+		void applyToTask(pid_t task, bool incl_threads = true,
+				 bool use_taskset = true) const;
+
+		operator uint64_t() const
+		{ return m_mask ? m_mask : allCPUs(); }
+
+		CPUAffinity& operator =(uint64_t m)
+		{ m_mask = m; return *this; }
+
+		bool isDefault() const
+		{ return !m_mask || (m_mask == allCPUs()); }
+
+		static std::string getProcDir(bool local_threads);
+		static std::string getTaskProcDir(pid_t task, bool is_thread);
+
+	private:
+		void applyWithTaskset(pid_t task, bool incl_threads) const;
+		void applyWithSetAffinity(pid_t task, bool incl_threads) const;
+
+		static int findNbCPUs();
+		static int findMaxNbCPUs();
+		uint64_t m_mask;
+	};
+
+	class ProcCPUAffinityMgr
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "ProcCPUAffinityMgr", 
+				  "SlsDetector::Camera");
+	public:
+		enum Filter {
+			All, MatchAffinity, NoMatchAffinity, ThisProc=0x10,
+		};
+
+		ProcCPUAffinityMgr();
+		~ProcCPUAffinityMgr();
+
+		static ProcList getProcList(Filter filter = All, 
+					    CPUAffinity cpu_affinity = 0);
+		static ProcList getThreadList(Filter filter = All, 
+					    CPUAffinity cpu_affinity = 0);
+
+		void setOtherCPUAffinity(CPUAffinity cpu_affinity);
+
+	private:
+		class WatchDog
+		{
+			DEB_CLASS_NAMESPC(DebModCamera, "WatchDog", 
+					  "SlsDetector::"
+					  "Camera::ProcCPUAffinityMgr");
+		public:
+			WatchDog();
+			~WatchDog();
+
+			bool childEnded();
+			void setOtherCPUAffinity(CPUAffinity cpu_affinity);
+
+		private:
+			enum Cmd {
+				Init, SetAffinity, CleanUp, Ok,
+			};
+
+			typedef uint64_t Arg;
+
+			struct Packet {
+				Cmd cmd;
+				Arg arg;
+			};
+			
+			static void sigTermHandler(int signo);
+
+			void childFunction();
+			void affinitySetter(CPUAffinity cpu_affinity);
+
+			ProcList getOtherProcList(CPUAffinity cpu_affinity);
+
+			void sendChildCmd(Cmd cmd, Arg arg = 0);
+			Packet readParentCmd();
+			void ackParentCmd();
+
+			Pipe m_cmd_pipe;
+			Pipe m_res_pipe;
+			pid_t m_lima_pid;
+			pid_t m_child_pid;
+		};
+
+		AutoPtr<WatchDog> m_watchdog;
+	};
+
+	struct SystemCPUAffinity {
+		CPUAffinity recv;
+		CPUAffinity lima;
+		CPUAffinity other;
+	};
+
+	typedef std::map<PixelDepth, SystemCPUAffinity> 
+						PixelDepthCPUAffinityMap;
+
+	class SystemCPUAffinityMgr 
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "SystemCPUAffinityMgr", 
+				  "SlsDetector::Camera");
+	public:
+		class ProcessingFinishedEvent
+		{
+		DEB_CLASS_NAMESPC(DebModCamera, "ProcessingFinishedEvent", 
+				  "SlsDetector::Camera::SystemCPUAffinityMgr");
+		public:
+			ProcessingFinishedEvent(SystemCPUAffinityMgr *mgr);
+			~ProcessingFinishedEvent();
+
+			void processingFinished();
+
+			void registerStatusCallback(CtControl *ct_control);
+
+		private:
+			friend class SystemCPUAffinityMgr;
+
+			class ImageStatusCallback : 
+				public CtControl::ImageStatusCallback
+			{
+			public:
+				ImageStatusCallback(
+					ProcessingFinishedEvent *proc_finished)
+					: m_proc_finished(proc_finished) 
+				{}
+			protected:
+				virtual void imageStatusChanged(
+					const CtControl::ImageStatus& status)
+				{ m_proc_finished->imageStatusChanged(status); }
+			private:
+				ProcessingFinishedEvent *m_proc_finished;
+			};
+
+			void prepareAcq();
+			void stopAcq();
+
+			void limitUpdateRate();
+			void updateLastCallbackTimestamp();
+			Timestamp getLastCallbackTimestamp();
+
+			void imageStatusChanged(
+				const CtControl::ImageStatus& status);
+
+			SystemCPUAffinityMgr *m_mgr;
+			ImageStatusCallback m_cb;
+			CtControl *m_ct;
+			int m_nb_frames;
+			bool m_cnt_act;
+			bool m_saving_act;
+			bool m_stopped;
+			Timestamp m_last_cb_ts;
+		};
+
+		SystemCPUAffinityMgr(Camera *cam = NULL);
+		~SystemCPUAffinityMgr();
+
+		void applyAndSet(const SystemCPUAffinity& o);
+		void updateRecvRestart();
+
+		ProcessingFinishedEvent *getProcessingFinishedEvent();
+
+		void prepareAcq();
+		void startAcq();
+		void stopAcq();
+		void recvFinished();
+		void limaFinished();
+		void waitLimaFinished();
+
+	private:
+		friend class ProcessingFinishedEvent;
+
+		enum State {
+			Ready, Acquiring, Changing, Processing, Restoring,
+		};
+
+		void setLimaAffinity(CPUAffinity lima_affinity);
+		void setRecvAffinity(CPUAffinity recv_affinity);
+
+		AutoMutex lock()
+		{ return AutoMutex(m_cond.mutex()); }
+
+		Camera *m_cam;
+		ProcList m_lima_tids;
+		SystemCPUAffinity m_curr;
+		SystemCPUAffinity m_set;
+		AutoPtr<ProcCPUAffinityMgr> m_proc_mgr;
+		Cond m_cond;
+		State m_state;
+		ProcessingFinishedEvent *m_proc_finished;
+		double m_lima_finished_timeout;
 	};
 
 	static bool isValidFrame(FrameType frame)
@@ -410,6 +667,9 @@ public:
 	int getNbDetSubModules()
 	{ return m_det->getNMods(); }
 
+	int getTotNbPorts()
+	{ return m_recv_list.size() * m_recv_ports; }
+
 	int getPortIndex(int recv_idx, int port)
 	{ return recv_idx * m_recv_ports + port; }
 
@@ -491,13 +751,18 @@ public:
 
 	void getStats(Stats& stats);
 
+	void setPixelDepthCPUAffinityMap(PixelDepthCPUAffinityMap aff_map);
+	void getPixelDepthCPUAffinityMap(PixelDepthCPUAffinityMap& aff_map);
+
+	SystemCPUAffinityMgr::ProcessingFinishedEvent *
+		getProcessingFinishedEvent();
+
 private:
 	typedef RegEx::SingleMatchType SingleMatch;
 	typedef RegEx::FullMatchType FullMatch;
 	typedef RegEx::MatchListType MatchList;
 	typedef MatchList::const_iterator MatchListIt;
 
-	typedef std::vector<std::string> StringList;
 	typedef std::map<int, int> RecvPortMap;
 
 	typedef std::queue<int> FrameQueue;
@@ -592,6 +857,9 @@ private:
 			m_cond.broadcast();
 		}
 
+		pid_t getTID()
+		{ return m_tid; }
+
 	protected:
 		virtual void start();
 		virtual void threadFunction();
@@ -611,6 +879,7 @@ private:
 
 		Camera *m_cam;
 		int m_port_idx;
+		pid_t m_tid;
 		bool m_end;
 		Cond m_cond;
 		int m_size;
@@ -639,6 +908,7 @@ private:
 	};
 
 	friend class Model;
+	friend class SystemCPUAffinityMgr;
 
 	void setModel(Model *model);
 
@@ -647,6 +917,7 @@ private:
 
 	void updateImageSize();
 	void updateTimeRanges();
+	void updateCPUAffinity(bool recv_restarted);
 
 	static int64_t NSec(double x)
 	{ return int64_t(x * 1e9); }
@@ -720,6 +991,8 @@ private:
 	std::vector<Timestamp> m_stat_last_t1;
 	Stats m_stats;
 	TimeRangesChangedCallback *m_time_ranges_cb;
+	PixelDepthCPUAffinityMap m_cpu_affinity_map;
+	SystemCPUAffinityMgr m_system_cpu_affinity_mgr;
 };
 
 std::ostream& operator <<(std::ostream& os, Camera::State state);
@@ -730,6 +1003,30 @@ std::ostream& operator <<(std::ostream& os, const Camera::SortedIntList& l);
 std::ostream& operator <<(std::ostream& os, const Camera::FrameArray& a);
 std::ostream& operator <<(std::ostream& os, const Camera::SimpleStat& s);
 std::ostream& operator <<(std::ostream& os, const Camera::Stats& s);
+std::ostream& operator <<(std::ostream& os, const Camera::CPUAffinity& a);
+std::ostream& operator <<(std::ostream& os, const Camera::SystemCPUAffinity& a);
+std::ostream& operator <<(std::ostream& os, 
+			  const Camera::PixelDepthCPUAffinityMap& m);
+
+inline int operator <(const Camera::NumericGlob::IntString& a,
+		      const Camera::NumericGlob::IntString& b)
+{
+	return (a.first < b.first);
+}
+
+inline
+bool operator ==(const Camera::CPUAffinity& a, const Camera::CPUAffinity& b)
+{
+	uint64_t mask = Camera::CPUAffinity::allCPUs();
+	return (uint64_t(a) & mask) == (uint64_t(b) & mask);
+}
+
+inline
+bool operator !=(const Camera::CPUAffinity& a, const Camera::CPUAffinity& b)
+{
+	return !(a == b);
+}
+
 
 typedef PrettyList<Camera::IntList> PrettyIntList;
 typedef PrettyList<Camera::SortedIntList> PrettySortedList;
