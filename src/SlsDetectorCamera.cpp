@@ -220,6 +220,30 @@ int Camera::CPUAffinity::getNbCPUs(bool max_nb)
 	return cpus;
 }
 
+std::string Camera::CPUAffinity::getProcDir(bool local_threads)
+{
+	DEB_STATIC_FUNCT();
+	DEB_PARAM() << DEB_VAR1(local_threads);
+	ostringstream os;
+	os << "/proc/";
+	if (local_threads)
+		os << getpid() << "/task/";
+	string proc_dir = os.str();
+	DEB_RETURN() << DEB_VAR1(proc_dir);
+	return proc_dir;
+}
+
+std::string Camera::CPUAffinity::getTaskProcDir(pid_t task, bool is_thread)
+{
+	DEB_STATIC_FUNCT();
+	DEB_PARAM() << DEB_VAR2(task, is_thread);
+	ostringstream os;
+	os << getProcDir(is_thread) << task << "/";
+	string proc_dir = os.str();
+	DEB_RETURN() << DEB_VAR1(proc_dir);
+	return proc_dir;
+}
+
 void Camera::CPUAffinity::initCPUSet(cpu_set_t& cpu_set) const
 {
 	CPU_ZERO(&cpu_set);
@@ -236,7 +260,8 @@ void Camera::CPUAffinity::applyToTask(pid_t task, bool incl_threads,
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR3(task, incl_threads, use_taskset);
 
-	if (kill(task, 0) != 0)
+	string proc_status = getTaskProcDir(task, !incl_threads) + "status";
+	if (access(proc_status.c_str(), F_OK) != 0)
 		return;
 
 	if (use_taskset)
@@ -257,7 +282,9 @@ void Camera::CPUAffinity::applyWithTaskset(pid_t task, bool incl_threads) const
 	const char *all_tasks_opt = incl_threads ? "-a " : "";
 	os << "taskset " << all_tasks_opt
 	   << "-p " << hex << showbase << mask << " " 
-	   << dec << noshowbase << task << " > /dev/null 2>&1";
+	   << dec << noshowbase << task;
+	if (!DEB_CHECK_ANY(DebTypeTrace))
+		os << " > /dev/null 2>&1";
 	DEB_TRACE() << "executing: '" << os.str() << "'";
 	int ret = system(os.str().c_str());
 	if (ret != 0) {
@@ -275,9 +302,8 @@ void Camera::CPUAffinity::applyWithSetAffinity(pid_t task, bool incl_threads)
 
 	IntList task_list;
 	if (incl_threads) {
-		ostringstream os;
-		os << "/proc/" << task << "/task/";
-		NumericGlob proc_glob(os.str());
+		string proc_dir = getTaskProcDir(task, false) + "task/";
+		NumericGlob proc_glob(proc_dir);
 		typedef NumericGlob::IntStringList IntStringList;
 		IntStringList list = proc_glob.getIntPathList();
 		if (list.empty())
@@ -491,11 +517,8 @@ Camera::ProcCPUAffinityMgr::getProcList(Filter filter, CPUAffinity cpu_affinity)
 	ProcList proc_list;
 	bool this_proc = filter & ThisProc;
 	filter = Filter(filter & ~ThisProc);
-	ostringstream os;
-	os << "/proc/";
-	if (this_proc)
-		os << getpid() << "/task/";
-	NumericGlob proc_glob(os.str(), "/status");
+	string proc_dir = CPUAffinity::getProcDir(this_proc);
+	NumericGlob proc_glob(proc_dir, "/status");
 	NumericGlob::IntStringList list = proc_glob.getIntPathList();
 	NumericGlob::IntStringList::const_iterator it, end = list.end();
 	for (it = list.begin(); it != end; ++it) {

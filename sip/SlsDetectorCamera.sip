@@ -169,6 +169,9 @@ public:
 		//CPUAffinity& operator =(unsigned long m);
 
 		bool isDefault() const;
+
+		static std::string getProcDir(bool local_threads);
+		static std::string getTaskProcDir(int task, bool is_thread);
 	};
 
 	class ProcCPUAffinityMgr

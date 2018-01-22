@@ -231,6 +231,9 @@ public:
 		bool isDefault() const
 		{ return !m_mask || (m_mask == allCPUs()); }
 
+		static std::string getProcDir(bool local_threads);
+		static std::string getTaskProcDir(pid_t task, bool is_thread);
+
 	private:
 		void applyWithTaskset(pid_t task, bool incl_threads) const;
 		void applyWithSetAffinity(pid_t task, bool incl_threads) const;
