@@ -20,97 +20,6 @@
 // along with this program; if not, see <http://www.gnu.org/licenses/>.
 //###########################################################################
 
-// namespace SlsDetector
-// {
-// class Camera
-// {
-// public:
-//   typedef std::map<PixelDepth, SystemCPUAffinity> PixelDepthCPUAffinityMap;
-// };
-// };
-
-%MappedType SlsDetector::Camera::PixelDepthCPUAffinityMap
-{
-%TypeHeaderCode
-#include <map>
-#include "SlsDetectorCamera.h"
-#include "sipAPIlimaslsdetector.h"
-
-using namespace std;
-using namespace lima;
-using namespace lima::SlsDetector;
-
-typedef Camera::PixelDepth CPP_KeyType;
-typedef Camera::SystemCPUAffinity CPP_ValueType;
-typedef Camera::PixelDepthCPUAffinityMap CPP_MapType;
-#define SIP_ValueType sipType_SlsDetector_Camera_SystemCPUAffinity
-%End
-
-%ConvertToTypeCode
-	if (sipIsErr == NULL) {
-		bool ok = PyDict_Check(sipPy);
-		PyObject *key, *value;
-		SIP_SSIZE_T pos = 0;
-		while (ok && PyDict_Next(sipPy, &pos, &key, &value))
-			ok = (PyInt_Check(key) && 
-			      sipCanConvertToType(value, SIP_ValueType, 
-						  SIP_NOT_NONE));
-		return ok;
-	}
-
-	CPP_MapType *cpp_map = new CPP_MapType();
-
-	PyObject *key, *value;
-	SIP_SSIZE_T pos = 0;
-	while (PyDict_Next(sipPy, &pos, &key, &value)) {
-		CPP_KeyType cpp_key = CPP_KeyType(PyInt_AS_LONG(key));
-		int state;
-		void *p = sipConvertToType(value, SIP_ValueType, NULL, 
-					   SIP_NOT_NONE, &state, sipIsErr);
-		CPP_ValueType *cpp_value = static_cast<CPP_ValueType *>(p);
-		if (*sipIsErr) {
-			sipReleaseType(cpp_value, SIP_ValueType, state);
-			delete cpp_map;
-			return 0;
-		}		   
-
-		CPP_MapType::value_type map_value(cpp_key, *cpp_value);
-		cpp_map->insert(map_value);
-		sipReleaseType(cpp_value, SIP_ValueType, state);
-	}
-	*sipCppPtr = cpp_map;
-
-	return sipGetState(sipTransferObj);
-%End
-
-%ConvertFromTypeCode
-	PyObject* sip_map = PyDict_New();
-
-	CPP_MapType::iterator it, end = sipCpp->end();
-	for (it = sipCpp->begin();  it != end; ++it) {
-		PyObject *key = PyInt_FromLong(it->first);
-		if (key == NULL)
-			goto error;
-		CPP_ValueType *new_val = new CPP_ValueType(it->second);
-		PyObject *value = sipConvertFromNewType(new_val, SIP_ValueType,
-							NULL);
-		if (value == NULL) {
-			delete new_val;
-			Py_DECREF(key);
-			goto error;
-		}
-		PyDict_SetItem(sip_map, key, value);
-		Py_DECREF(value);
-		Py_DECREF(key);
-	}
-	return sip_map;
-error:
-	Py_DECREF(sip_map);
-	return NULL;
-%End
-};
-
-
 namespace SlsDetector
 {
 
@@ -120,242 +29,12 @@ namespace SlsDetector
 
 class Camera : public HwMaxImageSizeCallbackGen, public EventCallbackGen
 {
-
-%TypeHeaderCode
-#include "SlsDetectorCamera.h"
-%End
-
 public:
-	enum State {
-		Idle, Init, Starting, Running, StopReq, Stopping, Stopped,
-	};
-
-	enum Type {
-		GenericDet, EigerDet, JungfrauDet,
-	};
-
-	enum PixelDepth {
-		PixelDepth4 = 4, 
-		PixelDepth8 = 8, 
-		PixelDepth16 = 16, 
-		PixelDepth32 = 32,
-	};
-
-	struct TimeRanges {
-		TimeRanges();
-		double min_exp_time;
-		double max_exp_time;
-		double min_lat_time;
-		double max_lat_time;
-		double min_frame_period;
-		double max_frame_period;
-	};
-
-	class CPUAffinity 
-	{
-	public:
-		CPUAffinity(unsigned long m = 0);
-
-		static bool UseSudo;
-		static int getNbCPUs(bool max_nb = false);
-		static unsigned long allCPUs(bool max_nb = false);
-
-		//void initCPUSet(cpu_set_t& cpu_set) const;
-		void applyToTask(int task, bool incl_threads = true,
-				 bool use_taskset = true) const;
-
-		operator unsigned long() const;
-
-		//CPUAffinity& operator =(unsigned long m);
-
-		bool isDefault() const;
-
-		static std::string getProcDir(bool local_threads);
-		static std::string getTaskProcDir(int task, bool is_thread);
-	};
-
-	class ProcCPUAffinityMgr
-	{
-	public:
-		ProcCPUAffinityMgr();
-		~ProcCPUAffinityMgr();
-
-		enum Filter {
-			All, MatchAffinity, NoMatchAffinity, ThisProc=0x10
-		};
-
-		static std::vector<int> getProcList(
-			SlsDetector::Camera::ProcCPUAffinityMgr::Filter filter
-				= SlsDetector::Camera::ProcCPUAffinityMgr::All,
-			SlsDetector::Camera::CPUAffinity cpu_affinity = 0);
-		static std::vector<int> getThreadList(
-			SlsDetector::Camera::ProcCPUAffinityMgr::Filter filter
-				= SlsDetector::Camera::ProcCPUAffinityMgr::All,
-			SlsDetector::Camera::CPUAffinity cpu_affinity = 0);
-
-		void setOtherCPUAffinity(
-			SlsDetector::Camera::CPUAffinity affinity);
-	};
-
-	struct SystemCPUAffinity {
-		SlsDetector::Camera::CPUAffinity recv;
-		SlsDetector::Camera::CPUAffinity lima;
-		SlsDetector::Camera::CPUAffinity other;
-	};
-
-	//typedef std::map<SlsDetector::Camera::PixelDepth, 
-	//		 SlsDetector::Camera::SystemCPUAffinity> 
-	//					PixelDepthCPUAffinityMap;
-
-	class SystemCPUAffinityMgr
-	{
-	public:
-		class ProcessingFinishedEvent
-		{
-		public:
-			ProcessingFinishedEvent(
-				SlsDetector::Camera::SystemCPUAffinityMgr *mgr);
-			~ProcessingFinishedEvent();
-
-			void processingFinished();
-
-			void registerStatusCallback(CtControl *ct_control);
-		};
-
-		SystemCPUAffinityMgr(SlsDetector::Camera *cam = NULL);
-		~SystemCPUAffinityMgr();
-		
-		void applyAndSet(
-			const SlsDetector::Camera::SystemCPUAffinity& o);
-		void updateRecvRestart();
-
-		SlsDetector::Camera::SystemCPUAffinityMgr::
-		ProcessingFinishedEvent *getProcessingFinishedEvent();
-
-		void prepareAcq();
-		void startAcq();
-		void stopAcq();
-		void recvFinished();
-		void limaFinished();
-		void waitLimaFinished();
-	};
-
-	static bool isValidFrame(unsigned long frame);
-	static unsigned long latestFrame(unsigned long a, unsigned long b);
-
-	class Model
-	{
-	public:
-		Model(SlsDetector::Camera *cam, SlsDetector::Camera::Type type);
-		virtual ~Model();
-
-		virtual void getFrameDim(FrameDim& frame_dim /Out/,
-					 bool raw = false) = 0;
-
-		SlsDetector::Camera *getCamera();
-		SlsDetector::Camera::Type getType();
-
-		virtual std::string getName() = 0;
-		virtual void getPixelSize(double& x_size /Out/,
-					  double& y_size /Out/) = 0;
-
-		virtual 
-		void getDACInfo(std::vector<std::string>& name_list /Out/, 
-				std::vector<int>& idx_list /Out/, 
-				std::vector<int>& milli_volt_list /Out/) = 0;
-		virtual 
-		void getADCInfo(std::vector<std::string>& name_list /Out/, 
-				std::vector<int>& idx_list /Out/,
-				std::vector<double>& factor_list /Out/,
-				std::vector<double>& min_val_list /Out/) = 0;
-
-		virtual void getTimeRanges(SlsDetector::Camera::TimeRanges& 
-			     			time_ranges /Out/) = 0;
-
-	protected:
-		void updateCameraModel();
-
-		virtual void updateImageSize() = 0;
-
-		void putCmd(const std::string& s, int idx = -1);
-		std::string getCmd(const std::string& s, int idx = -1);
-
-		virtual 
-		bool checkSettings(SlsDetector::Defs::Settings settings) = 0;
-
-		virtual
-		SlsDetector::Defs::ReadoutFlags getReadoutFlagsMask() = 0;
-		virtual 
-		bool checkReadoutFlags(
-				SlsDetector::Defs::ReadoutFlags flags,
-				std::vector<int>& flag_list /Out/,
-				bool silent = false) = 0;
-
-		virtual int getRecvPorts() = 0;
-
-		virtual void prepareAcq() = 0;
-		virtual void processRecvFileStart(int port_idx, 
-						  unsigned int dsize) = 0;
-		virtual void processRecvPort(int port_idx, unsigned long frame,
-					     char *dptr, unsigned int dsize,
-					     char *bptr) = 0;
-	};
-
-	class FrameMap
-	{
-	public:
-		typedef std::set<int> List;
-		typedef std::map<unsigned long, std::set<int> > Map;
-
-		~FrameMap();
-
-		void setNbItems(int nb_items);
-		void setBufferSize(int buffer_size);
-		void clear();
-
-		unsigned long getLastItemFrame() const;
-		unsigned long getLastFinishedFrame() const;
-
-	private:
-		FrameMap();
-	};
-
-
-	struct SimpleStat {
-		double xmin;
-		double xmax;
-		double xacc;
-		double xacc2;
-		int xn;
-		double factor;
-		Mutex lock;
-
-		SimpleStat(double f = 1);
-		void reset();
-		void add(double x);
-		//SimpleStat& operator =(const SimpleStat& o);
-
-		int n() const;
-		double min() const;
-		double max() const;
-		double ave() const;
-		double std() const;
-	};
-
-	struct Stats {
-		SlsDetector::Camera::SimpleStat cb_period;
-		SlsDetector::Camera::SimpleStat new_finish;
-		SlsDetector::Camera::SimpleStat cb_exec;
-		SlsDetector::Camera::SimpleStat recv_exec;
-		Stats();
-		void reset();
-	};
-
 	Camera(std::string config_fname);
 	virtual ~Camera();
 
-	SlsDetector::Camera::Type getType();
-	SlsDetector::Camera::Model *getModel();
+	SlsDetector::Type getType();
+	SlsDetector::Model *getModel();
 	std::vector<std::string> getHostnameList();
 	int getNbDetModules();
 	int getNbDetSubModules();
@@ -363,20 +42,19 @@ public:
 
 	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr);
 
-	void setPixelDepth(SlsDetector::Camera::PixelDepth  pixel_depth);
-	void getPixelDepth(SlsDetector::Camera::PixelDepth& pixel_depth /Out/);
+	void setPixelDepth(SlsDetector::PixelDepth  pixel_depth);
+	void getPixelDepth(SlsDetector::PixelDepth& pixel_depth /Out/);
 
 	void setRawMode(bool  raw_mode);
 	void getRawMode(bool& raw_mode /Out/);
 
-	SlsDetector::Camera::State getState();
-	void waitState(SlsDetector::Camera::State state);
-	SlsDetector::Camera::State waitNotState(
-				   SlsDetector::Camera::State state);
+	SlsDetector::State getState();
+	void waitState(SlsDetector::State state);
+	SlsDetector::State waitNotState(SlsDetector::State state);
 
 	void getFrameDim(FrameDim& frame_dim /Out/, bool raw = false);
 
-	const SlsDetector::Camera::FrameMap& getFrameMap();
+	const SlsDetector::FrameMap& getFrameMap();
 
 	void putCmd(const std::string& s, int idx = -1);
 	std::string getCmd(const std::string& s, int idx = -1);
@@ -433,14 +111,14 @@ public:
 	void startAcq();
 	void stopAcq();
 
-	void getStats(SlsDetector::Camera::Stats& stats /Out/);
+	void getStats(SlsDetector::Stats& stats /Out/);
 
 	void setPixelDepthCPUAffinityMap(
-		SlsDetector::Camera::PixelDepthCPUAffinityMap aff_map);
+		SlsDetector::PixelDepthCPUAffinityMap aff_map);
 	void getPixelDepthCPUAffinityMap(
-		SlsDetector::Camera::PixelDepthCPUAffinityMap& aff_map /Out/);
+		SlsDetector::PixelDepthCPUAffinityMap& aff_map /Out/);
 
-	SlsDetector::Camera::SystemCPUAffinityMgr::ProcessingFinishedEvent *
+	SlsDetector::SystemCPUAffinityMgr::ProcessingFinishedEvent *
 		getProcessingFinishedEvent();
 };
 

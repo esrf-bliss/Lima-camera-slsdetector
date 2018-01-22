@@ -36,18 +36,11 @@ namespace SlsDetector
 
 #define EIGER_PACKET_DATA_LEN	(4 * 1024)
 
-class Eiger : public Camera::Model
+class Eiger : public Model
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "Eiger", "SlsDetector");
 
  public:
-	typedef Defs::Settings Settings;
-	typedef Defs::ReadoutFlags ReadoutFlags;
-	typedef Camera::FrameType FrameType;
-	typedef Camera::NameList NameList;
-	typedef Camera::IntList IntList;
-	typedef Camera::FloatList FloatList;
-
 	typedef unsigned char Byte;
 	typedef unsigned short Word;
 	typedef unsigned int Long;
@@ -78,7 +71,7 @@ class Eiger : public Camera::Model
 				FloatList& factor_list, 
 				FloatList& min_val_list);
 
-	virtual void getTimeRanges(Camera::TimeRanges& time_ranges);
+	virtual void getTimeRanges(TimeRanges& time_ranges);
 
 	// the returned object must be deleted by the caller
 	Correction *createCorrectionTask();
@@ -299,9 +292,9 @@ class Eiger : public Camera::Model
 
 	bool isPixelDepth4()
 	{
-		Camera::PixelDepth pixel_depth;
+		PixelDepth pixel_depth;
 		getCamera()->getPixelDepth(pixel_depth);
-		return (pixel_depth == Camera::PixelDepth4);
+		return (pixel_depth == PixelDepth4);
 	}
 
 	int getNbEigerModules()

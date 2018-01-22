@@ -25,6 +25,11 @@
 
 #include "sls_detector_defs.h"
 
+#include "lima/Debug.h"
+#include "lima/RegExUtils.h"
+
+#include <set>
+
 namespace lima 
 {
 
@@ -173,6 +178,371 @@ std::ostream& operator <<(std::ostream& os, ReadoutFlags flags);
 std::ostream& operator <<(std::ostream& os, DetStatus status);
 
 } // namespace Defs
+
+
+template <class T>
+class PrettyList
+{
+ public:
+	typedef typename T::const_iterator const_iterator;
+
+	PrettyList(const T& l) : begin(l.begin()), end(l.end()) {}
+	PrettyList(const_iterator b, const_iterator e) : begin(b), end(e) {}
+
+	std::ostream& print(std::ostream& os) const
+	{
+		os << "[";
+		int prev;
+		bool in_seq = false;
+		bool first = true;
+		for (const_iterator it = begin; it != end; ++it) {
+			int val = *it;
+			bool seq = (!first && (val == prev + 1));
+			if (!seq) {
+				if (in_seq)
+					os << "-" << prev;
+				os << (first ? "" : ",") << val;
+			}
+			prev = val;
+			in_seq = seq;
+			first = false;
+		}
+		if (in_seq)
+			os << "-" << prev;
+		return os << "]";
+	}
+
+ private:
+	const_iterator begin, end;
+};
+
+template <class T>
+std::ostream& operator <<(std::ostream& os, const PrettyList<T>& pl)
+{
+	return pl.print(os);
+}
+
+
+enum State {
+	Idle, Init, Starting, Running, StopReq, Stopping, Stopped,
+};
+
+enum Type {
+	UnknownDet, GenericDet, EigerDet, JungfrauDet,
+};
+ 
+enum PixelDepth {
+	PixelDepth4 = 4, 
+	PixelDepth8 = 8, 
+	PixelDepth16 = 16, 
+	PixelDepth32 = 32,
+};
+
+std::ostream& operator <<(std::ostream& os, State state);
+std::ostream& operator <<(std::ostream& os, Type type);
+
+
+typedef uint64_t FrameType;
+typedef std::vector<std::string> StringList;
+typedef StringList NameList;
+typedef std::vector<int> IntList;
+typedef std::vector<double> FloatList;
+typedef std::set<int> SortedIntList;
+typedef std::vector<FrameType> FrameArray;
+typedef IntList ProcList;
+
+std::ostream& operator <<(std::ostream& os, const SortedIntList& l);
+std::ostream& operator <<(std::ostream& os, const FrameArray& a);
+
+typedef PrettyList<IntList> PrettyIntList;
+typedef PrettyList<SortedIntList> PrettySortedList;
+
+
+struct TimeRanges {
+	TimeRanges() :
+		min_exp_time(-1.), 
+		max_exp_time(-1.),
+		min_lat_time(-1.),
+		max_lat_time(-1.),
+		min_frame_period(-1.),
+		max_frame_period(-1.)
+	{}
+
+	double min_exp_time;
+	double max_exp_time;
+	double min_lat_time;
+	double max_lat_time;
+	double min_frame_period;
+	double max_frame_period;
+};
+
+
+class Glob
+{
+	DEB_CLASS_NAMESPC(DebModCamera, "Glob", "SlsDetector");
+ public:
+	Glob(std::string pattern = "");
+	Glob& operator =(std::string pattern);
+
+	static StringList find(std::string pattern);
+	static StringList split(std::string path);
+
+	int getNbEntries() const
+	{ return m_found_list.size(); }
+
+	StringList getPathList() const
+	{ return m_found_list; }
+
+	StringList getSubPathList(int idx) const;
+
+ private:
+	std::string m_pattern;
+	StringList m_found_list;
+};
+
+class NumericGlob
+{
+	 DEB_CLASS_NAMESPC(DebModCamera, "NumericGlob", "SlsDetector");
+ public:
+	 typedef std::pair<int, std::string> IntString;
+	 typedef std::vector<IntString> IntStringList;
+
+	 NumericGlob(std::string pattern_prefix, 
+		     std::string pattern_suffix = "");
+
+	 int getNbEntries() const
+	 { return m_glob.getNbEntries(); }
+
+	 IntStringList getIntPathList() const;
+
+ private:
+	 int m_nb_idx;
+	 int m_prefix_len;
+	 int m_suffix_len;
+	 Glob m_glob;
+};
+
+inline int operator <(const NumericGlob::IntString& a,
+		      const NumericGlob::IntString& b)
+{
+	return (a.first < b.first);
+}
+
+
+inline bool isValidFrame(FrameType frame)
+{ return (frame != FrameType(-1)); }
+
+inline FrameType latestFrame(FrameType a, FrameType b)
+{
+	 if (!isValidFrame(a))
+		 return b;
+	 if (!isValidFrame(b))
+		 return a;
+	 return std::max(a, b);
+}
+
+inline FrameType oldestFrame(FrameType a, FrameType b)
+{
+	 if (!isValidFrame(a))
+		 return a;
+	 if (!isValidFrame(b))
+		 return b;
+	 return std::min(a, b);
+}
+
+inline FrameType updateLatestFrame(FrameType& a, FrameType b)
+{
+	 a = latestFrame(a, b);
+	 return a;
+}
+
+inline FrameType updateOldestFrame(FrameType& a, FrameType b)
+{
+	 a = oldestFrame(a, b);
+	 return a;
+}
+
+FrameType getLatestFrame(const FrameArray& l);
+FrameType getOldestFrame(const FrameArray& l);
+
+
+struct SimpleStat {
+	double xmin, xmax, xacc, xacc2;
+	int xn;
+	double factor;
+	mutable Mutex lock;
+
+	SimpleStat(double f = 1);
+	void reset();
+	void add(double x);
+	SimpleStat& operator =(const SimpleStat& o);
+
+	int n() const;
+	double min() const;
+	double max() const;
+	double ave() const;
+	double std() const;
+};
+ 
+std::ostream& operator <<(std::ostream& os, const SimpleStat& s);
+
+
+class Camera;
+
+class TimeRangesChangedCallback {
+	DEB_CLASS_NAMESPC(DebModCamera, "TimeRangesChangedCallback", 
+			  "SlsDetector");
+ public:
+	TimeRangesChangedCallback();
+	virtual ~TimeRangesChangedCallback();
+
+ protected:
+	virtual void timeRangesChanged(TimeRanges time_ranges) = 0;
+
+ private:
+	friend class Camera;
+	Camera *m_cam;
+};
+
+
+class FrameMap
+{
+	DEB_CLASS_NAMESPC(DebModCamera, "FrameMap", "SlsDetector");
+
+ public:
+	struct FinishInfo {
+		FrameType first_lost;
+		int nb_lost;
+		SortedIntList finished;
+	};
+
+	FrameMap();
+	~FrameMap();
+		
+	void setNbItems(int nb_items);
+	void setBufferSize(int buffer_size);
+	void clear();
+
+	void checkFinishedFrameItem(FrameType frame, int item);
+	FinishInfo frameItemFinished(FrameType frame, int item, 
+				     bool no_check, bool valid);
+
+	FrameArray getItemFrameArray() const
+	{ return m_last_item_frame; }
+
+	FrameType getLastItemFrame() const
+	{ return getLatestFrame(m_last_item_frame); }
+
+	FrameType getLastFinishedFrame() const
+	{ return getOldestFrame(m_last_item_frame); }
+
+ private:
+	struct AtomicCounter {
+		int count;
+		Mutex mutex;
+
+		void set(int reset)
+		{ count = reset; }
+
+		bool dec_test_and_reset(int reset)
+		{
+			mutex.lock();
+			bool zero = (--count == 0);
+			if (zero)
+				set(reset);
+			mutex.unlock();
+			return zero;
+		}
+	};
+	typedef std::vector<AtomicCounter> CounterList;
+
+	int m_nb_items;
+	FrameArray m_last_item_frame;
+	int m_buffer_size;
+	CounterList m_frame_item_count;
+};
+
+std::ostream& operator <<(std::ostream& os, const FrameMap& m);
+
+
+class SeqFilter {
+ public:
+	struct Range {
+		int first;
+		int nb;
+
+		Range()
+		{
+			reset();
+		}
+
+		void reset(int new_first = 0)
+		{
+			first = new_first;
+			nb = 0;
+		}
+
+		int end()
+		{
+			return first + nb;
+		}
+
+		bool tryExtend(int val)
+		{
+			bool ok = (val == end());
+			if (ok)
+				nb++;
+			return ok;
+		}
+	};
+
+	void addVal(int new_val)
+	{
+		SortedIntList& w = m_waiting;
+		if (!m_seq_range.tryExtend(new_val)) {
+			w.insert(new_val);
+		} else {
+			while (!w.empty()) {
+				SortedIntList::iterator wit = w.begin();
+				if (!m_seq_range.tryExtend(*wit))
+					break;
+				w.erase(wit);
+			}
+		}
+	}
+
+	Range getSeqRange() 
+	{
+		Range ret = m_seq_range;
+		m_seq_range.reset(m_seq_range.end());
+		return ret;
+	}
+
+ private:
+	Range m_seq_range;
+	SortedIntList m_waiting;
+};
+
+struct Stats {
+	SimpleStat cb_period;
+	SimpleStat new_finish;
+	SimpleStat cb_exec;
+	SimpleStat recv_exec;
+	Stats();
+	void reset();
+};
+
+std::ostream& operator <<(std::ostream& os, const Stats& s);
+
+
+typedef RegEx::SingleMatchType SingleMatch;
+typedef RegEx::FullMatchType FullMatch;
+typedef RegEx::MatchListType MatchList;
+typedef MatchList::const_iterator MatchListIt;
+
+
+pid_t gettid();
+
 
 } // namespace SlsDetector
 

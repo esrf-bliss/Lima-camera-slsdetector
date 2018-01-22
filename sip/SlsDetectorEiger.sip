@@ -28,7 +28,7 @@ namespace SlsDetector
 %End
 
 
-class Eiger : public SlsDetector::Camera::Model
+class Eiger : public SlsDetector::Model
 {
 
 %TypeHeaderCode
@@ -60,8 +60,7 @@ class Eiger : public SlsDetector::Camera::Model
 				std::vector<double>& factor_list /Out/,
 				std::vector<double>& min_val_list /Out/);
 
-	virtual void getTimeRanges(SlsDetector::Camera::TimeRanges& 
-			     			time_ranges /Out/);
+	virtual void getTimeRanges(SlsDetector::TimeRanges& time_ranges /Out/);
 
  protected:
 	virtual void updateImageSize();

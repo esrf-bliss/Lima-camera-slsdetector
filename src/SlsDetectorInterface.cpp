@@ -105,11 +105,11 @@ void DetInfoCtrlObj::getCurrImageType(ImageType& curr_image_type)
 void DetInfoCtrlObj::setCurrImageType(ImageType curr_image_type)
 {
 	DEB_MEMBER_FUNCT();
-	Camera::PixelDepth pixel_depth;
+	PixelDepth pixel_depth;
 	switch (curr_image_type) {
-	case Bpp8:	pixel_depth = Camera::PixelDepth8;	break;
-	case Bpp16:	pixel_depth = Camera::PixelDepth16;	break;
-	case Bpp32:	pixel_depth = Camera::PixelDepth32;	break;
+	case Bpp8:	pixel_depth = PixelDepth8;	break;
+	case Bpp16:	pixel_depth = PixelDepth16;	break;
+	case Bpp32:	pixel_depth = PixelDepth32;	break;
 	default:
 		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(curr_image_type);
 	}
@@ -119,7 +119,7 @@ void DetInfoCtrlObj::setCurrImageType(ImageType curr_image_type)
 void DetInfoCtrlObj::getPixelSize(double& x_size, double& y_size)
 {
 	DEB_MEMBER_FUNCT();
-	Camera::Model *model = m_cam.getModel();
+	Model *model = m_cam.getModel();
 	if (model)
 		model->getPixelSize(x_size, y_size);
 	else
@@ -137,7 +137,7 @@ void DetInfoCtrlObj::getDetectorType(string& det_type)
 void DetInfoCtrlObj::getDetectorModel(string& det_model)
 {
 	DEB_MEMBER_FUNCT();
-	Camera::Model *model = m_cam.getModel();
+	Model *model = m_cam.getModel();
 	if (model) {
 		det_model = model->getName();
 	} else {
@@ -176,7 +176,7 @@ TimeRangesChangedCallback::TimeRangesChangedCallback(SyncCtrlObj *sync)
 }
 
 void SyncCtrlObj::
-TimeRangesChangedCallback::timeRangesChanged(Camera::TimeRanges time_ranges)
+TimeRangesChangedCallback::timeRangesChanged(TimeRanges time_ranges)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -283,7 +283,7 @@ void SyncCtrlObj::setNbHwFrames(int nb_frames)
 void SyncCtrlObj::getNbHwFrames(int& nb_frames)
 {
 	DEB_MEMBER_FUNCT();
-	Camera::FrameType cam_frames;
+	FrameType cam_frames;
 	m_cam.getNbFrames(cam_frames);
 	nb_frames = cam_frames;
 	DEB_RETURN() << DEB_VAR1(nb_frames);
@@ -293,9 +293,9 @@ void SyncCtrlObj::getValidRanges(ValidRangesType& valid_ranges)
 {
 	DEB_MEMBER_FUNCT();
 
-	Camera::Model *model = m_cam.getModel();
+	Model *model = m_cam.getModel();
 	if (model) {
-		Camera::TimeRanges time_ranges;
+		TimeRanges time_ranges;
 		model->getTimeRanges(time_ranges);
 		valid_ranges.min_exp_time = time_ranges.min_exp_time;
 		valid_ranges.max_exp_time = time_ranges.max_exp_time;
@@ -412,8 +412,8 @@ void Interface::getStatus(StatusType& status)
 {
 	DEB_MEMBER_FUNCT();
 
-	Camera::State state = m_cam.getState();
-	status.acq = (state == Camera::Idle) ? AcqReady : AcqRunning;
+	State state = m_cam.getState();
+	status.acq = (state == Idle) ? AcqReady : AcqRunning;
 	status.det = DetIdle;
 
 	DEB_RETURN() << DEB_VAR1(status);

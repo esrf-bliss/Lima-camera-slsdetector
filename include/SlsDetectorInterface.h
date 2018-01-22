@@ -121,14 +121,14 @@ class SyncCtrlObj : public HwSyncCtrlObj
 
  private:
 	class TimeRangesChangedCallback : 
-				public Camera::TimeRangesChangedCallback
+				public SlsDetector::TimeRangesChangedCallback
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "TimeRangesChangedCallback", 
 				  "SlsDetector::SynCtrlObj");
 	public:
 		TimeRangesChangedCallback(SyncCtrlObj *sync);
 	protected:
-		virtual void timeRangesChanged(Camera::TimeRanges time_ranges);
+		virtual void timeRangesChanged(TimeRanges time_ranges);
 	private:
 		friend class SyncCtrlObj;
 		SyncCtrlObj *m_sync;

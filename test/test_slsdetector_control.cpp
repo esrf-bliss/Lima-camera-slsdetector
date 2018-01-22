@@ -150,7 +150,7 @@ SlsDetectorAcq::SlsDetectorAcq(string config_fname)
 	DEB_CONSTRUCTOR();
 
 	switch (m_cam.getType()) {
-	case Camera::EigerDet:
+	case EigerDet:
 		m_eiger = new Eiger(&m_cam);
 		m_corr = new Eiger::Correction(m_eiger);
 		break;
@@ -240,7 +240,7 @@ void SlsDetectorAcq::wait()
 	DEB_MEMBER_FUNCT();
 	m_acq_state.waitNot(AcqState::Acquiring | AcqState::Saving);
 	DEB_TRACE() << "Acquisition finished";
-	m_cam.waitState(Camera::Idle);
+	m_cam.waitState(Idle);
 	DEB_TRACE() << "Camera finished";
 
 }

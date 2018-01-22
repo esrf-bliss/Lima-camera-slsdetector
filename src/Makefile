@@ -44,6 +44,8 @@ CXXFLAGS = -I../include $(CT_CXXFLAGS)
 slsdetector-objs = SlsDetectorInterface.o \
 		   SlsDetectorEiger.o \
 		   SlsDetectorCamera.o \
+		   SlsDetectorModel.o \
+		   SlsDetectorCPUAffinity.o \
 		   SlsDetectorArgs.o \
 		   SlsDetectorDefs.o
 

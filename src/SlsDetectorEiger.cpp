@@ -254,7 +254,7 @@ void Eiger::RecvPortGeometry::expandPixelDepth4(FrameType frame, char *ptr)
 }
 
 Eiger::Eiger(Camera *cam)
-	: Camera::Model(cam, Camera::EigerDet)
+	: Model(cam, EigerDet)
 {
 	DEB_CONSTRUCTOR();
 
@@ -421,16 +421,16 @@ void Eiger::getADCInfo(NameList& name_list, IntList& idx_list,
 	}
 }
 
-void Eiger::getTimeRanges(Camera::TimeRanges& time_ranges)
+void Eiger::getTimeRanges(TimeRanges& time_ranges)
 {
 	DEB_MEMBER_FUNCT();
 
 	Camera* cam = getCamera();
 	ReadoutFlags readout_flags;
 	cam->getReadoutFlags(readout_flags);
-	Camera::ClockDiv clock_div;
+	ClockDiv clock_div;
 	cam->getClockDiv(clock_div);
-	Camera::PixelDepth pixel_depth;
+	PixelDepth pixel_depth;
 	cam->getPixelDepth(pixel_depth);
 
 	bool parallel = (readout_flags & Parallel);
@@ -441,13 +441,13 @@ void Eiger::getTimeRanges(Camera::TimeRanges& time_ranges)
 	double max_freq_p = 0;
 	double readout_p = 0;
 	double readout_np = 0;
-	if (pixel_depth == Camera::PixelDepth4) {
+	if (pixel_depth == PixelDepth4) {
 		min_lat = 10;
 		min_period = KiloHzPeriod(22);
-	} else if (pixel_depth == Camera::PixelDepth8) {
+	} else if (pixel_depth == PixelDepth8) {
 		min_lat = 10;
 		min_period = KiloHzPeriod(11);
-	} else if (pixel_depth == Camera::PixelDepth16) {
+	} else if (pixel_depth == PixelDepth16) {
 		if (clock_div == FullSpeed) {
 			max_freq_p = 6;
 			readout_p = 2.75;

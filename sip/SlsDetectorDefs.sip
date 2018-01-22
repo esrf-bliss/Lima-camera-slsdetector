@@ -164,4 +164,88 @@ enum DetStatus {
 
 }; // namespace Defs
 
+
+enum State {
+	Idle, Init, Starting, Running, StopReq, Stopping, Stopped,
+};
+
+enum Type {
+	GenericDet, EigerDet, JungfrauDet,
+};
+
+enum PixelDepth {
+	PixelDepth4 = 4, 
+	PixelDepth8 = 8, 
+	PixelDepth16 = 16, 
+	PixelDepth32 = 32,
+};
+
+struct TimeRanges {
+	TimeRanges();
+	double min_exp_time;
+	double max_exp_time;
+	double min_lat_time;
+	double max_lat_time;
+	double min_frame_period;
+	double max_frame_period;
+};
+
+
+bool isValidFrame(unsigned long frame);
+unsigned long latestFrame(unsigned long a, unsigned long b);
+unsigned long oldestFrame(unsigned long a, unsigned long b);
+
+
+struct SimpleStat {
+	double xmin;
+	double xmax;
+	double xacc;
+	double xacc2;
+	int xn;
+	double factor;
+	Mutex lock;
+
+	SimpleStat(double f = 1);
+	void reset();
+	void add(double x);
+	//SimpleStat& operator =(const SimpleStat& o);
+
+	int n() const;
+	double min() const;
+	double max() const;
+	double ave() const;
+	double std() const;
+};
+
+
+class FrameMap
+{
+public:
+	typedef std::set<int> List;
+	typedef std::map<unsigned long, std::set<int> > Map;
+
+	~FrameMap();
+
+	void setNbItems(int nb_items);
+	void setBufferSize(int buffer_size);
+	void clear();
+
+	unsigned long getLastItemFrame() const;
+	unsigned long getLastFinishedFrame() const;
+
+private:
+	FrameMap();
+};
+
+
+struct Stats {
+	SlsDetector::SimpleStat cb_period;
+	SlsDetector::SimpleStat new_finish;
+	SlsDetector::SimpleStat cb_exec;
+	SlsDetector::SimpleStat recv_exec;
+	Stats();
+	void reset();
+};
+
+
 }; // namespace SlsDetector
