@@ -147,6 +147,9 @@ public:
 	void getTolerateLostPackets(bool& tol_lost_packets);
 	void getBadFrameList(IntList& bad_frame_list);
 
+	bool isBadFrame(int port_idx, FrameType frame)
+	{ return m_buffer_thread[port_idx].isBadFrame(frame); }
+
 	void prepareAcq();
 	void startAcq();
 	void stopAcq();
@@ -237,6 +240,8 @@ private:
 
 		void init(Camera *cam, int port_idx, int size);
 
+		void prepareAcq();
+
 		void getNewFrameEntry(int& idx, FinishInfo*& finfo)
 		{
 			DEB_MEMBER_FUNCT();
@@ -260,11 +265,15 @@ private:
 		pid_t getTID()
 		{ return m_tid; }
 
+		bool isBadFrame(FrameType frame);
+
 	protected:
 		virtual void start();
 		virtual void threadFunction();
 
 	private:
+		friend class Camera;
+
 		AutoMutex lock()
 		{ return m_cond.mutex(); }
 
@@ -287,6 +296,7 @@ private:
 		int m_free_idx;
 		int m_ready_idx;
 		int m_finish_idx;
+		IntList m_bad_frame_list;
 	};
 
 	class AcqThread : public Thread
@@ -337,9 +347,9 @@ private:
 	bool checkLostPackets();
 	FrameType getLastReceivedFrame();
 
-	IntList getSortedBadFrameList(int first_idx, int last_idx);
+	IntList getSortedBadFrameList(IntList first_idx, IntList last_idx);
 	IntList getSortedBadFrameList()
-	{ return getSortedBadFrameList(0, m_bad_frame_list.size()); }
+	{ return getSortedBadFrameList(IntList(), IntList()); }
 
 	void addValidReadoutFlags(DebObj *deb_ptr, ReadoutFlags flags, 
 				  IntList& flag_list, NameList& flag_name_list);
@@ -387,7 +397,6 @@ private:
 	double m_new_frame_timeout;
 	double m_abort_sleep_time;
 	bool m_tol_lost_packets;
-	IntList m_bad_frame_list;
 	std::vector<Timestamp> m_stat_last_t0;
 	std::vector<Timestamp> m_stat_last_t1;
 	Stats m_stats;

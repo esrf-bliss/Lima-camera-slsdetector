@@ -221,6 +221,13 @@ void Camera::BufferThread::init(Camera *cam, int port_idx, int size)
 	start();
 }
 
+void Camera::BufferThread::prepareAcq()
+{
+	DEB_MEMBER_FUNCT();
+	m_bad_frame_list.clear();
+	m_bad_frame_list.reserve(16 * 1024);
+}
+
 Camera::BufferThread::~BufferThread()
 {
 	DEB_DESTRUCTOR();
@@ -287,13 +294,8 @@ void Camera::BufferThread::processFinishInfo(FinishInfo& finfo)
 					      << ", first=" << finfo.first_lost
 					      << ", nb=" << finfo.nb_lost;
 		FrameType f = finfo.first_lost;
-		for (int i = 0; i < finfo.nb_lost; ++i, ++f) {
-			char *bptr = m_cam->getFrameBufferPtr(f);
-			Model *model = m_cam->m_model;
-			model->processRecvPort(m_port_idx, f, NULL, 0, bptr);
-			AutoMutex l = m_cam->lock();
-			m_cam->m_bad_frame_list.push_back(f);
-		}
+		for (int i = 0; i < finfo.nb_lost; ++i, ++f)
+			m_bad_frame_list.push_back(f);
 		SortedIntList::const_iterator it, end = finfo.finished.end();
 		for (it = finfo.finished.begin(); it != end; ++it)
 			m_cam->frameFinished(*it);
@@ -308,6 +310,11 @@ void Camera::BufferThread::processFinishInfo(FinishInfo& finfo)
 	}
 }
 
+bool Camera::BufferThread::isBadFrame(FrameType frame)
+{ 
+	IntList::iterator end = m_bad_frame_list.end();
+	return (find(m_bad_frame_list.begin(), end, frame) != end); 
+}
 
 Camera::AcqThread::AcqThread(Camera *cam)
 	: m_cam(cam), m_cond(m_cam->m_cond), m_state(m_cam->m_state),
@@ -888,8 +895,8 @@ void Camera::prepareAcq()
 		DEB_TRACE() << DEB_VAR1(m_frame_queue.size());
 		while (!m_frame_queue.empty())
 			m_frame_queue.pop();
-		m_bad_frame_list.clear();
-		m_bad_frame_list.reserve(16 * 1024);
+		for (int i = 0; i < nb_ports; ++i)
+			m_buffer_thread[i].prepareAcq();
 		m_stat_last_t0.assign(nb_ports, Timestamp());
 		m_stat_last_t1.assign(nb_ports, Timestamp());
 		m_stats.reset();
@@ -999,22 +1006,27 @@ bool Camera::checkLostPackets()
 		return true;
 	}
 
-	int first_bad = 0;
+	int nb_ports = getTotNbPorts();
+	IntList first_bad(nb_ports);
 	if (DEB_CHECK_ANY(DebTypeWarning)) {
 		AutoMutex l = lock();
-		first_bad = m_bad_frame_list.size();
+		for (int i = 0; i < nb_ports; ++i) {
+			IntList& buff_bfl = m_buffer_thread[i].m_bad_frame_list;
+			first_bad[i] = buff_bfl.size();
+		}
 	}
-	for (int port_idx = 0; port_idx < int(ifa.size()); ++port_idx) {
-		if (ifa[port_idx] != last_frame)
-			processRecvPort(port_idx, last_frame, NULL, 0);
+	for (int i = 0; i < nb_ports; ++i) {
+		if (ifa[i] != last_frame)
+			processRecvPort(i, last_frame, NULL, 0);
 	}
 	if (DEB_CHECK_ANY(DebTypeWarning)) {
-		IntList bfl;
-		{
-			AutoMutex l = lock();
-			int last_bad = m_bad_frame_list.size();
-			bfl = getSortedBadFrameList(first_bad, last_bad);
+		IntList last_bad(nb_ports);
+		AutoMutex l = lock();
+		for (int i = 0; i < nb_ports; ++i) {
+			IntList& buff_bfl = m_buffer_thread[i].m_bad_frame_list;
+			last_bad[i] = buff_bfl.size();
 		}
+		IntList bfl = getSortedBadFrameList(first_bad, last_bad);
 		DEB_WARNING() << "bad_frames=" << bfl.size() << ": " 
 			      << PrettyIntList(bfl);
 	}
@@ -1311,11 +1323,20 @@ void Camera::getTolerateLostPackets(bool& tol_lost_packets)
 	DEB_RETURN() << DEB_VAR1(tol_lost_packets);
 }
 
-IntList Camera::getSortedBadFrameList(int first_idx, int last_idx)
+IntList Camera::getSortedBadFrameList(IntList first_idx, IntList last_idx)
 {
-	IntList::iterator bfl_begin = m_bad_frame_list.begin();
-	IntList::iterator first = bfl_begin + first_idx;
-	IntList::iterator last = bfl_begin + last_idx;
+	int nb_ports = getTotNbPorts();
+	bool all = first_idx.empty();
+	IntList bfl;
+	for (int i = 0; i < nb_ports; ++i) {
+		IntList& buff_bfl = m_buffer_thread[i].m_bad_frame_list;
+		int first = all ? 0 : first_idx[i];
+		int last = all ? buff_bfl.size() : last_idx[i];
+		IntList::const_iterator b = buff_bfl.begin();
+		bfl.insert(bfl.end(), b + first, b + last);
+	}
+	IntList::iterator first = bfl.begin();
+	IntList::iterator last = bfl.end();
 	sort(first, last);
 	IntList aux(last - first);
 	IntList::iterator aux_end, aux_begin = aux.begin();

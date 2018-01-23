@@ -65,15 +65,29 @@ void Eiger::CorrBase::prepareAcq()
 	m_inter_lines[m_nb_eiger_modules - 1] = 0;
 }
 
-Eiger::PixelDepth4Corr::PixelDepth4Corr(Eiger *eiger)
-	: CorrBase(eiger), m_port_geom_list(eiger->m_port_geom_list)
+Eiger::BadRecvFrameCorr::BadRecvFrameCorr(Eiger *eiger)
+	: CorrBase(eiger)
 {
 	DEB_CONSTRUCTOR();
 }
 
-void Eiger::PixelDepth4Corr::prepareAcq()
+void Eiger::BadRecvFrameCorr::correctFrame(FrameType frame, void *ptr)
 {
 	DEB_MEMBER_FUNCT();
+
+	Camera *cam = m_eiger->getCamera();
+	int nb_ports = cam->getTotNbPorts();
+	for (int i = 0; i < nb_ports; ++i) {
+		if (cam->isBadFrame(i, frame)) 
+			m_eiger->processRecvPort(i, frame, NULL, 0, 
+						 (char *) ptr);
+	}
+}
+
+Eiger::PixelDepth4Corr::PixelDepth4Corr(Eiger *eiger)
+	: CorrBase(eiger), m_port_geom_list(eiger->m_port_geom_list)
+{
+	DEB_CONSTRUCTOR();
 }
 
 void Eiger::PixelDepth4Corr::correctFrame(FrameType frame, void *ptr)
@@ -493,6 +507,8 @@ void Eiger::updateImageSize()
 
 	removeAllCorr();
 
+	createBadRecvFrameCorr();
+
 	if (isPixelDepth4())
 		createPixelDepth4Corr();
 
@@ -630,6 +646,15 @@ Eiger::Correction *Eiger::createCorrectionTask()
 {
 	DEB_MEMBER_FUNCT();
 	return new Correction(this);
+}
+
+Eiger::CorrBase *Eiger::createBadRecvFrameCorr()
+{
+	DEB_MEMBER_FUNCT();
+	CorrBase *brf_corr = new BadRecvFrameCorr(this);
+	addCorr(brf_corr);
+	DEB_RETURN() << DEB_VAR1(brf_corr);
+	return brf_corr;
 }
 
 Eiger::CorrBase *Eiger::createPixelDepth4Corr()

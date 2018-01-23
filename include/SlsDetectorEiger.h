@@ -152,6 +152,16 @@ class Eiger : public Model
 
 	typedef std::vector<CorrBase *> CorrList;
 
+	class BadRecvFrameCorr : public CorrBase
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::BadRecvFrameCorr", 
+				  "SlsDetector");
+	public:
+		BadRecvFrameCorr(Eiger *eiger);
+
+		virtual void correctFrame(FrameType frame, void *ptr);
+	};
+
 	class PixelDepth4Corr : public CorrBase
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::PixelDepth4Corr", 
@@ -159,7 +169,6 @@ class Eiger : public Model
 	public:
 		PixelDepth4Corr(Eiger *eiger);
 
-		virtual void prepareAcq();
 		virtual void correctFrame(FrameType frame, void *ptr);
 
 	protected:
@@ -305,6 +314,7 @@ class Eiger : public Model
 
 	void getRecvFrameDim(FrameDim& frame_dim, bool raw, bool geom);
 
+	CorrBase *createBadRecvFrameCorr();
 	CorrBase *createPixelDepth4Corr();
 	CorrBase *createChipBorderCorr(ImageType image_type);
 	CorrBase *createInterModGapCorr();
