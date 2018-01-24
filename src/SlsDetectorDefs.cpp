@@ -334,8 +334,8 @@ NumericGlob::IntStringList NumericGlob::getIntPathList() const
 	return list;
 }
 
-SimpleStat::SimpleStat(double f)
-	: factor(f)
+SimpleStat::SimpleStat(double f, int b)
+	: factor(f), hist_bin(b)
 {
 	reset();
 }
@@ -345,9 +345,10 @@ void SimpleStat::reset()
 	AutoMutex l(lock);
 	xmin = xmax = xacc = xacc2 = 0;
 	xn = 0;
+	hist.clear();
 }
 
-void SimpleStat::add(double x) {
+void SimpleStat::add(double x, bool do_hist) {
 	AutoMutex l(lock);
 	x *= factor;
 	xmin = xn ? std::min(xmin, x) : x;
@@ -355,6 +356,17 @@ void SimpleStat::add(double x) {
 	xacc += x;
 	xacc2 += pow(x, 2);
 	++xn;
+
+	if (!do_hist)
+		return;
+
+	int i = x;
+	i -= i % hist_bin;
+	Histogram::iterator it = hist.find(i);
+	if (it == hist.end())
+		hist[i] = 1;
+	else
+		it->second++;
 }
 
 SimpleStat& SimpleStat::operator =(const SimpleStat& o)
@@ -369,6 +381,9 @@ SimpleStat& SimpleStat::operator =(const SimpleStat& o)
 	xacc2 = o.xacc2;
 	xn = o.xn;
 	factor = o.factor;
+	hist = o.hist;
+	hist_bin = o.hist_bin;
+	return *this;
 	return *this;
 }
 
@@ -466,12 +481,25 @@ ostream& lima::SlsDetector::operator <<(ostream& os, const FrameArray& a)
 	return os << "]";
 }
 
+ostream& lima::SlsDetector::operator <<(ostream& os, const 
+					SimpleStat::Histogram& h)
+{
+	os << "{";
+	SimpleStat::Histogram::const_iterator it, end = h.end();
+	const char *sep = "";
+	for (it = h.begin(); it != end; ++it) {
+		os << sep << it->first << ":" << it->second;
+		sep = ",";
+	}
+	return os << "}";
+}
+
 ostream& lima::SlsDetector::operator <<(ostream& os, const SimpleStat& s)
 {
 	os << "<";
 	os << "min=" << int(s.min()) << ", max=" << int(s.max()) << ", "
 	   << "ave=" << int(s.ave()) << ", std=" << int(s.std()) << ", "
-	   << "n=" << s.n();
+	   << "n=" << s.n() << ", hist=" << s.hist;
 	return os << ">";
 }
 

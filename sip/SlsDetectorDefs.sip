@@ -205,9 +205,12 @@ struct SimpleStat {
 	double factor;
 	Mutex lock;
 
-	SimpleStat(double f = 1);
+//	std::map<int, int> hist;
+//	int hist_bin;
+
+	SimpleStat(double f = 1, int b = 5);
 	void reset();
-	void add(double x);
+	void add(double x, bool do_hist=1);
 	//SimpleStat& operator =(const SimpleStat& o);
 
 	int n() const;

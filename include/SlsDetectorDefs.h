@@ -367,14 +367,17 @@ FrameType getOldestFrame(const FrameArray& l);
 
 
 struct SimpleStat {
+	typedef std::map<int, int> Histogram;
 	double xmin, xmax, xacc, xacc2;
 	int xn;
 	double factor;
 	mutable Mutex lock;
+	Histogram hist;
+	int hist_bin;
 
-	SimpleStat(double f = 1);
+	SimpleStat(double f = 1, int b = 5);
 	void reset();
-	void add(double x);
+	void add(double x, bool do_hist=true);
 	SimpleStat& operator =(const SimpleStat& o);
 
 	int n() const;
@@ -384,6 +387,7 @@ struct SimpleStat {
 	double std() const;
 };
  
+std::ostream& operator <<(std::ostream& os, const SimpleStat::Histogram& s);
 std::ostream& operator <<(std::ostream& os, const SimpleStat& s);
 
 
