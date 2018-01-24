@@ -384,6 +384,29 @@ SimpleStat& SimpleStat::operator =(const SimpleStat& o)
 	hist = o.hist;
 	hist_bin = o.hist_bin;
 	return *this;
+}
+
+SimpleStat& SimpleStat::operator +=(const SimpleStat& o)
+{
+	if ((o.factor != factor) || (o.hist_bin != hist_bin)) {
+		cout << "Error!" << endl;
+		throw LIMA_HW_EXC(Error, "Cannot add different SimpleStats");
+	}
+	AutoMutex l(o.lock);
+	xmin = xn ? (o.xn ? std::min(xmin, o.xmin) : xmin) : o.xmin;
+	xmax = xn ? (o.xn ? std::max(xmax, o.xmax) : xmin) : o.xmax;
+	xacc += o.xacc;
+	xacc2 += o.xacc2;
+	xn += o.xn;
+	Histogram::const_iterator oit, oend = o.hist.end();
+	for (oit = o.hist.begin(); oit != oend; ++oit) {
+		Histogram::iterator it = hist.find(oit->first);
+		if (it == hist.end())
+			hist[oit->first] = oit->second;
+		else
+			it->second += oit->second;
+	}
+
 	return *this;
 }
 
@@ -623,6 +646,15 @@ void Stats::reset()
 	new_finish.reset();
 	cb_exec.reset();
 	recv_exec.reset();
+}
+
+Stats& Stats::operator +=(const Stats& o)
+{
+	cb_period += o.cb_period;
+	new_finish += o.new_finish;
+	cb_exec += o.cb_exec;
+	recv_exec += o.recv_exec;
+	return *this;
 }
 
 ostream& lima::SlsDetector::operator <<(ostream& os, const Stats& s)

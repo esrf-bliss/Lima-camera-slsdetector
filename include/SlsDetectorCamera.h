@@ -157,7 +157,7 @@ public:
 	void registerTimeRangesChangedCallback(TimeRangesChangedCallback& cb);
 	void unregisterTimeRangesChangedCallback(TimeRangesChangedCallback& cb);
 
-	void getStats(Stats& stats);
+	void getStats(Stats& stats, int port_idx=-1);
 
 	void setPixelDepthCPUAffinityMap(PixelDepthCPUAffinityMap aff_map);
 	void getPixelDepthCPUAffinityMap(PixelDepthCPUAffinityMap& aff_map);
@@ -317,6 +317,17 @@ private:
 		FrameQueue& m_frame_queue;
 	};
 
+	struct PortStats {
+		Stats stats;
+		Timestamp last_t0;
+		Timestamp last_t1;
+		void reset()
+		{
+			stats.reset();
+			last_t0 = last_t1 = Timestamp();
+		}
+	};
+
 	friend class Model;
 	friend class SystemCPUAffinityMgr;
 
@@ -397,9 +408,7 @@ private:
 	double m_new_frame_timeout;
 	double m_abort_sleep_time;
 	bool m_tol_lost_packets;
-	std::vector<Timestamp> m_stat_last_t0;
-	std::vector<Timestamp> m_stat_last_t1;
-	Stats m_stats;
+	std::vector<PortStats> m_port_stats;
 	TimeRangesChangedCallback *m_time_ranges_cb;
 	PixelDepthCPUAffinityMap m_cpu_affinity_map;
 	SystemCPUAffinityMgr m_system_cpu_affinity_mgr;

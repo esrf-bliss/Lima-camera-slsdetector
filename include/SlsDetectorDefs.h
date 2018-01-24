@@ -379,6 +379,7 @@ struct SimpleStat {
 	void reset();
 	void add(double x, bool do_hist=true);
 	SimpleStat& operator =(const SimpleStat& o);
+	SimpleStat& operator += (const SimpleStat& o);
 
 	int n() const;
 	double min() const;
@@ -534,6 +535,7 @@ struct Stats {
 	SimpleStat recv_exec;
 	Stats();
 	void reset();
+	Stats& operator +=(const Stats& o);
 };
 
 std::ostream& operator <<(std::ostream& os, const Stats& s);

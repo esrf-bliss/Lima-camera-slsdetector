@@ -211,7 +211,8 @@ struct SimpleStat {
 	SimpleStat(double f = 1, int b = 5);
 	void reset();
 	void add(double x, bool do_hist=1);
-	//SimpleStat& operator =(const SimpleStat& o);
+//	SimpleStat& operator =(const SimpleStat& o);
+	SlsDetector::SimpleStat& operator += (const SlsDetector::SimpleStat& o);
 
 	int n() const;
 	double min() const;

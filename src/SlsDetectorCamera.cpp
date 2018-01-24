@@ -170,13 +170,12 @@ void Camera::Receiver::portCallback(FrameType frame, int port, char *dptr,
 	Timestamp t0 = Timestamp::now();
 
 	int port_idx = m_cam->getPortIndex(m_idx, port);
-	Timestamp& last_t0 = m_cam->m_stat_last_t0[port_idx];
-	if (last_t0.isSet())
-		m_cam->m_stats.cb_period.add(t0 - last_t0);
-	Timestamp& last_t1 = m_cam->m_stat_last_t1[port_idx];
-	if (last_t1.isSet())
-		m_cam->m_stats.recv_exec.add(t0 - last_t1);
-	last_t0 = t0;
+	PortStats& port_stats = m_cam->m_port_stats[port_idx];
+	if (port_stats.last_t0.isSet())
+		port_stats.stats.cb_period.add(t0 - port_stats.last_t0);
+	if (port_stats.last_t1.isSet())
+		port_stats.stats.recv_exec.add(t0 - port_stats.last_t1);
+	port_stats.last_t0 = t0;
 
 	try {
 		if (frame >= m_cam->m_nb_frames)
@@ -195,8 +194,8 @@ void Camera::Receiver::portCallback(FrameType frame, int port, char *dptr,
 	}
 
 	Timestamp t1 = Timestamp::now();
-	m_cam->m_stats.cb_exec.add(t1 - t0);
-	last_t1 = t1;
+	port_stats.stats.cb_exec.add(t1 - t0);
+	port_stats.last_t1 = t1;
 }
 
 Camera::BufferThread::BufferThread()
@@ -411,7 +410,9 @@ void Camera::AcqThread::threadFunction()
 	IntList bfl = m_cam->getSortedBadFrameList();
 	DEB_ALWAYS() << "bad_frames=" << bfl.size() << ": "
 		     << PrettyIntList(bfl);
-	DEB_ALWAYS() << DEB_VAR1(m_cam->m_stats);
+	Stats stats;
+	m_cam->getStats(stats);
+	DEB_ALWAYS() << DEB_VAR1(stats);
 
 	if (had_frames) {
 		AutoMutexUnlock u(l);
@@ -536,6 +537,8 @@ void Camera::setModel(Model *model)
 		for (int i = 0; i < nb_ports; ++i)
 			m_buffer_thread[i].init(this, i, buffer_size);
 	}
+	if (m_port_stats.empty())
+		m_port_stats.resize(nb_ports);
 
 	setPixelDepth(m_pixel_depth);
 	setSettings(m_settings);
@@ -755,11 +758,10 @@ void Camera::setRecvCPUAffinity(CPUAffinity recv_affinity)
 
 	cpu_set_t cpu_set;
 	recv_affinity.initCPUSet(cpu_set);
-	RecvList& recv_list = m_recv_list;
-	for (unsigned int i = 0; i < recv_list.size(); ++i) {
+	for (unsigned int i = 0; i < m_recv_list.size(); ++i) {
 		DEB_TRACE() << "setting recv " << i << " "
 			     << "CPU mask to " << recv_affinity;
-		slsReceiverUsers *recv = recv_list[i]->m_recv;
+		slsReceiverUsers *recv = m_recv_list[i]->m_recv;
 		recv->setThreadCPUAffinity(sizeof(cpu_set),
 					   &cpu_set, &cpu_set);
 	}
@@ -895,11 +897,10 @@ void Camera::prepareAcq()
 		DEB_TRACE() << DEB_VAR1(m_frame_queue.size());
 		while (!m_frame_queue.empty())
 			m_frame_queue.pop();
-		for (int i = 0; i < nb_ports; ++i)
+		for (int i = 0; i < nb_ports; ++i) {
+			m_port_stats[i].reset();
 			m_buffer_thread[i].prepareAcq();
-		m_stat_last_t0.assign(nb_ports, Timestamp());
-		m_stat_last_t1.assign(nb_ports, Timestamp());
-		m_stats.reset();
+		}
 	}
 
 	m_model->prepareAcq();
@@ -971,7 +972,8 @@ void Camera::processRecvPort(int port_idx, FrameType frame, char *dptr,
 	*buffer_finfo = finfo;
 	buffer.putNewFrameEntry(idx, buffer_finfo);
 	Timestamp t1 = Timestamp::now();
-	m_stats.new_finish.add(t1 - t0);
+	PortStats& port_stats = m_port_stats[port_idx];
+	port_stats.stats.new_finish.add(t1 - t0);
 }
 
 void Camera::frameFinished(FrameType frame)
@@ -1377,10 +1379,19 @@ void Camera::unregisterTimeRangesChangedCallback(TimeRangesChangedCallback& cb)
 	cb.m_cam = NULL;
 }
 
-void Camera::getStats(Stats& stats)
+void Camera::getStats(Stats& stats, int port_idx)
 {
 	DEB_MEMBER_FUNCT();
-	stats = m_stats;
+	if ((port_idx < -1) || (port_idx >= int(m_port_stats.size())))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(port_idx);
+
+	if (port_idx < 0) {
+		stats.reset();
+		for (unsigned int i = 0; i < m_port_stats.size(); ++i)
+			stats += m_port_stats[i].stats;
+	} else {
+		stats = m_port_stats[port_idx].stats;
+	}
 	DEB_RETURN() << DEB_VAR1(stats);
 }
 

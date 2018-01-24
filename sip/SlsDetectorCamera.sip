@@ -38,6 +38,7 @@ public:
 	std::vector<std::string> getHostnameList();
 	int getNbDetModules();
 	int getNbDetSubModules();
+	int getTotNbPorts();
 	int getPortIndex(int recv_idx, int port);
 
 	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr);
@@ -113,7 +114,7 @@ public:
 	void startAcq();
 	void stopAcq();
 
-	void getStats(SlsDetector::Stats& stats /Out/);
+	void getStats(SlsDetector::Stats& stats /Out/, int port_idx=-1);
 
 	void setPixelDepthCPUAffinityMap(
 		SlsDetector::PixelDepthCPUAffinityMap aff_map);
