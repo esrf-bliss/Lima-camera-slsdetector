@@ -159,7 +159,19 @@ class Eiger : public Model
 	public:
 		BadRecvFrameCorr(Eiger *eiger);
 
+		virtual void prepareAcq();
 		virtual void correctFrame(FrameType frame, void *ptr);
+
+	protected:
+		struct BadFrameData {
+			int last_idx;
+			IntList bad_frame_list;
+			void reset();
+		};
+
+		Camera *m_cam;
+		int m_nb_ports;
+		std::vector<BadFrameData> m_bfd_list;
 	};
 
 	class PixelDepth4Corr : public CorrBase

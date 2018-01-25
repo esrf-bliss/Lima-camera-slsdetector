@@ -65,22 +65,54 @@ void Eiger::CorrBase::prepareAcq()
 	m_inter_lines[m_nb_eiger_modules - 1] = 0;
 }
 
+void Eiger::BadRecvFrameCorr::BadFrameData::reset()
+{
+	last_idx = 0;
+	bad_frame_list.clear();
+}
+
 Eiger::BadRecvFrameCorr::BadRecvFrameCorr(Eiger *eiger)
 	: CorrBase(eiger)
 {
 	DEB_CONSTRUCTOR();
+
+	m_cam = m_eiger->getCamera();
+	m_nb_ports = m_cam->getTotNbPorts();
+	m_bfd_list.resize(m_nb_ports);
+}
+
+void Eiger::BadRecvFrameCorr::prepareAcq()
+{
+	DEB_MEMBER_FUNCT();
+
+	CorrBase::prepareAcq();
+
+	for (int i = 0; i < m_nb_ports; ++i)
+		m_bfd_list[i].reset();
 }
 
 void Eiger::BadRecvFrameCorr::correctFrame(FrameType frame, void *ptr)
 {
 	DEB_MEMBER_FUNCT();
 
-	Camera *cam = m_eiger->getCamera();
-	int nb_ports = cam->getTotNbPorts();
-	for (int i = 0; i < nb_ports; ++i) {
-		if (cam->isBadFrame(i, frame)) 
-			m_eiger->processRecvPort(i, frame, NULL, 0, 
-						 (char *) ptr);
+	char *bptr = (char *) ptr;
+	for (int i = 0; i < m_nb_ports; ++i) {
+		BadFrameData& bfd = m_bfd_list[i];
+		IntList& bfl = bfd.bad_frame_list;
+		int& last_idx = bfd.last_idx;
+		if (bfl.empty()) {
+			int bad_frames = m_cam->getNbBadFrames(i);
+			if (bad_frames == last_idx)
+				continue;
+			m_cam->getBadFrameList(i, last_idx, bad_frames, bfl);
+		}
+		IntList::iterator end = bfl.end();
+		if (find(bfl.begin(), end, frame) != end)
+			m_eiger->processRecvPort(i, frame, NULL, 0, bptr);
+		if (*(end - 1) > int(frame))
+			continue;
+		last_idx += bfl.size();
+		bfl.clear();
 	}
 }
 

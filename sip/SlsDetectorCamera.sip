@@ -106,9 +106,12 @@ public:
 
 	void setTolerateLostPackets(bool  tol_lost_packets);
 	void getTolerateLostPackets(bool& tol_lost_packets /Out/);
-	void getBadFrameList(std::vector<int>& bad_frame_list /Out/);
 
-	bool isBadFrame(int port_idx, unsigned long frame);
+	int getNbBadFrames(int port_idx);
+	void getBadFrameList(int port_idx, int first_idx, int last_idx,
+			     std::vector<int>& bad_frame_list /Out/);
+	void getBadFrameList(int port_idx, 
+			     std::vector<int>& bad_frame_list /Out/);
 
 	void prepareAcq();
 	void startAcq();

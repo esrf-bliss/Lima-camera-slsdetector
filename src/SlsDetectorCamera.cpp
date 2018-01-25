@@ -292,9 +292,12 @@ void Camera::BufferThread::processFinishInfo(FinishInfo& finfo)
 					      << "port_idx=" << m_port_idx
 					      << ", first=" << finfo.first_lost
 					      << ", nb=" << finfo.nb_lost;
-		FrameType f = finfo.first_lost;
-		for (int i = 0; i < finfo.nb_lost; ++i, ++f)
-			m_bad_frame_list.push_back(f);
+		{
+			AutoMutex l = lock();
+			FrameType f = finfo.first_lost;
+			for (int i = 0; i < finfo.nb_lost; ++i, ++f)
+				m_bad_frame_list.push_back(f);
+		}
 		SortedIntList::const_iterator it, end = finfo.finished.end();
 		for (it = finfo.finished.begin(); it != end; ++it)
 			m_cam->frameFinished(*it);
@@ -311,6 +314,7 @@ void Camera::BufferThread::processFinishInfo(FinishInfo& finfo)
 
 bool Camera::BufferThread::isBadFrame(FrameType frame)
 { 
+	AutoMutex l = lock();
 	IntList::iterator end = m_bad_frame_list.end();
 	return (find(m_bad_frame_list.begin(), end, frame) != end); 
 }
@@ -407,9 +411,14 @@ void Camera::AcqThread::threadFunction()
 		det->stopReceiver();
 	}
 
-	IntList bfl = m_cam->getSortedBadFrameList();
-	DEB_ALWAYS() << "bad_frames=" << bfl.size() << ": "
-		     << PrettyIntList(bfl);
+	{
+		AutoMutexUnlock u(l);
+		IntList bfl;
+		m_cam->getSortedBadFrameList(bfl);
+		DEB_ALWAYS() << "bad_frames=" << bfl.size() << ": "
+			     << PrettyIntList(bfl);
+	}
+
 	Stats stats;
 	m_cam->getStats(stats);
 	DEB_ALWAYS() << DEB_VAR1(stats);
@@ -1011,11 +1020,8 @@ bool Camera::checkLostPackets()
 	int nb_ports = getTotNbPorts();
 	IntList first_bad(nb_ports);
 	if (DEB_CHECK_ANY(DebTypeWarning)) {
-		AutoMutex l = lock();
-		for (int i = 0; i < nb_ports; ++i) {
-			IntList& buff_bfl = m_buffer_thread[i].m_bad_frame_list;
-			first_bad[i] = buff_bfl.size();
-		}
+		for (int i = 0; i < nb_ports; ++i) 
+			first_bad[i] = m_buffer_thread[i].getNbBadFrames();
 	}
 	for (int i = 0; i < nb_ports; ++i) {
 		if (ifa[i] != last_frame)
@@ -1023,12 +1029,10 @@ bool Camera::checkLostPackets()
 	}
 	if (DEB_CHECK_ANY(DebTypeWarning)) {
 		IntList last_bad(nb_ports);
-		AutoMutex l = lock();
-		for (int i = 0; i < nb_ports; ++i) {
-			IntList& buff_bfl = m_buffer_thread[i].m_bad_frame_list;
-			last_bad[i] = buff_bfl.size();
-		}
-		IntList bfl = getSortedBadFrameList(first_bad, last_bad);
+		for (int i = 0; i < nb_ports; ++i)
+			last_bad[i] = m_buffer_thread[i].getNbBadFrames();
+		IntList bfl;
+		getSortedBadFrameList(first_bad, last_bad, bfl);
 		DEB_WARNING() << "bad_frames=" << bfl.size() << ": " 
 			      << PrettyIntList(bfl);
 	}
@@ -1325,36 +1329,70 @@ void Camera::getTolerateLostPackets(bool& tol_lost_packets)
 	DEB_RETURN() << DEB_VAR1(tol_lost_packets);
 }
 
-IntList Camera::getSortedBadFrameList(IntList first_idx, IntList last_idx)
+int Camera::getNbBadFrames(int port_idx)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(port_idx);
+	if ((port_idx < -1) || (port_idx >= getTotNbPorts()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(port_idx);
+	int nb_bad_frames;
+	if (port_idx == -1) {
+		IntList bfl;
+		getBadFrameList(port_idx, bfl);
+		nb_bad_frames = bfl.size();
+	} else {
+		nb_bad_frames = m_buffer_thread[port_idx].getNbBadFrames();
+	}
+	DEB_RETURN() << DEB_VAR1(nb_bad_frames);
+	return nb_bad_frames;
+}
+
+void Camera::getSortedBadFrameList(IntList first_idx, IntList last_idx,
+				   IntList& bad_frame_list)
 {
 	int nb_ports = getTotNbPorts();
 	bool all = first_idx.empty();
 	IntList bfl;
-	for (int i = 0; i < nb_ports; ++i) {
-		IntList& buff_bfl = m_buffer_thread[i].m_bad_frame_list;
+	BufferThread *buffer_thread = m_buffer_thread;
+	for (int i = 0; i < nb_ports; ++i, ++buffer_thread) {
 		int first = all ? 0 : first_idx[i];
-		int last = all ? buff_bfl.size() : last_idx[i];
-		IntList::const_iterator b = buff_bfl.begin();
-		bfl.insert(bfl.end(), b + first, b + last);
+		int last = all ? buffer_thread->getNbBadFrames() : last_idx[i];
+		IntList l;
+		buffer_thread->getBadFrameList(first, last, l);
+		bfl.insert(bfl.end(), l.begin(), l.end());
 	}
 	IntList::iterator first = bfl.begin();
 	IntList::iterator last = bfl.end();
 	sort(first, last);
-	IntList aux(last - first);
-	IntList::iterator aux_end, aux_begin = aux.begin();
-	aux_end = unique_copy(first, last, aux_begin);
-	aux.resize(aux_end - aux_begin);
-	return aux;
+	bad_frame_list.resize(last - first);
+	IntList::iterator bfl_end, bfl_begin = bad_frame_list.begin();
+	bfl_end = unique_copy(first, last, bfl_begin);
+	bad_frame_list.resize(bfl_end - bfl_begin);
 }
 
-void Camera::getBadFrameList(IntList& bad_frame_list)
+void Camera::getBadFrameList(int port_idx, int first_idx, int last_idx, 
+			     IntList& bad_frame_list)
 {
 	DEB_MEMBER_FUNCT();
-	{
-		AutoMutex l = lock();
-		bad_frame_list = getSortedBadFrameList();
-	}
+	DEB_PARAM() << DEB_VAR3(port_idx, first_idx, last_idx);
+	if ((port_idx < 0) || (port_idx >= getTotNbPorts()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(port_idx);
+
+	BufferThread *buffer_thread = &m_buffer_thread[port_idx];
+	buffer_thread->getBadFrameList(first_idx, last_idx, bad_frame_list);
+
 	DEB_RETURN() << DEB_VAR1(PrettyIntList(bad_frame_list));
+}
+
+void Camera::getBadFrameList(int port_idx, IntList& bad_frame_list)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(port_idx);
+	if (port_idx == -1)
+		getSortedBadFrameList(bad_frame_list);
+	else
+		getBadFrameList(port_idx, 0, getNbBadFrames(port_idx), 
+				bad_frame_list);
 }
 
 void Camera::registerTimeRangesChangedCallback(TimeRangesChangedCallback& cb)
