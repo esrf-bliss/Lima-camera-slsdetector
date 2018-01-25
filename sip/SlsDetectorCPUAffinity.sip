@@ -81,23 +81,27 @@ typedef PixelDepthCPUAffinityMap CPP_MapType;
 
 %ConvertFromTypeCode
 	PyObject* sip_map = PyDict_New();
-
+	if (sip_map == NULL)
+		return NULL;
 	CPP_MapType::iterator it, end = sipCpp->end();
-	for (it = sipCpp->begin();  it != end; ++it) {
+	for (it = sipCpp->begin(); it != end; ++it) {
 		PyObject *key = PyInt_FromLong(it->first);
 		if (key == NULL)
 			goto error;
 		CPP_ValueType *new_val = new CPP_ValueType(it->second);
 		PyObject *value = sipConvertFromNewType(new_val, SIP_ValueType,
 							NULL);
-		if (value == NULL) {
+		bool ok = (value != NULL);
+		if (!ok) {
 			delete new_val;
-			Py_DECREF(key);
-			goto error;
+			goto error_v;
 		}
-		PyDict_SetItem(sip_map, key, value);
+		ok = (PyDict_SetItem(sip_map, key, value) == 0);
 		Py_DECREF(value);
+error_v:
 		Py_DECREF(key);
+		if (!ok)
+			goto error;
 	}
 	return sip_map;
 error:
@@ -105,7 +109,6 @@ error:
 	return NULL;
 %End
 };
-
 
 namespace SlsDetector
 {
