@@ -26,6 +26,7 @@ include $(LIMA_DIR)/control/control.inc
 
 SRCS = test_slsdetector.cpp 
 
+SLS_DETECTORS_DIR = ../slsDetectorPackage
 SLS_DETECTORS_BIN = $(SLS_DETECTORS_DIR)/bin
 SLS_DETECTORS_SW = $(SLS_DETECTORS_DIR)/slsDetectorSoftware
 SLS_DETECTORS_RECV = $(SLS_DETECTORS_DIR)/slsReceiverSoftware
