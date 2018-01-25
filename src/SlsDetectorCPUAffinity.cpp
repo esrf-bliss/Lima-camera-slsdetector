@@ -603,6 +603,12 @@ void SystemCPUAffinityMgr::applyAndSet(const SystemCPUAffinity& o)
 	if (!m_cam)
 		THROW_HW_ERROR(InvalidValue) << "apply without camera";
 
+	CPUAffinity all_system = o.recv | o.lima | o.other;
+	cpu_set_t all_cpu_set;
+	all_system.initCPUSet(all_cpu_set);
+	if (CPU_COUNT(&all_cpu_set) <= CPUAffinity::getNbCPUs() / 2)
+		THROW_HW_ERROR(Error) << "Hyper-threading is activated!";
+
 	setLimaAffinity(o.lima);
 	setRecvAffinity(o.recv);
 
