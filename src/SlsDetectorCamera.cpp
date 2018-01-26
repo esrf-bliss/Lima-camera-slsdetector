@@ -765,18 +765,23 @@ void Camera::setRecvCPUAffinity(CPUAffinity recv_affinity)
 {
 	DEB_MEMBER_FUNCT();
 
-	cpu_set_t cpu_set;
-	recv_affinity.initCPUSet(cpu_set);
+	CPUAffinity listener_affinity(0xf00);
+	CPUAffinity writer_affinity(recv_affinity ^ 
+				    (recv_affinity & listener_affinity));
+	cpu_set_t list_cpu_set;
+	listener_affinity.initCPUSet(list_cpu_set);
+	cpu_set_t writ_cpu_set;
+	writer_affinity.initCPUSet(writ_cpu_set);
 	for (unsigned int i = 0; i < m_recv_list.size(); ++i) {
 		DEB_TRACE() << "setting recv " << i << " "
 			     << "CPU mask to " << recv_affinity;
 		slsReceiverUsers *recv = m_recv_list[i]->m_recv;
-		recv->setThreadCPUAffinity(sizeof(cpu_set),
-					   &cpu_set, &cpu_set);
+		recv->setThreadCPUAffinity(sizeof(list_cpu_set),
+					   &list_cpu_set, &writ_cpu_set);
 	}
 	for (int i = 0; i < getTotNbPorts(); ++i) {
 		pid_t tid = m_buffer_thread[i].getTID();
-		recv_affinity.applyToTask(tid, false);
+		writer_affinity.applyToTask(tid, false);
 	}
 }
 
