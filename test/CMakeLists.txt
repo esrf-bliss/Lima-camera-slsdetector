@@ -1,7 +1,7 @@
 ############################################################################
 # This file is part of LImA, a Library for Image Acquisition
 #
-# Copyright (C) : 2009-2011
+# Copyright (C) : 2009-2017
 # European Synchrotron Radiation Facility
 # BP 220, Grenoble 38043
 # FRANCE
@@ -19,7 +19,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, see <http://www.gnu.org/licenses/>.
 ############################################################################
-src-dirs  = src
-test-dirs = test
 
-include ../../global.inc
+set(test_src test_slsdetector 
+             test_slsdetector_control)
+
+limatools_run_camera_tests("${test_src}" ${NAME})
+
