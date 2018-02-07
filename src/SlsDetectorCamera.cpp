@@ -328,10 +328,10 @@ Camera::AcqThread::AcqThread(Camera *cam)
 	start();
 
 	struct sched_param param;
-	param.sched_priority = 50;
+	param.sched_priority = sched_get_priority_min(SCHED_RR);
 	int ret = pthread_setschedparam(m_thread, SCHED_RR, &param);
 	if (ret != 0)
-		DEB_ERROR() << "Could not set real-time priority!!";
+		DEB_ERROR() << "Could not set AcqThread real-time priority!!";
 
 	while (m_state != Running)
 		m_cond.wait();
