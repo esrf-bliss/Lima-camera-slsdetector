@@ -377,7 +377,7 @@ struct SimpleStat {
 
 	SimpleStat(double f = 1, int b = 5);
 	void reset();
-	void add(double x, bool do_hist=true);
+	void add(double x, bool do_hist = false);
 	SimpleStat& operator =(const SimpleStat& o);
 	SimpleStat& operator += (const SimpleStat& o);
 

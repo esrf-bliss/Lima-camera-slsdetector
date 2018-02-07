@@ -314,7 +314,7 @@ struct SimpleStat {
 
 	SimpleStat(double f = 1, int b = 5);
 	void reset();
-	void add(double x, bool do_hist=1);
+	void add(double x, bool do_hist = false);
 	// SimpleStat& operator =(const SimpleStat& o);
 	SlsDetector::SimpleStat& operator += (const SlsDetector::SimpleStat& o);
 
