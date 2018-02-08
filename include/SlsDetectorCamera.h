@@ -54,6 +54,7 @@ public:
 	typedef Defs::ClockDiv ClockDiv;
 	typedef Defs::ReadoutFlags ReadoutFlags;
 	typedef Defs::DetStatus DetStatus;
+	typedef Defs::NetworkParameter NetworkParameter;
 
 	Camera(std::string config_fname);
 	virtual ~Camera();
@@ -142,6 +143,9 @@ public:
 	void setReadoutFlags(ReadoutFlags  flags);
 	void getReadoutFlags(ReadoutFlags& flags);
 	void getValidReadoutFlags(IntList& flag_list, NameList& flag_name_list);
+
+	void setNetworkParameter(NetworkParameter net_param, std::string& val);
+	void getNetworkParameter(NetworkParameter net_param, std::string& val);
 
 	void setTolerateLostPackets(bool  tol_lost_packets);
 	void getTolerateLostPackets(bool& tol_lost_packets);

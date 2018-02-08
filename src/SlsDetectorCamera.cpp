@@ -482,6 +482,12 @@ Camera::Camera(string config_fname)
 	setNbFrames(1);
 	setExpTime(0.99);
 	setFramePeriod(1.0);
+
+	if (m_det->enableTenGigabitEthernet()) {
+		DEB_TRACE() << "Forcing 10G Ethernet flow control";
+		string val = "1";
+		setNetworkParameter(Defs::FlowCtrl10G, val);
+	}
 }
 
 Camera::~Camera()
@@ -1318,6 +1324,27 @@ void Camera::getValidReadoutFlags(IntList& flag_list, NameList& flag_name_list)
 			addValidReadoutFlags(DEB_PTR(), flags, flag_list, 
 					     flag_name_list);
 	}
+}
+
+void Camera::setNetworkParameter(NetworkParameter net_param, string& val)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(net_param, val);
+	typedef slsDetectorDefs::networkParameter NetParam;
+	NetParam param = static_cast<NetParam>(net_param);
+	string res = m_det->setNetworkParameter(param, val);
+	val = res;
+	DEB_RETURN() << DEB_VAR1(val);
+}
+
+void Camera::getNetworkParameter(NetworkParameter net_param, string& val)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(net_param);
+	typedef slsDetectorDefs::networkParameter NetParam;
+	NetParam param = static_cast<NetParam>(net_param);
+	val = m_det->getNetworkParameter(param);
+	DEB_RETURN() << DEB_VAR1(val);
 }
 
 void Camera::setTolerateLostPackets(bool tol_lost_packets)

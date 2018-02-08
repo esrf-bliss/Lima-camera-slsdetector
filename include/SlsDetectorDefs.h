@@ -169,6 +169,22 @@ enum DetStatus {
 	Stopped      = slsDetectorDefs::STOPPED,
 };
 
+enum NetworkParameter {
+	DetectorMAC     = slsDetectorDefs::DETECTOR_MAC,
+	DetectorIP      = slsDetectorDefs::DETECTOR_IP,
+	RecvHostName    = slsDetectorDefs::RECEIVER_HOSTNAME,
+	RecvUDPIP       = slsDetectorDefs::RECEIVER_UDP_IP,
+	RecvUDPPort     = slsDetectorDefs::RECEIVER_UDP_PORT,
+	RecvUDPMAC      = slsDetectorDefs::RECEIVER_UDP_MAC,
+	RecvUDPPort2    = slsDetectorDefs::RECEIVER_UDP_PORT2,
+	DetTxDelayLeft  = slsDetectorDefs::DETECTOR_TXN_DELAY_LEFT,
+	DetTxDelayRight = slsDetectorDefs::DETECTOR_TXN_DELAY_RIGHT,
+	DetTxDelayFrame = slsDetectorDefs::DETECTOR_TXN_DELAY_FRAME,
+	FlowCtrl10G     = slsDetectorDefs::FLOW_CONTROL_10G,
+	FlowCtrlWrPtr   = slsDetectorDefs::FLOW_CONTROL_WR_PTR,
+	FlowCtrlRdPtr   = slsDetectorDefs::FLOW_CONTROL_RD_PTR,
+};
+
 std::ostream& operator <<(std::ostream& os, TrigMode trig_mode);
 std::ostream& operator <<(std::ostream& os, Settings settings);
 std::ostream& operator <<(std::ostream& os, DACIndex dac_idx);
@@ -176,6 +192,7 @@ std::ostream& operator <<(std::ostream& os, ADCIndex adc_idx);
 std::ostream& operator <<(std::ostream& os, ClockDiv clock_div);
 std::ostream& operator <<(std::ostream& os, ReadoutFlags flags);
 std::ostream& operator <<(std::ostream& os, DetStatus status);
+std::ostream& operator <<(std::ostream& os, NetworkParameter net_param);
 
 } // namespace Defs
 

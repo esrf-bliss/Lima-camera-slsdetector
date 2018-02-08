@@ -265,6 +265,22 @@ enum DetStatus {
 	Stopped      = STOPPED,
 };
 
+enum NetworkParameter {
+	DetectorMAC     = DETECTOR_MAC,
+	DetectorIP      = DETECTOR_IP,
+	RecvHostName    = RECEIVER_HOSTNAME,
+	RecvUDPIP       = RECEIVER_UDP_IP,
+	RecvUDPPort     = RECEIVER_UDP_PORT,
+	RecvUDPMAC      = RECEIVER_UDP_MAC,
+	RecvUDPPort2    = RECEIVER_UDP_PORT2,
+	DetTxDelayLeft  = DETECTOR_TXN_DELAY_LEFT,
+	DetTxDelayRight = DETECTOR_TXN_DELAY_RIGHT,
+	DetTxDelayFrame = DETECTOR_TXN_DELAY_FRAME,
+	FlowCtrl10G     = FLOW_CONTROL_10G,
+	FlowCtrlWrPtr   = FLOW_CONTROL_WR_PTR,
+	FlowCtrlRdPtr   = FLOW_CONTROL_RD_PTR,
+};
+
 }; // namespace Defs
 
 

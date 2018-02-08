@@ -104,6 +104,11 @@ public:
 	void getValidReadoutFlags(std::vector<int>& flag_list /Out/,
 	     			std::vector<std::string>& flag_name_list /Out/);
 
+	void setNetworkParameter(SlsDetector::Defs::NetworkParameter net_param,
+				 std::string& val /In,Out/);
+	void getNetworkParameter(SlsDetector::Defs::NetworkParameter net_param,
+				 std::string& val /Out/);
+
 	void setTolerateLostPackets(bool  tol_lost_packets);
 	void getTolerateLostPackets(bool& tol_lost_packets /Out/);
 
