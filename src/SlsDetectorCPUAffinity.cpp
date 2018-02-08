@@ -603,7 +603,7 @@ void SystemCPUAffinityMgr::applyAndSet(const SystemCPUAffinity& o)
 	if (!m_cam)
 		THROW_HW_ERROR(InvalidValue) << "apply without camera";
 
-	CPUAffinity all_system = o.recv | o.lima | o.other;
+	CPUAffinity all_system = o.recv.all() | o.lima | o.other;
 	cpu_set_t all_cpu_set;
 	all_system.initCPUSet(all_cpu_set);
 	if (CPU_COUNT(&all_cpu_set) <= CPUAffinity::getNbCPUs() / 2)
@@ -641,7 +641,7 @@ void SystemCPUAffinityMgr::setLimaAffinity(CPUAffinity lima_affinity)
 	m_curr.lima = lima_affinity;
 }
 
-void SystemCPUAffinityMgr::setRecvAffinity(CPUAffinity recv_affinity)
+void SystemCPUAffinityMgr::setRecvAffinity(const RecvCPUAffinity& recv_affinity)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -703,7 +703,7 @@ void SystemCPUAffinityMgr::recvFinished()
 	if (m_state == Ready) 
 		return;
 
-	if (m_curr.lima != m_curr.recv) {
+	if (m_curr.lima != m_curr.recv.all()) {
 		m_state = Changing;
 		AutoMutexUnlock u(l);
 		ProcCPUAffinityMgr::Filter filter;
@@ -712,7 +712,7 @@ void SystemCPUAffinityMgr::recvFinished()
 								m_curr.lima);
 		DEB_ALWAYS() << "Lima TIDs: " << PrettyIntList(m_lima_tids);
 		CPUAffinity lima_affinity = (uint64_t(m_curr.lima) | 
-					     uint64_t(m_curr.recv));
+					     uint64_t(m_curr.recv.all()));
 		DEB_ALWAYS() << "Allowing Lima to run on Recv CPUs: " 
 			     << lima_affinity;
 		setLimaAffinity(lima_affinity);
@@ -775,6 +775,13 @@ void SystemCPUAffinityMgr::waitLimaFinished()
 ostream& lima::SlsDetector::operator <<(ostream& os, const CPUAffinity& a)
 {
 	return os << hex << showbase << uint64_t(a) << dec << noshowbase;
+}
+
+ostream& lima::SlsDetector::operator <<(ostream& os, const RecvCPUAffinity& a)
+{
+	os << "<";
+	os << "listeners=" << a.listeners << ", writers=" << a.writers;
+	return os << ">";
 }
 
 ostream& lima::SlsDetector::operator <<(ostream& os, const SystemCPUAffinity& a)

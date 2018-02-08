@@ -148,10 +148,39 @@ class ProcCPUAffinityMgr
 	AutoPtr<WatchDog> m_watchdog;
 };
 
+struct RecvCPUAffinity {
+	CPUAffinity listeners;
+	CPUAffinity writers;
+
+	CPUAffinity all() const
+	{
+		return listeners | writers;
+	}
+
+	RecvCPUAffinity& operator =(CPUAffinity a)
+	{
+		listeners = writers = a;
+		return *this;
+	}
+};
+
+inline 
+bool operator ==(const RecvCPUAffinity& a, const RecvCPUAffinity& b)
+{
+	return ((a.listeners == b.listeners) && (a.writers == b.writers));
+}
+
+inline 
+bool operator !=(const RecvCPUAffinity& a, const RecvCPUAffinity& b)
+{
+	return !(a == b);
+}
+
+
 struct SystemCPUAffinity {
-	 CPUAffinity recv;
-	 CPUAffinity lima;
-	 CPUAffinity other;
+	RecvCPUAffinity recv;
+	CPUAffinity lima;
+	CPUAffinity other;
 };
 
 typedef std::map<PixelDepth, SystemCPUAffinity> PixelDepthCPUAffinityMap;
@@ -234,7 +263,7 @@ class SystemCPUAffinityMgr
 	};
 
 	void setLimaAffinity(CPUAffinity lima_affinity);
-	void setRecvAffinity(CPUAffinity recv_affinity);
+	void setRecvAffinity(const RecvCPUAffinity& recv_affinity);
 
 	AutoMutex lock()
 	{ return AutoMutex(m_cond.mutex()); }
@@ -251,6 +280,7 @@ class SystemCPUAffinityMgr
 };
 
 std::ostream& operator <<(std::ostream& os, const CPUAffinity& a);
+std::ostream& operator <<(std::ostream& os, const RecvCPUAffinity& a);
 std::ostream& operator <<(std::ostream& os, const SystemCPUAffinity& a);
 std::ostream& operator <<(std::ostream& os, const PixelDepthCPUAffinityMap& m);
 

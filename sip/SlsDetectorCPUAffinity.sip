@@ -163,8 +163,16 @@ public:
 		SlsDetector::CPUAffinity affinity);
 };
 
+struct RecvCPUAffinity {
+	SlsDetector::CPUAffinity listeners;
+	SlsDetector::CPUAffinity writers;
+
+	SlsDetector::CPUAffinity all() const;
+	// RecvCPUAffinity& operator =(CPUAffinity a);
+};
+
 struct SystemCPUAffinity {
-	SlsDetector::CPUAffinity recv;
+	SlsDetector::RecvCPUAffinity recv;
 	SlsDetector::CPUAffinity lima;
 	SlsDetector::CPUAffinity other;
 };

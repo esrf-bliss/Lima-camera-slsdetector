@@ -767,27 +767,28 @@ void Camera::updateCPUAffinity(bool recv_restarted)
 	m_system_cpu_affinity_mgr.applyAndSet(system_affinity);
 }
 
-void Camera::setRecvCPUAffinity(CPUAffinity recv_affinity)
+void Camera::setRecvCPUAffinity(const RecvCPUAffinity& recv_affinity)
 {
 	DEB_MEMBER_FUNCT();
 
-	CPUAffinity listener_affinity(0xf00);
-	CPUAffinity writer_affinity(recv_affinity ^ 
-				    (recv_affinity & listener_affinity));
+	CPUAffinity listeners_affinity = recv_affinity.listeners;
+	CPUAffinity writers_affinity = recv_affinity.writers;
 	cpu_set_t list_cpu_set;
-	listener_affinity.initCPUSet(list_cpu_set);
+	listeners_affinity.initCPUSet(list_cpu_set);
 	cpu_set_t writ_cpu_set;
-	writer_affinity.initCPUSet(writ_cpu_set);
+	writers_affinity.initCPUSet(writ_cpu_set);
 	for (unsigned int i = 0; i < m_recv_list.size(); ++i) {
 		DEB_TRACE() << "setting recv " << i << " "
-			     << "CPU mask to " << recv_affinity;
+			     << "listeners CPU mask to " << listeners_affinity;
+		DEB_TRACE() << "setting recv " << i << " "
+			     << "writers CPU mask to " << writers_affinity;
 		slsReceiverUsers *recv = m_recv_list[i]->m_recv;
 		recv->setThreadCPUAffinity(sizeof(list_cpu_set),
 					   &list_cpu_set, &writ_cpu_set);
 	}
 	for (int i = 0; i < getTotNbPorts(); ++i) {
 		pid_t tid = m_buffer_thread[i].getTID();
-		writer_affinity.applyToTask(tid, false);
+		writers_affinity.applyToTask(tid, false);
 	}
 }
 
