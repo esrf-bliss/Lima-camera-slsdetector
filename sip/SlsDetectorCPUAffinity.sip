@@ -20,6 +20,81 @@
 // along with this program; if not, see <http://www.gnu.org/licenses/>.
 //###########################################################################
 
+
+// namespace SlsDetector
+// {
+// typedef std::vector<SlsDetector::NetDevGroupCPUAffinity>
+//					 NetDevGroupCPUAffinityList;
+// };
+
+%MappedType SlsDetector::NetDevGroupCPUAffinityList
+{
+%TypeHeaderCode
+#include <map>
+#include "SlsDetectorCPUAffinity.h"
+#include "sipAPIlimaslsdetector.h"
+
+using namespace std;
+using namespace lima;
+using namespace lima::SlsDetector;
+
+typedef NetDevGroupCPUAffinity CPP_ValueType;
+typedef vector<NetDevGroupCPUAffinity> CPP_SeqType;
+#define SIP_ValueType sipType_SlsDetector_NetDevGroupCPUAffinity
+%End
+
+%ConvertToTypeCode
+	if (sipIsErr == NULL) {
+		bool ok = PyList_Check(sipPy);
+		for (int i = 0; ok && (i < PyList_Size(sipPy)); ++i) {
+			PyObject *value = PyList_GET_ITEM(sipPy, i);
+			ok = sipCanConvertToType(value, SIP_ValueType, 
+						 SIP_NOT_NONE);
+		}
+		return ok;
+	}
+
+	CPP_SeqType *cpp_seq = new CPP_SeqType();
+	for (int i = 0; i < PyList_Size(sipPy); ++i) {
+		PyObject *value = PyList_GET_ITEM(sipPy, i);
+		int state;
+		void *p = sipConvertToType(value, SIP_ValueType, NULL, 
+					   SIP_NOT_NONE, &state, sipIsErr);
+		CPP_ValueType *cpp_value = static_cast<CPP_ValueType *>(p);
+		if (*sipIsErr) {
+			sipReleaseType(cpp_value, SIP_ValueType, state);
+			delete cpp_seq;
+			return 0;
+		}
+		cpp_seq->push_back(*cpp_value);
+		sipReleaseType(cpp_value, SIP_ValueType, state);
+	}
+	*sipCppPtr = cpp_seq;
+
+	return sipGetState(sipTransferObj);
+%End
+
+%ConvertFromTypeCode
+	PyObject* sip_list = PyList_New(sipCpp->size());
+	if (sip_list == NULL)
+		return NULL;
+	CPP_SeqType::iterator it = sipCpp->begin();
+	for (int i = 0; it != sipCpp->end(); ++it, ++i) {
+		CPP_ValueType *new_val = new CPP_ValueType(*it);
+		PyObject *value = sipConvertFromNewType(new_val, SIP_ValueType,
+							NULL);
+		if (value == NULL) {
+			delete new_val;
+			Py_DECREF(sip_list);
+			return NULL;
+		}
+		PyList_SET_ITEM(sip_list, i, value);
+	}
+	return sip_list;
+%End
+};
+
+
 // namespace SlsDetector
 // {
 // typedef std::map<PixelDepth, SystemCPUAffinity> PixelDepthCPUAffinityMap;
@@ -123,12 +198,14 @@ public:
 	CPUAffinity(unsigned long m = 0);
 
 	static bool UseSudo;
+	static void checkSudo(std::string cmd, std::string desc = "");
 	static int getNbCPUs(bool max_nb = false);
 	static unsigned long allCPUs(bool max_nb = false);
 
 	//void initCPUSet(cpu_set_t& cpu_set) const;
 	void applyToTask(int task, bool incl_threads = true,
 			 bool use_taskset = true) const;
+	void applyToNetDev(std::string dev) const;
 
 	operator unsigned long() const;
 
@@ -171,10 +248,19 @@ struct RecvCPUAffinity {
 	// RecvCPUAffinity& operator =(CPUAffinity a);
 };
 
+struct NetDevGroupCPUAffinity {
+	std::vector<std::string> name_list;
+	SlsDetector::CPUAffinity processing;
+};
+
+// typedef std::vector<SlsDetector::NetDevGroupCPUAffinity> 
+//					NetDevGroupCPUAffinityList;
+
 struct SystemCPUAffinity {
 	SlsDetector::RecvCPUAffinity recv;
 	SlsDetector::CPUAffinity lima;
 	SlsDetector::CPUAffinity other;
+	SlsDetector::NetDevGroupCPUAffinityList netdev;
 };
 
 // typedef std::map<SlsDetector::PixelDepth, SlsDetector::SystemCPUAffinity> 

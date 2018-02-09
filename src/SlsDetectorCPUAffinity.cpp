@@ -27,6 +27,7 @@
 #include "lima/CtSaving.h"
 #include "lima/SoftOpExternalMgr.h"
 #include "lima/RegExUtils.h"
+#include "lima/MiscUtils.h"
 
 #include <signal.h>
 #include <unistd.h>
@@ -38,6 +39,44 @@ using namespace lima;
 using namespace lima::SlsDetector;
 
 bool CPUAffinity::UseSudo = true;
+
+void CPUAffinity::checkSudo(string cmd, string desc)
+{
+	DEB_STATIC_FUNCT();
+
+	typedef map<string, bool> CacheMap;
+	static CacheMap cache_map;
+	CacheMap::iterator it = cache_map.find(cmd);
+	if (it == cache_map.end()) {
+		ostringstream os;
+		os << "sudo -l " << cmd;
+		if (!DEB_CHECK_ANY(DebTypeTrace))
+			os << " > /dev/null 2>&1";
+		DEB_TRACE() << "executing: '" << os.str() << "'";
+		int ret = system(os.str().c_str());
+		bool ok = (ret == 0);
+		CacheMap::value_type entry(cmd, ok);
+		pair<CacheMap::iterator, bool> v = cache_map.insert(entry);
+		if (!v.second)
+			THROW_HW_ERROR(Error) << "Error inserting cache entry";
+		it = v.first;
+	}
+	if (it->second)
+		return;
+
+	char user[128];
+	if (getlogin_r(user, sizeof(user)) != 0)
+		THROW_HW_ERROR(Error) << "Cannot get user login name";
+
+	DEB_ERROR() << "The command '" << cmd << "' is not allowed for " << user
+		    << " in the sudoers database. ";
+	DEB_ERROR() << "Check sudoers(5) man page and restart this process";
+	if (!desc.empty())
+		DEB_ERROR() << desc;
+
+	THROW_HW_ERROR(Error) << "Cannot execute sudo " << cmd << "! "
+			      << "See output for details";
+}
 
 int CPUAffinity::findNbCPUs()
 {
@@ -115,7 +154,7 @@ void CPUAffinity::applyToTask(pid_t task, bool incl_threads,
 				      bool use_taskset) const
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR3(task, incl_threads, use_taskset);
+	DEB_PARAM() << DEB_VAR4(*this, task, incl_threads, use_taskset);
 
 	string proc_status = getTaskProcDir(task, !incl_threads) + "status";
 	if (access(proc_status.c_str(), F_OK) != 0)
@@ -130,12 +169,14 @@ void CPUAffinity::applyToTask(pid_t task, bool incl_threads,
 void CPUAffinity::applyWithTaskset(pid_t task, bool incl_threads) const
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(task, incl_threads);
+	DEB_PARAM() << DEB_VAR3(*this, task, incl_threads);
 
 	ostringstream os;
 	uint64_t mask = *this;
-	if (UseSudo)
-		os << "sudo ";
+	if (UseSudo) {
+		checkSudo("taskset");
+		os << "sudo -n ";
+	}
 	const char *all_tasks_opt = incl_threads ? "-a " : "";
 	os << "taskset " << all_tasks_opt
 	   << "-p " << hex << showbase << mask << " " 
@@ -155,7 +196,7 @@ void CPUAffinity::applyWithSetAffinity(pid_t task, bool incl_threads)
 									const
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(task, incl_threads);
+	DEB_PARAM() << DEB_VAR3(*this, task, incl_threads);
 
 	IntList task_list;
 	if (incl_threads) {
@@ -186,6 +227,175 @@ void CPUAffinity::applyWithSetAffinity(pid_t task, bool incl_threads)
 		}
 	}
 }
+
+void CPUAffinity::applyToNetDev(string dev) const
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(*this, dev);
+
+	string glob_str(string("/sys/class/net/" + dev + "/queues/*/rps_cpus"));
+	Glob rps_cpu_glob(glob_str);
+
+	static bool did_error_files = false;
+	static bool did_error_setter = false;
+
+	if (!did_error_files) {
+		StringList list = rps_cpu_glob.getPathList();
+		StringList::iterator it, end = list.end();
+		bool ok = true;
+		for (it = list.begin(); ok && (it != end); ++it)
+			ok = applyWithNetDevFile(*it);
+		if (ok)
+			return;
+		DEB_ERROR() << "Could not write to files. Will try setter...";
+		did_error_files = true;
+	}
+
+	if (!did_error_setter) {
+		StringList queue_list = rps_cpu_glob.getSubPathList(6);
+		StringList::iterator it, end = queue_list.end();
+		bool ok = true;
+		for (it = queue_list.begin(); ok && (it != end); ++it)
+			ok = applyWithNetDevSetter(dev, *it);
+		if (ok)
+			return;
+		DEB_ERROR() << "Could not use setter";
+		did_error_setter = true;
+	}
+}
+
+void CPUAffinity::applyToNetDevGroup(StringList dev_list) const
+{
+	StringList::iterator it, end = dev_list.end();
+	for (it = dev_list.begin(); it != end; ++it)
+		applyToNetDev(*it);
+}
+
+bool CPUAffinity::applyWithNetDevFile(const string& fname) const
+{
+	DEB_MEMBER_FUNCT();
+
+	ostringstream os;
+	os << noshowbase << hex << m_mask;
+	DEB_TRACE() << "writing " << os.str() << " to " << fname;
+	ofstream rps_file(fname.c_str());
+	if (rps_file)
+		rps_file << os.str();
+	if (rps_file)
+		rps_file.close();
+	bool file_ok = rps_file;
+	DEB_RETURN() << DEB_VAR1(file_ok);
+	return file_ok;
+}
+
+bool CPUAffinity::applyWithNetDevSetter(const string& dev, 
+					const string& queue) const
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(dev, queue);
+
+	ostringstream os;
+	if (UseSudo) {
+		static string desc;
+		if (desc.empty())
+			desc = getNetDevSetterSudoDesc();
+		checkSudo(NetDevSetQueueRpsName, desc);
+		os << "sudo -n ";
+	}
+	os << NetDevSetQueueRpsName << " " << dev << " " << queue << " " 
+	   << *this;
+	if (!DEB_CHECK_ANY(DebTypeTrace) && false)
+		os << " > /dev/null 2>&1";
+	DEB_TRACE() << "executing: '" << os.str() << "'";
+	int ret = system(os.str().c_str());
+	bool setter_ok = (ret == 0);
+	DEB_RETURN() << DEB_VAR1(setter_ok);
+	return setter_ok;
+}
+
+string CPUAffinity::getNetDevSetterSudoDesc()
+{
+	DEB_STATIC_FUNCT();
+
+	const string& setter_name = NetDevSetQueueRpsName;
+	string dir = "/tmp";
+	string fname = dir + "/" + setter_name + ".c";
+	ofstream src_file(fname.c_str());
+	const StringList& SrcList = NetDevSetQueueRpsSrc;
+	StringList::const_iterator it, end = SrcList.end();
+	for (it = SrcList.begin(); src_file && (it != end); ++it)
+		src_file << *it << endl;
+	if (src_file)
+		src_file.close();
+	if (!src_file)
+		THROW_HW_ERROR(Error) << "Error writing to " << fname;
+
+	ostringstream desc;
+	string aux_setter = dir + "/" + setter_name;
+	desc << "In order to create " << setter_name << ", compile " << fname
+	     << " with the following commands: " << endl
+	     << "  gcc -Wall -o " << aux_setter << " " << fname << endl
+	     << "  su -c \"cp " << aux_setter << " /usr/local/bin\"" << endl;
+	return desc.str();
+}
+
+const string CPUAffinity::NetDevSetQueueRpsName = "netdev_set_queue_rps_cpus";
+
+static const char *CPUAffinityNetDevSetQueueRpsSrcCList[] = {
+"#include <stdio.h>",
+"#include <stdlib.h>",
+"#include <string.h>",
+"#include <errno.h>",
+"#include <unistd.h>",
+"#include <sys/types.h>",
+"#include <sys/stat.h>",
+"#include <fcntl.h>",
+"",
+"int main(int argc, char *argv[])",
+"{",
+"	char *dev, *queue, *p, fname[256], buffer[128];",
+"	int fd, len, ret;",
+"	long aff;",
+"",
+"	if (argc != 4)",
+"		exit(1);",
+"	if (!strlen(argv[1]) || !strlen(argv[2]) || !strlen(argv[3]))",
+"		exit(2);",
+"",
+"	dev = argv[1];",
+"	queue = argv[2];",
+"",
+"	errno = 0;",
+"	aff = strtol(argv[3], &p, 0);",
+"	if (errno || *p)",
+"		exit(3);",
+"",
+"	len = sizeof(fname);",
+"	ret = snprintf(fname, len, \"/sys/class/net/%s/queues/%s/rps_cpus\",", 
+"		       dev, queue);",
+"	if ((ret < 0) || (ret == len))",
+"		exit(4);",
+"",
+"	len = sizeof(buffer);",
+"	ret = snprintf(buffer, len, \"%016lx\", aff);",
+"	if ((ret < 0) || (ret == len))",
+"		exit(5);",
+"",
+"	fd = open(fname, O_WRONLY);",
+"	if (fd < 0)",
+"		exit(6);",
+"",	
+"	for (p = buffer; *p; p += ret)",
+"		if ((ret = write(fd, p, strlen(p))) < 0)",
+"			exit(7);",
+"",
+"	if (close(fd) < 0)",
+"		exit(8);",
+"	return 0;",
+"}",
+};
+const StringList CPUAffinity::NetDevSetQueueRpsSrc(
+		C_LIST_ITERS(CPUAffinityNetDevSetQueueRpsSrcCList));
 
 ProcCPUAffinityMgr::WatchDog::WatchDog()
 {
@@ -611,6 +821,7 @@ void SystemCPUAffinityMgr::applyAndSet(const SystemCPUAffinity& o)
 
 	setLimaAffinity(o.lima);
 	setRecvAffinity(o.recv);
+	setNetDevAffinity(o.netdev);
 
 	if (!m_proc_mgr)
 		m_proc_mgr = new ProcCPUAffinityMgr();
@@ -650,6 +861,30 @@ void SystemCPUAffinityMgr::setRecvAffinity(const RecvCPUAffinity& recv_affinity)
 
 	m_cam->setRecvCPUAffinity(recv_affinity);
 	m_curr.recv = recv_affinity;
+}
+
+void SystemCPUAffinityMgr::setNetDevAffinity(
+				const NetDevGroupCPUAffinityList& netdev_list)
+{
+	DEB_MEMBER_FUNCT();
+
+	if (netdev_list == m_curr.netdev)
+		return;
+
+	NetDevGroupCPUAffinityList::const_iterator it, end = netdev_list.end();
+	for (it = netdev_list.begin(); it != end; ++it) {
+		ostringstream os;
+		const StringList& nl = it->name_list;
+		StringList::const_iterator sit, send = nl.end();
+		const char *sep = "";
+		for (sit = nl.begin(); sit != send; ++sit, sep = ",")
+			os << sep << *sit;
+		DEB_ALWAYS() << "setting [" << os.str() << "] network devices "
+			     << "CPU affinity to " << it->processing;
+		it->processing.applyToNetDevGroup(it->name_list);
+	}
+
+	m_curr.netdev = netdev_list;
 }
 
 void SystemCPUAffinityMgr::updateRecvRestart()

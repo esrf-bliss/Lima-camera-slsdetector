@@ -42,6 +42,7 @@ class CPUAffinity
 	{}
 
 	static bool UseSudo;
+	static void checkSudo(std::string cmd, std::string desc = "");
 	static int getNbCPUs(bool max_nb = false);
 
 	static uint64_t allCPUs(bool max_nb = false)
@@ -50,6 +51,8 @@ class CPUAffinity
 	void initCPUSet(cpu_set_t& cpu_set) const;
 	void applyToTask(pid_t task, bool incl_threads = true,
 			 bool use_taskset = true) const;
+	void applyToNetDev(std::string dev) const;
+	void applyToNetDevGroup(StringList dev_list) const;
 
 	operator uint64_t() const
 	{ return m_mask ? m_mask : allCPUs(); }
@@ -66,9 +69,17 @@ class CPUAffinity
  private:
 	void applyWithTaskset(pid_t task, bool incl_threads) const;
 	void applyWithSetAffinity(pid_t task, bool incl_threads) const;
+	bool applyWithNetDevFile(const std::string& fname) const;
+	bool applyWithNetDevSetter(const std::string& dev, 
+				   const std::string& queue) const;
 
 	static int findNbCPUs();
 	static int findMaxNbCPUs();
+	static std::string getNetDevSetterSudoDesc();
+
+	static const std::string NetDevSetQueueRpsName;
+	static const StringList NetDevSetQueueRpsSrc;
+
 	uint64_t m_mask;
 };
 
@@ -177,10 +188,33 @@ bool operator !=(const RecvCPUAffinity& a, const RecvCPUAffinity& b)
 }
 
 
+struct NetDevGroupCPUAffinity {
+	StringList name_list;
+	CPUAffinity processing;
+};
+
+inline 
+bool operator ==(const NetDevGroupCPUAffinity& a, 
+		 const NetDevGroupCPUAffinity& b)
+{
+	return ((a.name_list == b.name_list) && (a.processing == b.processing));
+}
+
+inline 
+bool operator !=(const NetDevGroupCPUAffinity& a, 
+		 const NetDevGroupCPUAffinity& b)
+{
+	return !(a == b);
+}
+
+typedef std::vector<NetDevGroupCPUAffinity> NetDevGroupCPUAffinityList;
+
+
 struct SystemCPUAffinity {
 	RecvCPUAffinity recv;
 	CPUAffinity lima;
 	CPUAffinity other;
+	NetDevGroupCPUAffinityList netdev;
 };
 
 typedef std::map<PixelDepth, SystemCPUAffinity> PixelDepthCPUAffinityMap;
@@ -264,6 +298,7 @@ class SystemCPUAffinityMgr
 
 	void setLimaAffinity(CPUAffinity lima_affinity);
 	void setRecvAffinity(const RecvCPUAffinity& recv_affinity);
+	void setNetDevAffinity(const NetDevGroupCPUAffinityList& netdev_list);
 
 	AutoMutex lock()
 	{ return AutoMutex(m_cond.mutex()); }
