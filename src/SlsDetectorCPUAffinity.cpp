@@ -247,7 +247,7 @@ void CPUAffinity::applyToNetDev(string dev) const
 			ok = applyWithNetDevFile(*it);
 		if (ok)
 			return;
-		DEB_ERROR() << "Could not write to files. Will try setter...";
+		DEB_WARNING() << "Could not write to files. Will try setter...";
 		did_error_files = true;
 	}
 
