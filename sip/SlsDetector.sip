@@ -48,6 +48,8 @@ typedef set<int> CPP_SeqType;
 
 %ConvertFromTypeCode
 	PyObject* sip_list = PyList_New(sipCpp->size());
+	if (sip_list == NULL)
+		return NULL;
 	CPP_SeqType::iterator it = sipCpp->begin();
 	for (int i = 0; it != sipCpp->end(); ++it, ++i)
 		PyList_SET_ITEM(sip_list, i, PyInt_FromLong(*it));

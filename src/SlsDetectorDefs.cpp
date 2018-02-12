@@ -213,6 +213,28 @@ ostream& lima::SlsDetector::Defs::operator <<(ostream& os, DetStatus status)
 	return os << name;
 }
 
+ostream& lima::SlsDetector::Defs::operator <<(ostream& os, 
+					      NetworkParameter net_param)
+{
+	const char *name = "Unknown";
+	switch (net_param) {
+	case DetectorMAC:	name = "DetectorMAC";		break;
+	case DetectorIP:	name = "DetectorIP";		break;
+	case RecvHostName:	name = "RecvHostName";		break;
+	case RecvUDPIP:		name = "RecvUDPIP";		break;
+	case RecvUDPPort:	name = "RecvUDPPort";		break;
+	case RecvUDPMAC:	name = "RecvUDPMAC";		break;
+	case RecvUDPPort2:	name = "RecvUDPPort2";		break;
+	case DetTxDelayLeft:	name = "DetTxDelayLeft";	break;
+	case DetTxDelayRight:	name = "DetTxDelayRight";	break;
+	case DetTxDelayFrame:	name = "DetTxDelayFrame";	break;
+	case FlowCtrl10G:	name = "FlowCtrl10G";		break;
+	case FlowCtrlWrPtr:	name = "FlowCtrlWrPtr";		break;
+	case FlowCtrlRdPtr:	name = "FlowCtrlRdPtr";		break;
+	}
+	return os << name;
+}
+
 
 Glob::Glob(string pattern)
 	: m_pattern(pattern)

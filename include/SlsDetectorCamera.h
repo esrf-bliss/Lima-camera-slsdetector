@@ -54,6 +54,7 @@ public:
 	typedef Defs::ClockDiv ClockDiv;
 	typedef Defs::ReadoutFlags ReadoutFlags;
 	typedef Defs::DetStatus DetStatus;
+	typedef Defs::NetworkParameter NetworkParameter;
 
 	Camera(std::string config_fname);
 	virtual ~Camera();
@@ -143,12 +144,16 @@ public:
 	void getReadoutFlags(ReadoutFlags& flags);
 	void getValidReadoutFlags(IntList& flag_list, NameList& flag_name_list);
 
+	void setNetworkParameter(NetworkParameter net_param, std::string& val);
+	void getNetworkParameter(NetworkParameter net_param, std::string& val);
+
 	void setTolerateLostPackets(bool  tol_lost_packets);
 	void getTolerateLostPackets(bool& tol_lost_packets);
-	void getBadFrameList(IntList& bad_frame_list);
 
-	bool isBadFrame(int port_idx, FrameType frame)
-	{ return m_buffer_thread[port_idx].isBadFrame(frame); }
+	int getNbBadFrames(int port_idx);
+	void getBadFrameList(int port_idx, int first_idx, int last_idx,
+			     IntList& bad_frame_list);
+	void getBadFrameList(int port_idx, IntList& bad_frame_list);
 
 	void prepareAcq();
 	void startAcq();
@@ -267,6 +272,19 @@ private:
 
 		bool isBadFrame(FrameType frame);
 
+		int getNbBadFrames()
+		{
+			AutoMutex l = lock();
+			return m_bad_frame_list.size();
+		}
+
+		void getBadFrameList(int first_idx, int last_idx, IntList& bfl)
+		{
+			AutoMutex l = lock();
+			IntList::const_iterator b = m_bad_frame_list.begin();
+			bfl.assign(b + first_idx, b + last_idx);
+		}
+
 	protected:
 		virtual void start();
 		virtual void threadFunction();
@@ -339,7 +357,7 @@ private:
 	void updateImageSize();
 	void updateTimeRanges();
 	void updateCPUAffinity(bool recv_restarted);
-	void setRecvCPUAffinity(CPUAffinity recv_affinity);
+	void setRecvCPUAffinity(const RecvCPUAffinity& recv_affinity);
 
 	static int64_t NSec(double x)
 	{ return int64_t(x * 1e9); }
@@ -358,9 +376,10 @@ private:
 	bool checkLostPackets();
 	FrameType getLastReceivedFrame();
 
-	IntList getSortedBadFrameList(IntList first_idx, IntList last_idx);
-	IntList getSortedBadFrameList()
-	{ return getSortedBadFrameList(IntList(), IntList()); }
+	void getSortedBadFrameList(IntList first_idx, IntList last_idx,
+				   IntList& bad_frame_list );
+	void getSortedBadFrameList(IntList& bad_frame_list)
+	{ getSortedBadFrameList(IntList(), IntList(), bad_frame_list); }
 
 	void addValidReadoutFlags(DebObj *deb_ptr, ReadoutFlags flags, 
 				  IntList& flag_list, NameList& flag_name_list);

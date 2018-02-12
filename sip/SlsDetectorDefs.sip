@@ -20,6 +20,109 @@
 // along with this program; if not, see <http://www.gnu.org/licenses/>.
 //###########################################################################
 
+// namespace SlsDetector
+// {
+// struct SimpleStat {
+//   typedef std::map<int, int> Histogram;
+// };
+// };
+
+%MappedType SlsDetector::SimpleStat::Histogram
+{
+%TypeHeaderCode
+#include <map>
+#include "SlsDetectorDefs.h"
+
+using namespace std;
+using namespace lima;
+using namespace lima::SlsDetector;
+
+typedef int CPP_KeyType;
+typedef int CPP_ValueType;
+typedef SimpleStat::Histogram CPP_MapType;
+%End
+
+%ConvertToTypeCode
+	if (sipIsErr == NULL) {
+		if (!PySequence_Check(sipPy))
+			return false;
+		const char *m = "Histogram is not a sequence";
+		PyObject *fast = PySequence_Fast(sipPy, m);
+		if (fast == NULL)
+			return false;
+		Py_ssize_t len = PySequence_Size(fast);
+		PyObject **items = PySequence_Fast_ITEMS(fast);
+		bool ok = true;
+		for (Py_ssize_t i = 0; ok && (i != len); ++i) {
+			PyObject *t;
+			m = "Histogram item is not a sequence";
+			ok = (PySequence_Check(items[i]) && 
+			      (PySequence_Size(items[i]) == 2) &&
+			      ((t = PySequence_Fast(items[i], m)) != NULL));
+			if (!ok)
+				continue;
+			ok = (PyInt_Check(PySequence_Fast_GET_ITEM(t, 0)) &&
+			      PyInt_Check(PySequence_Fast_GET_ITEM(t, 1)));
+			Py_DECREF(t);
+		}
+		Py_DECREF(fast);
+		return ok;
+	}
+
+	CPP_MapType *cpp_map = new CPP_MapType();
+
+	PyObject *fast = PySequence_Fast(sipPy, "Error!");
+	Py_ssize_t len = PySequence_Size(fast);
+	PyObject **items = PySequence_Fast_ITEMS(fast);
+	for (Py_ssize_t i = 0; i != len; ++i) {
+		PyObject *t = PySequence_Fast(items[i], "Error");
+		PyObject *k = PySequence_Fast_GET_ITEM(t, 0);
+		PyObject *v = PySequence_Fast_GET_ITEM(t, 1);
+		CPP_KeyType cpp_key = CPP_KeyType(PyInt_AS_LONG(k));
+		CPP_ValueType cpp_value = CPP_ValueType(PyInt_AS_LONG(v));
+		CPP_MapType::value_type map_value(cpp_key, cpp_value);
+		cpp_map->insert(map_value);
+		Py_DECREF(t);
+	}
+	Py_DECREF(fast);
+	*sipCppPtr = cpp_map;
+
+	return sipGetState(sipTransferObj);
+%End
+
+%ConvertFromTypeCode
+	Py_ssize_t len = sipCpp->size();
+	PyObject* sip_list = PyList_New(len);
+	if (sip_list == NULL)
+		return NULL;
+	CPP_MapType::iterator it = sipCpp->begin();
+	for (int i = 0; i != len; ++i, ++it) {
+		PyObject *k, *v, *l = PyList_New(2);
+		if (l == NULL)
+			goto error;
+		k = PyInt_FromLong(it->first);
+		if (k == NULL)
+			goto error_l;
+		PyList_SET_ITEM(l, 0, k);
+		v = PyInt_FromLong(it->second);
+		if (v == NULL)
+			goto error_l;
+		PyList_SET_ITEM(l, 1, v);
+		PyList_SET_ITEM(sip_list, i, l);
+		continue;
+error_l:
+		Py_DECREF(l);
+		goto error;
+	}
+	return sip_list;
+
+error:
+	Py_DECREF(sip_list);
+	return NULL;
+%End
+};
+
+
 namespace SlsDetector
 {
 
@@ -162,6 +265,22 @@ enum DetStatus {
 	Stopped      = STOPPED,
 };
 
+enum NetworkParameter {
+	DetectorMAC     = DETECTOR_MAC,
+	DetectorIP      = DETECTOR_IP,
+	RecvHostName    = RECEIVER_HOSTNAME,
+	RecvUDPIP       = RECEIVER_UDP_IP,
+	RecvUDPPort     = RECEIVER_UDP_PORT,
+	RecvUDPMAC      = RECEIVER_UDP_MAC,
+	RecvUDPPort2    = RECEIVER_UDP_PORT2,
+	DetTxDelayLeft  = DETECTOR_TXN_DELAY_LEFT,
+	DetTxDelayRight = DETECTOR_TXN_DELAY_RIGHT,
+	DetTxDelayFrame = DETECTOR_TXN_DELAY_FRAME,
+	FlowCtrl10G     = FLOW_CONTROL_10G,
+	FlowCtrlWrPtr   = FLOW_CONTROL_WR_PTR,
+	FlowCtrlRdPtr   = FLOW_CONTROL_RD_PTR,
+};
+
 }; // namespace Defs
 
 
@@ -205,13 +324,14 @@ struct SimpleStat {
 	double factor;
 	Mutex lock;
 
-//	std::map<int, int> hist;
-//	int hist_bin;
+	// typedef std::map<int, int> Histogram
+	SlsDetector::SimpleStat::Histogram hist;
+	int hist_bin;
 
 	SimpleStat(double f = 1, int b = 5);
 	void reset();
-	void add(double x, bool do_hist=1);
-//	SimpleStat& operator =(const SimpleStat& o);
+	void add(double x, bool do_hist = false);
+	// SimpleStat& operator =(const SimpleStat& o);
 	SlsDetector::SimpleStat& operator += (const SlsDetector::SimpleStat& o);
 
 	int n() const;
