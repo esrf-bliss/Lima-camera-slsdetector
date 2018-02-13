@@ -199,23 +199,18 @@ void Camera::Receiver::portCallback(FrameType frame, int port, char *dptr,
 }
 
 Camera::BufferThread::BufferThread()
-	: m_cam(NULL)
+	: m_cam(NULL), m_port_idx(-1)
 {
 	DEB_CONSTRUCTOR();
 }
 
-void Camera::BufferThread::init(Camera *cam, int port_idx, int size)
+void Camera::BufferThread::init(Camera *cam, int port_idx)
 {
 	DEB_MEMBER_FUNCT();
 
 	m_cam = cam;
+	m_frame_map = &m_cam->m_frame_map;
 	m_port_idx = port_idx;
-	m_size = size;
-	m_finfo_array.resize(size);
-
-	m_free_idx = getIndex(0);
-	m_ready_idx = getIndex(-1);
-	m_finish_idx = getIndex(-1);
 
 	start();
 }
@@ -234,9 +229,13 @@ Camera::BufferThread::~BufferThread()
 	if (!hasStarted())
 		return;
 
-	AutoMutex l = lock();
-	m_end = true;
-	m_cond.broadcast();
+	{
+		AutoMutex l = lock();
+		m_end = true;
+		m_cond.broadcast();
+	}
+
+	m_frame_map->stopPollFrameItemFinished(m_port_idx);
 }
 
 void Camera::BufferThread::start()
@@ -268,21 +267,19 @@ void Camera::BufferThread::threadFunction()
 	m_end = false;
 	m_cond.broadcast();
 	while (!m_end) {
-		while (!m_end && (m_finish_idx == m_ready_idx))
-			m_cond.wait();
-		if (m_finish_idx != m_ready_idx) {
-			int new_idx = getIndex(m_finish_idx + 1);
-			{
-				AutoMutexUnlock u(l);
-				FinishInfo& finfo = m_finfo_array[new_idx];
+		AutoMutexUnlock u(l);
+		FinishInfoList finfo_list;
+		finfo_list = m_frame_map->pollFrameItemFinished(m_port_idx);
+		FinishInfoList::const_iterator it, end = finfo_list.end();
+		for (it = finfo_list.begin(); it != end; ++it) {
+			const FinishInfo& finfo = *it;
+			if ((finfo.nb_lost != 0) || !finfo.finished.empty())
 				processFinishInfo(finfo);
-			}
-			m_finish_idx = new_idx;
 		}
 	}
 }
 
-void Camera::BufferThread::processFinishInfo(FinishInfo& finfo)
+void Camera::BufferThread::processFinishInfo(const FinishInfo& finfo)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -546,11 +543,11 @@ void Camera::setModel(Model *model)
 
 	m_recv_ports = m_model->getRecvPorts();
 	int nb_ports = getTotNbPorts();
+	m_frame_map.setNbItems(nb_ports);
 	if (!m_buffer_thread) {
-		int buffer_size = 1000;
 		m_buffer_thread = new BufferThread[nb_ports];
 		for (int i = 0; i < nb_ports; ++i)
-			m_buffer_thread[i].init(this, i, buffer_size);
+			m_buffer_thread[i].init(this, i);
 	}
 	if (m_port_stats.empty())
 		m_port_stats.resize(nb_ports);
@@ -912,7 +909,6 @@ void Camera::prepareAcq()
 
 	{
 		AutoMutex l = lock();
-		m_frame_map.setNbItems(nb_ports);
 		m_frame_map.setBufferSize(nb_buffers);
 		m_frame_map.clear();
 		DEB_TRACE() << DEB_VAR1(m_frame_queue.size());
@@ -980,18 +976,8 @@ void Camera::processRecvPort(int port_idx, FrameType frame, char *dptr,
 		char *bptr = getFrameBufferPtr(frame);
 		m_model->processRecvPort(port_idx, frame, dptr, dsize, bptr);
 	}
-	FrameMap::FinishInfo finfo;
-	finfo = m_frame_map.frameItemFinished(frame, port_idx, true, valid);
-	if ((finfo.nb_lost == 0) && finfo.finished.empty())
-		return;
-
 	Timestamp t0 = Timestamp::now();
-	BufferThread& buffer = m_buffer_thread[port_idx];
-	int idx;
-	BufferThread::FinishInfo *buffer_finfo;
-	buffer.getNewFrameEntry(idx, buffer_finfo);
-	*buffer_finfo = finfo;
-	buffer.putNewFrameEntry(idx, buffer_finfo);
+	m_frame_map.frameItemFinished(frame, port_idx, true, valid);
 	Timestamp t1 = Timestamp::now();
 	PortStats& port_stats = m_port_stats[port_idx];
 	port_stats.stats.new_finish.add(t1 - t0);

@@ -175,6 +175,9 @@ private:
 
 	typedef std::queue<int> FrameQueue;
 
+	typedef FrameMap::FinishInfo FinishInfo;
+	typedef FrameMap::FinishInfoList FinishInfoList;
+
 	struct AppInputData
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Camera::AppInputData", 
@@ -237,35 +240,14 @@ private:
 		DEB_CLASS_NAMESPC(DebModCamera, "Camera::BufferThread", 
 				  "SlsDetector");
 	public:
-		typedef FrameMap::FinishInfo FinishInfo;
 		typedef std::vector<FinishInfo> FinishInfoArray;
 
 		BufferThread();
 		~BufferThread();
 
-		void init(Camera *cam, int port_idx, int size);
+		void init(Camera *cam, int port_idx);
 
 		void prepareAcq();
-
-		void getNewFrameEntry(int& idx, FinishInfo*& finfo)
-		{
-			DEB_MEMBER_FUNCT();
-			AutoMutex l = lock();
-			if (m_free_idx == m_finish_idx)
-				THROW_HW_ERROR(Error) << "BufferThread overrun";
-			idx = m_free_idx;
-			m_free_idx = getIndex(m_free_idx + 1);
-			l.unlock();
-			finfo = &m_finfo_array[idx];
-		}
-
-		void putNewFrameEntry(int idx, FinishInfo* /*finfo*/)
-		{
-			DEB_MEMBER_FUNCT();
-			AutoMutex l = lock();
-			m_ready_idx = idx;
-			m_cond.broadcast();
-		}
 
 		pid_t getTID()
 		{ return m_tid; }
@@ -295,25 +277,14 @@ private:
 		AutoMutex lock()
 		{ return m_cond.mutex(); }
 
-		int getIndex(int i)
-		{
-			while (i < 0)
-				i += m_size;
-			return i % m_size;
-		}
-
-		void processFinishInfo(FinishInfo& finfo);
+		void processFinishInfo(const FinishInfo& finfo);
 
 		Camera *m_cam;
+		FrameMap *m_frame_map;
 		int m_port_idx;
 		pid_t m_tid;
 		bool m_end;
 		Cond m_cond;
-		int m_size;
-		FinishInfoArray m_finfo_array;
-		int m_free_idx;
-		int m_ready_idx;
-		int m_finish_idx;
 		IntList m_bad_frame_list;
 	};
 

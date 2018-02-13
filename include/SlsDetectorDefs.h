@@ -437,6 +437,7 @@ class FrameMap
 		int nb_lost;
 		SortedIntList finished;
 	};
+	typedef std::vector<FinishInfo> FinishInfoList;
 
 	FrameMap();
 	~FrameMap();
@@ -446,8 +447,10 @@ class FrameMap
 	void clear();
 
 	void checkFinishedFrameItem(FrameType frame, int item);
-	FinishInfo frameItemFinished(FrameType frame, int item, 
-				     bool no_check, bool valid);
+	void frameItemFinished(FrameType frame, int item, 
+			       bool no_check, bool valid);
+	FinishInfoList pollFrameItemFinished(int item);
+	void stopPollFrameItemFinished(int item);
 
 	FrameArray getItemFrameArray() const
 	{ return m_last_item_frame; }
@@ -459,6 +462,25 @@ class FrameMap
 	{ return getOldestFrame(m_last_item_frame); }
 
  private:
+	typedef std::pair<int, bool> FrameData;
+	typedef std::set<FrameData> FrameDataList;
+
+	struct FrameQueue {
+		FrameDataList list;
+		Cond cond;
+		bool stopped;
+
+		FrameQueue();
+		void clear();
+		void push(FrameData data);
+		FrameDataList pop_all();
+		void stop();
+	};
+	typedef std::vector<FrameQueue> FrameQueueList;
+
+	friend bool SlsDetector::operator <(FrameData a, FrameData b);
+
+
 	struct AtomicCounter {
 		int count;
 		Mutex mutex;
@@ -479,10 +501,17 @@ class FrameMap
 	typedef std::vector<AtomicCounter> CounterList;
 
 	int m_nb_items;
+	FrameQueueList m_frame_queue_list;
 	FrameArray m_last_item_frame;
 	int m_buffer_size;
 	CounterList m_frame_item_count;
 };
+
+inline bool operator <(FrameMap::FrameData a, FrameMap::FrameData b)
+{ 
+	return (a.first < b.first); 
+}
+
 
 std::ostream& operator <<(std::ostream& os, const FrameMap& m);
 
