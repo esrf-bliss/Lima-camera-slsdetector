@@ -562,43 +562,45 @@ TimeRangesChangedCallback::~TimeRangesChangedCallback()
 		m_cam->unregisterTimeRangesChangedCallback(*this);
 }
 
-FrameMap::FrameQueue::FrameQueue() : stopped(false)
+FrameMap::FrameQueue::FrameQueue(int size) 
+	: m_size(size + 1), m_write_idx(0), m_read_idx(0), m_stopped(false)
 {
+	m_array.resize(m_size);
 }
 
 void FrameMap::FrameQueue::clear()
 {
-	cond.acquire();
-	list.clear();
-	stopped = false;
-	cond.release();
+	m_write_idx = m_read_idx = 0;
 }
 
 void FrameMap::FrameQueue::push(FrameData data)
 {
-	cond.acquire();
-	list.insert(data);
-	cond.signal();
-	cond.release();
+	if (index(m_write_idx + 1) == m_read_idx)
+		throw LIMA_EXC(Hardware, Error, "FrameMap::FrameQueue full");
+	m_array[m_write_idx] = data;
+	m_write_idx = index(m_write_idx + 1);
 }
 
 FrameMap::FrameDataList FrameMap::FrameQueue::pop_all()
 {
-	cond.acquire();
-	while (list.empty() && !stopped)
-		cond.wait();
-	FrameDataList ret = list;
-	list.clear();
-	cond.release();
+	while ((m_read_idx == m_write_idx) && !m_stopped)
+		Sleep(1e-3);
+	int write_idx = m_write_idx;
+	bool two_steps = (m_read_idx > write_idx);
+	int end_idx = two_steps ? m_size : write_idx;
+	FrameDataList::const_iterator b = m_array.begin();
+	FrameDataList ret(b + m_read_idx, b + end_idx);
+	m_read_idx = index(end_idx);
+	if (two_steps) {
+		ret.insert(ret.end(), b, b + write_idx);
+		m_read_idx = write_idx;
+	}
 	return ret;
 }
 
 void FrameMap::FrameQueue::stop()
 {
-	cond.acquire();
-	stopped = true;
-	cond.signal();
-	cond.release();
+	m_stopped = true;
 }
 
 FrameMap::FrameMap()

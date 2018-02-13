@@ -27,6 +27,7 @@
 
 #include "lima/Debug.h"
 #include "lima/RegExUtils.h"
+#include "lima/Timestamp.h"
 
 #include <set>
 
@@ -463,18 +464,26 @@ class FrameMap
 
  private:
 	typedef std::pair<int, bool> FrameData;
-	typedef std::set<FrameData> FrameDataList;
+	typedef std::vector<FrameData> FrameDataList;
 
-	struct FrameQueue {
-		FrameDataList list;
-		Cond cond;
-		bool stopped;
-
-		FrameQueue();
+	class FrameQueue 
+	{
+	public:
+		FrameQueue(int size = 1000);
 		void clear();
 		void push(FrameData data);
 		FrameDataList pop_all();
 		void stop();
+
+	private:
+		int index(int i)
+		{ return i % m_size; }
+
+		FrameDataList m_array;
+		int m_size;
+		volatile int m_write_idx;
+		volatile int m_read_idx;
+		volatile bool m_stopped;
 	};
 	typedef std::vector<FrameQueue> FrameQueueList;
 
@@ -506,12 +515,6 @@ class FrameMap
 	int m_buffer_size;
 	CounterList m_frame_item_count;
 };
-
-inline bool operator <(FrameMap::FrameData a, FrameMap::FrameData b)
-{ 
-	return (a.first < b.first); 
-}
-
 
 std::ostream& operator <<(std::ostream& os, const FrameMap& m);
 
