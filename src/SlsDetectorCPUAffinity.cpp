@@ -40,6 +40,16 @@ using namespace lima::SlsDetector;
 
 bool CPUAffinity::UseSudo = true;
 
+void CPUAffinity::setUseSudo(bool use_sudo)
+{
+	UseSudo = use_sudo;
+}
+
+bool CPUAffinity::getUseSudo()
+{
+	return UseSudo;
+}
+
 void CPUAffinity::checkSudo(string cmd, string desc)
 {
 	DEB_STATIC_FUNCT();

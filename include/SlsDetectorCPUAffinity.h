@@ -41,7 +41,9 @@ class CPUAffinity
  	CPUAffinity(uint64_t m = 0) : m_mask(m) 
 	{}
 
-	static bool UseSudo;
+	static void setUseSudo(bool use_sudo);
+	static bool getUseSudo();
+
 	static void checkSudo(std::string cmd, std::string desc = "");
 	static int getNbCPUs(bool max_nb = false);
 
@@ -73,6 +75,7 @@ class CPUAffinity
 	bool applyWithNetDevSetter(const std::string& dev, 
 				   const std::string& queue) const;
 
+	static bool UseSudo;
 	static int findNbCPUs();
 	static int findMaxNbCPUs();
 	static std::string getNetDevSetterSudoDesc();

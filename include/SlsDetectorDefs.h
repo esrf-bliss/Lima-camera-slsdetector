@@ -386,6 +386,10 @@ FrameType getOldestFrame(const FrameArray& l);
 
 struct SimpleStat {
 	typedef std::map<int, int> Histogram;
+
+	static void setDoHist(bool do_hist);
+	static bool getDoHist();
+
 	double xmin, xmax, xacc, xacc2;
 	int xn;
 	double factor;
@@ -404,6 +408,9 @@ struct SimpleStat {
 	double max() const;
 	double ave() const;
 	double std() const;
+
+private:
+	static bool DoHist;
 };
  
 std::ostream& operator <<(std::ostream& os, const SimpleStat::Histogram& s);

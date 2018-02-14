@@ -356,6 +356,18 @@ NumericGlob::IntStringList NumericGlob::getIntPathList() const
 	return list;
 }
 
+bool SimpleStat::DoHist = false;
+
+void SimpleStat::setDoHist(bool do_hist)
+{
+	DoHist = do_hist;
+}
+
+bool SimpleStat::getDoHist()
+{
+	return DoHist;
+}
+
 SimpleStat::SimpleStat(double f, int b)
 	: factor(f), hist_bin(b)
 {
@@ -379,7 +391,7 @@ void SimpleStat::add(double x, bool do_hist) {
 	xacc2 += pow(x, 2);
 	++xn;
 
-	if (!do_hist)
+	if (!(do_hist || DoHist))
 		return;
 
 	int i = x;

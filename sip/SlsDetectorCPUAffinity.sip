@@ -197,7 +197,9 @@ class CPUAffinity
 public:
 	CPUAffinity(unsigned long m = 0);
 
-	static bool UseSudo;
+	static void setUseSudo(bool use_sudo);
+	static bool getUseSudo();
+
 	static void checkSudo(std::string cmd, std::string desc = "");
 	static int getNbCPUs(bool max_nb = false);
 	static unsigned long allCPUs(bool max_nb = false);

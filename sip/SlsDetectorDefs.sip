@@ -316,6 +316,9 @@ unsigned long oldestFrame(unsigned long a, unsigned long b);
 
 
 struct SimpleStat {
+	static void setDoHist(bool do_hist);
+	static bool getDoHist();
+
 	double xmin;
 	double xmax;
 	double xacc;
