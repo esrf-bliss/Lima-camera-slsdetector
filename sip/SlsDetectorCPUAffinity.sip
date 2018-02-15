@@ -219,6 +219,14 @@ public:
 	static std::string getTaskProcDir(int task, bool is_thread);
 };
 
+struct NetDevGroupCPUAffinity {
+	std::vector<std::string> name_list;
+	SlsDetector::CPUAffinity processing;
+};
+
+// typedef std::vector<SlsDetector::NetDevGroupCPUAffinity> 
+//					NetDevGroupCPUAffinityList;
+
 class SystemCPUAffinityMgr
 {
 public:
@@ -240,6 +248,8 @@ public:
 
 	void setOtherCPUAffinity(
 		SlsDetector::CPUAffinity affinity);
+	void setNetDevCPUAffinity(
+		const SlsDetector::NetDevGroupCPUAffinityList& netdev_list);
 };
 
 struct RecvCPUAffinity {
@@ -249,14 +259,6 @@ struct RecvCPUAffinity {
 	SlsDetector::CPUAffinity all() const;
 	// RecvCPUAffinity& operator =(CPUAffinity a);
 };
-
-struct NetDevGroupCPUAffinity {
-	std::vector<std::string> name_list;
-	SlsDetector::CPUAffinity processing;
-};
-
-// typedef std::vector<SlsDetector::NetDevGroupCPUAffinity> 
-//					NetDevGroupCPUAffinityList;
 
 struct GlobalCPUAffinity {
 	SlsDetector::RecvCPUAffinity recv;

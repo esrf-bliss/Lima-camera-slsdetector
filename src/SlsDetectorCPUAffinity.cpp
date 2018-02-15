@@ -313,7 +313,7 @@ bool CPUAffinity::applyWithNetDevSetter(const string& dev,
 		os << "sudo -n ";
 	}
 	os << NetDevSetQueueRpsName << " " << dev << " " << queue << " " 
-	   << *this;
+	   << showbase << hex << m_mask;
 	if (!DEB_CHECK_ANY(DebTypeTrace) && false)
 		os << " > /dev/null 2>&1";
 	DEB_TRACE() << "executing: '" << os.str() << "'";
@@ -454,15 +454,20 @@ bool SystemCPUAffinityMgr::WatchDog::childEnded()
 	return (waitpid(m_child_pid, NULL, WNOHANG) != 0);
 }
 
-void SystemCPUAffinityMgr::WatchDog::sendChildCmd(Cmd cmd, Arg arg)
+void SystemCPUAffinityMgr::WatchDog::sendChildCmd(Cmd cmd, Arg arg, string str)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(cmd, DebHex(arg));
+	DEB_PARAM() << DEB_VAR3(cmd, DebHex(arg), str);
 
 	if (childEnded())
 		THROW_HW_ERROR(Error) << "Watchdog child process killed: " 
 				      << m_child_pid;
+	if (str.size() >= sizeof(Packet::str))
+		THROW_HW_ERROR(InvalidValue) << "Child cmd string too long";
+
 	Packet packet = {cmd, arg};
+	memset(packet.str, 0, sizeof(packet.str));
+	strcpy(packet.str, str.c_str());
 	void *p = static_cast<void *>(&packet);
 	string s(static_cast<char *>(p), sizeof(packet));
 	m_cmd_pipe.write(s);
@@ -483,7 +488,7 @@ SystemCPUAffinityMgr::WatchDog::readParentCmd()
 	if (s.empty())
 		THROW_HW_ERROR(Error) << "Watchdog cmd pipe closed/intr";
 	memcpy(&packet, s.data(), s.size());
-	DEB_RETURN() << DEB_VAR2(packet.cmd, DebHex(packet.arg));
+	DEB_RETURN() << DEB_VAR3(packet.cmd, DebHex(packet.arg), packet.str);
 	return packet;
 }
 
@@ -504,20 +509,25 @@ void SystemCPUAffinityMgr::WatchDog::childFunction()
 	}
 	ackParentCmd();
 
-	bool last_was_clean = false;
 	bool cleanup_req = false;
 
 	try {
 		do {
 			Packet packet = readParentCmd();
-			if (packet.cmd == SetAffinity) {
+			if (packet.cmd == SetProcAffinity) {
 				CPUAffinity cpu_affinity = packet.arg;
-				affinitySetter(cpu_affinity);
-				ackParentCmd();
-				last_was_clean = cpu_affinity.isDefault();
+				procAffinitySetter(cpu_affinity);
+			} else if (packet.cmd == SetNetDevAffinity) {
+				NetDevGroupCPUAffinity netdev_affinity;
+				netdev_affinity.processing = packet.arg;
+				StringList nl = splitStringList(packet.str);
+				netdev_affinity.name_list = nl;
+				netDevAffinitySetter(netdev_affinity);
 			} else if (packet.cmd == CleanUp) {
 				cleanup_req = true;
 			}
+			if (packet.cmd != CleanUp)
+				ackParentCmd();
 		} while (!cleanup_req);
 
 	} catch (...) {
@@ -525,18 +535,22 @@ void SystemCPUAffinityMgr::WatchDog::childFunction()
 	}
 
 	DEB_TRACE() << "Clean-up";
-	if (!last_was_clean)
-		affinitySetter(CPUAffinity());
+	procAffinitySetter(CPUAffinity());
+	netDevAffinitySetter(NetDevGroupCPUAffinity());
 
 	if (cleanup_req)
 		ackParentCmd(); 
 }
 
 void 
-SystemCPUAffinityMgr::WatchDog::affinitySetter(CPUAffinity cpu_affinity)
+SystemCPUAffinityMgr::WatchDog::procAffinitySetter(CPUAffinity cpu_affinity)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(cpu_affinity);
+
+	static bool aff_set = false;
+	if (aff_set && (cpu_affinity == m_other))
+		return;
 
 	ProcList proc_list = getOtherProcList(cpu_affinity);
 	if (proc_list.empty())
@@ -548,6 +562,9 @@ SystemCPUAffinityMgr::WatchDog::affinitySetter(CPUAffinity cpu_affinity)
 	for (it = proc_list.begin(); it != end; ++it)
 		cpu_affinity.applyToTask(*it);
 	DEB_ALWAYS() << "Done!";
+
+	m_other = cpu_affinity;
+	aff_set = true;
 }
 
 ProcList 
@@ -567,12 +584,76 @@ SystemCPUAffinityMgr::WatchDog::getOtherProcList(CPUAffinity cpu_affinity)
 	return proc_list;
 }
 
+string SystemCPUAffinityMgr::WatchDog::concatStringList(StringList list)
+{
+	ostringstream os;
+	const char *sep = "";
+	StringList::const_iterator it, end = list.end();
+	for (it = list.begin(); it != end; ++it, sep = ",")
+		os << sep << *it;
+	return os.str();
+}
+
+StringList SystemCPUAffinityMgr::WatchDog::splitStringList(string str)
+{
+	StringList list;
+	string::size_type i, p, n;
+	for (i = 0; (i != string::npos) && (i != str.size()); i = p) {
+		p = str.find(",", i);
+		n = (p == string::npos) ? p : (p - i);
+		list.push_back(string(str, i, n));
+		if (p != string::npos)
+			++p;
+	}
+	return list;
+}
+
+void SystemCPUAffinityMgr::WatchDog::netDevAffinitySetter(
+				NetDevGroupCPUAffinity netdev_affinity)
+{
+	DEB_MEMBER_FUNCT();
+
+	if (netdev_affinity.name_list.empty()) {
+		if (m_netdev_list.empty())
+			return;
+		netdev_affinity.name_list = m_netdev_list;
+		netdev_affinity.processing = CPUAffinity();
+	}
+
+	const StringList& nl = netdev_affinity.name_list;
+	CPUAffinity a = netdev_affinity.processing;
+	DEB_ALWAYS() << "setting [" << concatStringList(nl) << "] "
+		     << "network devices CPU affinity to " << a;
+	a.applyToNetDevGroup(nl);
+	DEB_ALWAYS() << "Done!";
+
+	bool erase = a.isDefault();
+	StringList::const_iterator it, end = nl.end();
+	for (it = nl.begin(); it != end; ++it) {
+		StringList::iterator sit, send = m_netdev_list.end();
+		sit = find(m_netdev_list.begin(), send, *it);
+		if (erase && (sit != send))
+			m_netdev_list.erase(sit);
+		else if (!erase && (sit == send))
+			m_netdev_list.push_back(*it);
+	}
+}
+
 void 
 SystemCPUAffinityMgr::WatchDog::setOtherCPUAffinity(CPUAffinity cpu_affinity)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(cpu_affinity);
-	sendChildCmd(SetAffinity, cpu_affinity);
+	sendChildCmd(SetProcAffinity, cpu_affinity);
+}
+
+void SystemCPUAffinityMgr::WatchDog::setNetDevCPUAffinity(
+				NetDevGroupCPUAffinity netdev_affinity)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(netdev_affinity.processing);
+	string name_list = concatStringList(netdev_affinity.name_list);
+	sendChildCmd(SetNetDevAffinity, netdev_affinity.processing, name_list);
 }
 
 SystemCPUAffinityMgr::SystemCPUAffinityMgr()
@@ -647,17 +728,46 @@ SystemCPUAffinityMgr::getThreadList(Filter filter,
 	return getProcList(Filter(filter | ThisProc), cpu_affinity);
 }
 
+void SystemCPUAffinityMgr::checkWatchDogStart()
+{
+	if (!m_watchdog || m_watchdog->childEnded())
+		m_watchdog = new WatchDog();
+}
+
+void SystemCPUAffinityMgr::checkWatchDogStop()
+{
+	if (m_other.isDefault() && m_netdev.empty())
+		m_watchdog = NULL;
+}
+
 void SystemCPUAffinityMgr::setOtherCPUAffinity(CPUAffinity cpu_affinity)
 {
 	DEB_MEMBER_FUNCT();
 
-	if (!m_watchdog || m_watchdog->childEnded())
-		m_watchdog = new WatchDog();
-
+	checkWatchDogStart();
 	m_watchdog->setOtherCPUAffinity(cpu_affinity);
+	m_other = cpu_affinity;
+	checkWatchDogStop();
+}
 
-	if (cpu_affinity.isDefault())
-		m_watchdog = NULL;
+void SystemCPUAffinityMgr::setNetDevCPUAffinity(
+			const NetDevGroupCPUAffinityList& netdev_list)
+{
+	DEB_MEMBER_FUNCT();
+
+	checkWatchDogStart();
+
+	if (!netdev_list.empty()) {
+		typedef NetDevGroupCPUAffinityList NetDevList;
+		NetDevList::const_iterator it, end = netdev_list.end();
+		for (it = netdev_list.begin(); it != end; ++it)
+			m_watchdog->setNetDevCPUAffinity(*it);
+	} else {
+		m_watchdog->setNetDevCPUAffinity(NetDevGroupCPUAffinity());
+	}
+
+	m_netdev = netdev_list;
+	checkWatchDogStop();
 }
 
 GlobalCPUAffinityMgr::
@@ -831,13 +941,14 @@ void GlobalCPUAffinityMgr::applyAndSet(const GlobalCPUAffinity& o)
 
 	setLimaAffinity(o.lima);
 	setRecvAffinity(o.recv);
-	setNetDevAffinity(o.netdev);
 
 	if (!m_system_mgr)
 		m_system_mgr = new SystemCPUAffinityMgr();
 
 	m_system_mgr->setOtherCPUAffinity(o.other);
 	m_curr.other = o.other;
+	m_system_mgr->setNetDevCPUAffinity(o.netdev);
+	m_curr.netdev = o.netdev;
 
 	m_set = o;
 }
@@ -871,30 +982,6 @@ void GlobalCPUAffinityMgr::setRecvAffinity(const RecvCPUAffinity& recv_affinity)
 
 	m_cam->setRecvCPUAffinity(recv_affinity);
 	m_curr.recv = recv_affinity;
-}
-
-void GlobalCPUAffinityMgr::setNetDevAffinity(
-				const NetDevGroupCPUAffinityList& netdev_list)
-{
-	DEB_MEMBER_FUNCT();
-
-	if (netdev_list == m_curr.netdev)
-		return;
-
-	NetDevGroupCPUAffinityList::const_iterator it, end = netdev_list.end();
-	for (it = netdev_list.begin(); it != end; ++it) {
-		ostringstream os;
-		const StringList& nl = it->name_list;
-		StringList::const_iterator sit, send = nl.end();
-		const char *sep = "";
-		for (sit = nl.begin(); sit != send; ++sit, sep = ",")
-			os << sep << *sit;
-		DEB_ALWAYS() << "setting [" << os.str() << "] network devices "
-			     << "CPU affinity to " << it->processing;
-		it->processing.applyToNetDevGroup(it->name_list);
-	}
-
-	m_curr.netdev = netdev_list;
 }
 
 void GlobalCPUAffinityMgr::updateRecvRestart()

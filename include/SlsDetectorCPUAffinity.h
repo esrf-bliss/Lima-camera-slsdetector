@@ -100,6 +100,28 @@ bool operator !=(const CPUAffinity& a, const CPUAffinity& b)
 }
 
 
+struct NetDevGroupCPUAffinity {
+	StringList name_list;
+	CPUAffinity processing;
+};
+
+inline 
+bool operator ==(const NetDevGroupCPUAffinity& a, 
+		 const NetDevGroupCPUAffinity& b)
+{
+	return ((a.name_list == b.name_list) && (a.processing == b.processing));
+}
+
+inline 
+bool operator !=(const NetDevGroupCPUAffinity& a, 
+		 const NetDevGroupCPUAffinity& b)
+{
+	return !(a == b);
+}
+
+typedef std::vector<NetDevGroupCPUAffinity> NetDevGroupCPUAffinityList;
+
+
 class SystemCPUAffinityMgr
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "SystemCPUAffinityMgr", "SlsDetector");
@@ -117,6 +139,8 @@ class SystemCPUAffinityMgr
 				      CPUAffinity cpu_affinity = 0);
 
 	void setOtherCPUAffinity(CPUAffinity cpu_affinity);
+	void setNetDevCPUAffinity(
+			const NetDevGroupCPUAffinityList& netdev_list);
 
  private:
 	class WatchDog
@@ -129,27 +153,35 @@ class SystemCPUAffinityMgr
 
 		bool childEnded();
 		void setOtherCPUAffinity(CPUAffinity cpu_affinity);
+		void setNetDevCPUAffinity(NetDevGroupCPUAffinity netdev_affinity);
 
 	private:
 		enum Cmd {
-			Init, SetAffinity, CleanUp, Ok,
+			Init, SetProcAffinity, SetNetDevAffinity, CleanUp, Ok,
 		};
 
 		typedef uint64_t Arg;
 
 		struct Packet {
+			typedef char String[128];
+
 			Cmd cmd;
 			Arg arg;
+			String str;
 		};
 			
 		static void sigTermHandler(int signo);
+		static std::string concatStringList(StringList list);
+		static StringList splitStringList(std::string str);
 
 		void childFunction();
-		void affinitySetter(CPUAffinity cpu_affinity);
+		void procAffinitySetter(CPUAffinity cpu_affinity);
+		void netDevAffinitySetter(
+				  NetDevGroupCPUAffinity netdev_affinity);
 
 		ProcList getOtherProcList(CPUAffinity cpu_affinity);
 
-		void sendChildCmd(Cmd cmd, Arg arg = 0);
+		void sendChildCmd(Cmd cmd, Arg arg = 0, std::string str = "");
 		Packet readParentCmd();
 		void ackParentCmd();
 
@@ -157,9 +189,16 @@ class SystemCPUAffinityMgr
 		Pipe m_res_pipe;
 		pid_t m_lima_pid;
 		pid_t m_child_pid;
+		CPUAffinity m_other;
+		StringList m_netdev_list;
 	};
 
+	void checkWatchDogStart();
+	void checkWatchDogStop();
+
 	AutoPtr<WatchDog> m_watchdog;
+	CPUAffinity m_other;
+	NetDevGroupCPUAffinityList m_netdev;
 };
 
 struct RecvCPUAffinity {
@@ -189,28 +228,6 @@ bool operator !=(const RecvCPUAffinity& a, const RecvCPUAffinity& b)
 {
 	return !(a == b);
 }
-
-
-struct NetDevGroupCPUAffinity {
-	StringList name_list;
-	CPUAffinity processing;
-};
-
-inline 
-bool operator ==(const NetDevGroupCPUAffinity& a, 
-		 const NetDevGroupCPUAffinity& b)
-{
-	return ((a.name_list == b.name_list) && (a.processing == b.processing));
-}
-
-inline 
-bool operator !=(const NetDevGroupCPUAffinity& a, 
-		 const NetDevGroupCPUAffinity& b)
-{
-	return !(a == b);
-}
-
-typedef std::vector<NetDevGroupCPUAffinity> NetDevGroupCPUAffinityList;
 
 
 struct GlobalCPUAffinity {
@@ -301,7 +318,6 @@ class GlobalCPUAffinityMgr
 
 	void setLimaAffinity(CPUAffinity lima_affinity);
 	void setRecvAffinity(const RecvCPUAffinity& recv_affinity);
-	void setNetDevAffinity(const NetDevGroupCPUAffinityList& netdev_list);
 
 	AutoMutex lock()
 	{ return AutoMutex(m_cond.mutex()); }
