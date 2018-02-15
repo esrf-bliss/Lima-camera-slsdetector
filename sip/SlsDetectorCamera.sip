@@ -129,7 +129,7 @@ public:
 	void getPixelDepthCPUAffinityMap(
 		SlsDetector::PixelDepthCPUAffinityMap& aff_map /Out/);
 
-	SlsDetector::SystemCPUAffinityMgr::ProcessingFinishedEvent *
+	SlsDetector::GlobalCPUAffinityMgr::ProcessingFinishedEvent *
 		getProcessingFinishedEvent();
 };
 

@@ -97,7 +97,7 @@ typedef vector<NetDevGroupCPUAffinity> CPP_SeqType;
 
 // namespace SlsDetector
 // {
-// typedef std::map<PixelDepth, SystemCPUAffinity> PixelDepthCPUAffinityMap;
+// typedef std::map<PixelDepth, GlobalCPUAffinity> PixelDepthCPUAffinityMap;
 // };
 
 %MappedType SlsDetector::PixelDepthCPUAffinityMap
@@ -112,9 +112,9 @@ using namespace lima;
 using namespace lima::SlsDetector;
 
 typedef PixelDepth CPP_KeyType;
-typedef SystemCPUAffinity CPP_ValueType;
+typedef GlobalCPUAffinity CPP_ValueType;
 typedef PixelDepthCPUAffinityMap CPP_MapType;
-#define SIP_ValueType sipType_SlsDetector_SystemCPUAffinity
+#define SIP_ValueType sipType_SlsDetector_GlobalCPUAffinity
 %End
 
 %ConvertToTypeCode
@@ -219,23 +219,23 @@ public:
 	static std::string getTaskProcDir(int task, bool is_thread);
 };
 
-class ProcCPUAffinityMgr
+class SystemCPUAffinityMgr
 {
 public:
-	ProcCPUAffinityMgr();
-	~ProcCPUAffinityMgr();
+	SystemCPUAffinityMgr();
+	~SystemCPUAffinityMgr();
 
 	enum Filter {
 		All, MatchAffinity, NoMatchAffinity, ThisProc=0x10
 	};
 
 	static std::vector<int> getProcList(
-		SlsDetector::ProcCPUAffinityMgr::Filter filter
-			= SlsDetector::ProcCPUAffinityMgr::All,
+		SlsDetector::SystemCPUAffinityMgr::Filter filter
+			= SlsDetector::SystemCPUAffinityMgr::All,
 		SlsDetector::CPUAffinity cpu_affinity = 0);
 	static std::vector<int> getThreadList(
-		SlsDetector::ProcCPUAffinityMgr::Filter filter
-			= SlsDetector::ProcCPUAffinityMgr::All,
+		SlsDetector::SystemCPUAffinityMgr::Filter filter
+			= SlsDetector::SystemCPUAffinityMgr::All,
 		SlsDetector::CPUAffinity cpu_affinity = 0);
 
 	void setOtherCPUAffinity(
@@ -258,23 +258,23 @@ struct NetDevGroupCPUAffinity {
 // typedef std::vector<SlsDetector::NetDevGroupCPUAffinity> 
 //					NetDevGroupCPUAffinityList;
 
-struct SystemCPUAffinity {
+struct GlobalCPUAffinity {
 	SlsDetector::RecvCPUAffinity recv;
 	SlsDetector::CPUAffinity lima;
 	SlsDetector::CPUAffinity other;
 	SlsDetector::NetDevGroupCPUAffinityList netdev;
 };
 
-// typedef std::map<SlsDetector::PixelDepth, SlsDetector::SystemCPUAffinity> 
+// typedef std::map<SlsDetector::PixelDepth, SlsDetector::GlobalCPUAffinity> 
 //						PixelDepthCPUAffinityMap;
 
-class SystemCPUAffinityMgr
+class GlobalCPUAffinityMgr
 {
 public:
 	class ProcessingFinishedEvent
 	{
 	public:
-		ProcessingFinishedEvent(SlsDetector::SystemCPUAffinityMgr *mgr);
+		ProcessingFinishedEvent(SlsDetector::GlobalCPUAffinityMgr *mgr);
 		~ProcessingFinishedEvent();
 
 		void processingFinished();
@@ -282,13 +282,13 @@ public:
 		void registerStatusCallback(CtControl *ct_control);
 	};
 
-	SystemCPUAffinityMgr(SlsDetector::Camera *cam = NULL);
-	~SystemCPUAffinityMgr();
+	GlobalCPUAffinityMgr(SlsDetector::Camera *cam = NULL);
+	~GlobalCPUAffinityMgr();
 	
-	void applyAndSet(const SlsDetector::SystemCPUAffinity& o);
+	void applyAndSet(const SlsDetector::GlobalCPUAffinity& o);
 	void updateRecvRestart();
 
-	SlsDetector::SystemCPUAffinityMgr::
+	SlsDetector::GlobalCPUAffinityMgr::
 	ProcessingFinishedEvent *getProcessingFinishedEvent();
 
 	void prepareAcq();

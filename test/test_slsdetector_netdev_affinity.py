@@ -1,7 +1,7 @@
 from Lima import Core, SlsDetector
 CPUAffinity = SlsDetector.CPUAffinity
 NetDevGroupCPUAffinity = SlsDetector.NetDevGroupCPUAffinity
-SystemCPUAffinity = SlsDetector.SystemCPUAffinity
+GlobalCPUAffinity = SlsDetector.GlobalCPUAffinity
 
 import os
 config_fname = os.environ['EIGER_CONFIG']
@@ -9,17 +9,17 @@ cam = SlsDetector.Camera(config_fname)
 print cam.getNetworkParameter(SlsDetector.Defs.FlowCtrl10G)
 print cam.setNetworkParameter(SlsDetector.Defs.FlowCtrl10G, "0")
 print cam.setNetworkParameter(SlsDetector.Defs.FlowCtrl10G, "1")
-sys_aff_map = cam.getPixelDepthCPUAffinityMap()
+global_aff_map = cam.getPixelDepthCPUAffinityMap()
 
-if not sys_aff_map:
+if not global_aff_map:
 	pixel_depth_list = [4, 8, 16, 32]
 	for pixel_depth in pixel_depth_list:
-		sys_aff = SystemCPUAffinity()
-		sys_aff.recv.listeners = CPUAffinity(0xf00)
-		sys_aff.recv.writers = CPUAffinity(0x0fc)
-		sys_aff.recv.lima = CPUAffinity(0x002)
-		sys_aff.recv.other = CPUAffinity(0x001)
-		sys_aff_map[pixel_depth] = sys_aff
+		global_aff = GlobalCPUAffinity()
+		global_aff.recv.listeners = CPUAffinity(0xf00)
+		global_aff.recv.writers = CPUAffinity(0x0fc)
+		global_aff.recv.lima = CPUAffinity(0x002)
+		global_aff.recv.other = CPUAffinity(0x001)
+		global_aff_map[pixel_depth] = global_aff
 
 all_netdev = [('eth%d' % i) for i in range(10)]
 data_netdev = ['eth3', 'eth5']
@@ -33,7 +33,7 @@ for name_list, a in netdev_groups:
 	ng_aff.processing = CPUAffinity(a)
 	ng_aff_list.append(ng_aff)
 
-for pixel_depth, sys_aff in sys_aff_map.items():
-	sys_aff.netdev = ng_aff_list
+for pixel_depth, global_aff in global_aff_map.items():
+	global_aff.netdev = ng_aff_list
 
-cam.setPixelDepthCPUAffinityMap(sys_aff_map)
+cam.setPixelDepthCPUAffinityMap(global_aff_map)

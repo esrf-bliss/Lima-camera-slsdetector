@@ -407,7 +407,7 @@ static const char *CPUAffinityNetDevSetQueueRpsSrcCList[] = {
 const StringList CPUAffinity::NetDevSetQueueRpsSrc(
 		C_LIST_ITERS(CPUAffinityNetDevSetQueueRpsSrcCList));
 
-ProcCPUAffinityMgr::WatchDog::WatchDog()
+SystemCPUAffinityMgr::WatchDog::WatchDog()
 {
 	DEB_CONSTRUCTOR();
 
@@ -435,7 +435,7 @@ ProcCPUAffinityMgr::WatchDog::WatchDog()
 	}
 }
 
-ProcCPUAffinityMgr::WatchDog::~WatchDog()
+SystemCPUAffinityMgr::WatchDog::~WatchDog()
 {
 	DEB_DESTRUCTOR();
 
@@ -445,16 +445,16 @@ ProcCPUAffinityMgr::WatchDog::~WatchDog()
 	}
 }
 
-void ProcCPUAffinityMgr::WatchDog::sigTermHandler(int /*signo*/)
+void SystemCPUAffinityMgr::WatchDog::sigTermHandler(int /*signo*/)
 {
 }
 
-bool ProcCPUAffinityMgr::WatchDog::childEnded()
+bool SystemCPUAffinityMgr::WatchDog::childEnded()
 {
 	return (waitpid(m_child_pid, NULL, WNOHANG) != 0);
 }
 
-void ProcCPUAffinityMgr::WatchDog::sendChildCmd(Cmd cmd, Arg arg)
+void SystemCPUAffinityMgr::WatchDog::sendChildCmd(Cmd cmd, Arg arg)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR2(cmd, DebHex(arg));
@@ -474,8 +474,8 @@ void ProcCPUAffinityMgr::WatchDog::sendChildCmd(Cmd cmd, Arg arg)
 	DEB_TRACE() << "Watchdog child acknowledged Ok";
 }
 
-ProcCPUAffinityMgr::WatchDog::Packet
-ProcCPUAffinityMgr::WatchDog::readParentCmd()
+SystemCPUAffinityMgr::WatchDog::Packet
+SystemCPUAffinityMgr::WatchDog::readParentCmd()
 {
 	DEB_MEMBER_FUNCT();
 	Packet packet;
@@ -487,13 +487,13 @@ ProcCPUAffinityMgr::WatchDog::readParentCmd()
 	return packet;
 }
 
-void ProcCPUAffinityMgr::WatchDog::ackParentCmd()
+void SystemCPUAffinityMgr::WatchDog::ackParentCmd()
 {
 	DEB_MEMBER_FUNCT();
 	m_res_pipe.write(string(1, Ok));
 }
 
-void ProcCPUAffinityMgr::WatchDog::childFunction()
+void SystemCPUAffinityMgr::WatchDog::childFunction()
 {
 	DEB_MEMBER_FUNCT();
 
@@ -533,7 +533,7 @@ void ProcCPUAffinityMgr::WatchDog::childFunction()
 }
 
 void 
-ProcCPUAffinityMgr::WatchDog::affinitySetter(CPUAffinity cpu_affinity)
+SystemCPUAffinityMgr::WatchDog::affinitySetter(CPUAffinity cpu_affinity)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(cpu_affinity);
@@ -551,7 +551,7 @@ ProcCPUAffinityMgr::WatchDog::affinitySetter(CPUAffinity cpu_affinity)
 }
 
 ProcList 
-ProcCPUAffinityMgr::WatchDog::getOtherProcList(CPUAffinity cpu_affinity)
+SystemCPUAffinityMgr::WatchDog::getOtherProcList(CPUAffinity cpu_affinity)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -568,25 +568,25 @@ ProcCPUAffinityMgr::WatchDog::getOtherProcList(CPUAffinity cpu_affinity)
 }
 
 void 
-ProcCPUAffinityMgr::WatchDog::setOtherCPUAffinity(CPUAffinity cpu_affinity)
+SystemCPUAffinityMgr::WatchDog::setOtherCPUAffinity(CPUAffinity cpu_affinity)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(cpu_affinity);
 	sendChildCmd(SetAffinity, cpu_affinity);
 }
 
-ProcCPUAffinityMgr::ProcCPUAffinityMgr()
+SystemCPUAffinityMgr::SystemCPUAffinityMgr()
 {
 	DEB_CONSTRUCTOR();
 }
 
-ProcCPUAffinityMgr::~ProcCPUAffinityMgr()
+SystemCPUAffinityMgr::~SystemCPUAffinityMgr()
 {
 	DEB_DESTRUCTOR();
 }
 
 ProcList
-ProcCPUAffinityMgr::getProcList(Filter filter, CPUAffinity cpu_affinity)
+SystemCPUAffinityMgr::getProcList(Filter filter, CPUAffinity cpu_affinity)
 {
 	DEB_STATIC_FUNCT();
 	DEB_PARAM() << DEB_VAR2(filter, cpu_affinity);
@@ -639,7 +639,7 @@ ProcCPUAffinityMgr::getProcList(Filter filter, CPUAffinity cpu_affinity)
 
 
 ProcList
-ProcCPUAffinityMgr::getThreadList(Filter filter, 
+SystemCPUAffinityMgr::getThreadList(Filter filter, 
 					  CPUAffinity cpu_affinity)
 {
 	DEB_STATIC_FUNCT();
@@ -647,7 +647,7 @@ ProcCPUAffinityMgr::getThreadList(Filter filter,
 	return getProcList(Filter(filter | ThisProc), cpu_affinity);
 }
 
-void ProcCPUAffinityMgr::setOtherCPUAffinity(CPUAffinity cpu_affinity)
+void SystemCPUAffinityMgr::setOtherCPUAffinity(CPUAffinity cpu_affinity)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -660,8 +660,8 @@ void ProcCPUAffinityMgr::setOtherCPUAffinity(CPUAffinity cpu_affinity)
 		m_watchdog = NULL;
 }
 
-SystemCPUAffinityMgr::
-ProcessingFinishedEvent::ProcessingFinishedEvent(SystemCPUAffinityMgr *mgr)
+GlobalCPUAffinityMgr::
+ProcessingFinishedEvent::ProcessingFinishedEvent(GlobalCPUAffinityMgr *mgr)
 	: m_mgr(mgr), m_cb(this), m_ct(NULL)
 {
 	DEB_CONSTRUCTOR();
@@ -673,7 +673,7 @@ ProcessingFinishedEvent::ProcessingFinishedEvent(SystemCPUAffinityMgr *mgr)
 	m_last_cb_ts = Timestamp::now();
 }
 
-SystemCPUAffinityMgr::
+GlobalCPUAffinityMgr::
 ProcessingFinishedEvent::~ProcessingFinishedEvent()
 {
 	DEB_DESTRUCTOR();
@@ -681,7 +681,7 @@ ProcessingFinishedEvent::~ProcessingFinishedEvent()
 		m_mgr->m_proc_finished = NULL;
 }
 
-void SystemCPUAffinityMgr::ProcessingFinishedEvent::prepareAcq()
+void GlobalCPUAffinityMgr::ProcessingFinishedEvent::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
 	if (!m_ct)
@@ -731,20 +731,20 @@ void SystemCPUAffinityMgr::ProcessingFinishedEvent::prepareAcq()
 	m_stopped = false;
 }
 
-void SystemCPUAffinityMgr::ProcessingFinishedEvent::stopAcq()
+void GlobalCPUAffinityMgr::ProcessingFinishedEvent::stopAcq()
 {
 	DEB_MEMBER_FUNCT();
 	m_stopped = true;
 }
 
-void SystemCPUAffinityMgr::ProcessingFinishedEvent::processingFinished()
+void GlobalCPUAffinityMgr::ProcessingFinishedEvent::processingFinished()
 {
 	DEB_MEMBER_FUNCT();
 	if (m_mgr)
 		m_mgr->limaFinished();
 }
 
-void SystemCPUAffinityMgr::
+void GlobalCPUAffinityMgr::
 ProcessingFinishedEvent::registerStatusCallback(CtControl *ct)
 {
 	DEB_MEMBER_FUNCT();
@@ -755,7 +755,7 @@ ProcessingFinishedEvent::registerStatusCallback(CtControl *ct)
 	m_ct = ct;
 }
 
-void SystemCPUAffinityMgr::
+void GlobalCPUAffinityMgr::
 ProcessingFinishedEvent::limitUpdateRate()
 {
 	Timestamp next_ts = m_last_cb_ts + Timestamp(1.0 / 10);
@@ -764,19 +764,19 @@ ProcessingFinishedEvent::limitUpdateRate()
 		Sleep(remaining);
 }
 
-void SystemCPUAffinityMgr::
+void GlobalCPUAffinityMgr::
 ProcessingFinishedEvent::updateLastCallbackTimestamp()
 {
 	m_last_cb_ts = Timestamp::now();
 }
 
-Timestamp SystemCPUAffinityMgr::
+Timestamp GlobalCPUAffinityMgr::
 ProcessingFinishedEvent::getLastCallbackTimestamp()
 {
 	return m_last_cb_ts;
 }
 
-void SystemCPUAffinityMgr::
+void GlobalCPUAffinityMgr::
 ProcessingFinishedEvent::imageStatusChanged(
 					const CtControl::ImageStatus& status)
 {
@@ -796,7 +796,7 @@ ProcessingFinishedEvent::imageStatusChanged(
 		processingFinished();
 }
 
-SystemCPUAffinityMgr::SystemCPUAffinityMgr(Camera *cam)
+GlobalCPUAffinityMgr::GlobalCPUAffinityMgr(Camera *cam)
 	: m_cam(cam), m_proc_finished(NULL), 
 	  m_lima_finished_timeout(3)
 {
@@ -805,7 +805,7 @@ SystemCPUAffinityMgr::SystemCPUAffinityMgr(Camera *cam)
 	m_state = Ready;
 }
 
-SystemCPUAffinityMgr::~SystemCPUAffinityMgr()
+GlobalCPUAffinityMgr::~GlobalCPUAffinityMgr()
 {
 	DEB_DESTRUCTOR();
 
@@ -815,7 +815,7 @@ SystemCPUAffinityMgr::~SystemCPUAffinityMgr()
 		m_proc_finished->m_mgr = NULL;
 }
 
-void SystemCPUAffinityMgr::applyAndSet(const SystemCPUAffinity& o)
+void GlobalCPUAffinityMgr::applyAndSet(const GlobalCPUAffinity& o)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(o);
@@ -833,16 +833,16 @@ void SystemCPUAffinityMgr::applyAndSet(const SystemCPUAffinity& o)
 	setRecvAffinity(o.recv);
 	setNetDevAffinity(o.netdev);
 
-	if (!m_proc_mgr)
-		m_proc_mgr = new ProcCPUAffinityMgr();
+	if (!m_system_mgr)
+		m_system_mgr = new SystemCPUAffinityMgr();
 
-	m_proc_mgr->setOtherCPUAffinity(o.other);
+	m_system_mgr->setOtherCPUAffinity(o.other);
 	m_curr.other = o.other;
 
 	m_set = o;
 }
 
-void SystemCPUAffinityMgr::setLimaAffinity(CPUAffinity lima_affinity)
+void GlobalCPUAffinityMgr::setLimaAffinity(CPUAffinity lima_affinity)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -862,7 +862,7 @@ void SystemCPUAffinityMgr::setLimaAffinity(CPUAffinity lima_affinity)
 	m_curr.lima = lima_affinity;
 }
 
-void SystemCPUAffinityMgr::setRecvAffinity(const RecvCPUAffinity& recv_affinity)
+void GlobalCPUAffinityMgr::setRecvAffinity(const RecvCPUAffinity& recv_affinity)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -873,7 +873,7 @@ void SystemCPUAffinityMgr::setRecvAffinity(const RecvCPUAffinity& recv_affinity)
 	m_curr.recv = recv_affinity;
 }
 
-void SystemCPUAffinityMgr::setNetDevAffinity(
+void GlobalCPUAffinityMgr::setNetDevAffinity(
 				const NetDevGroupCPUAffinityList& netdev_list)
 {
 	DEB_MEMBER_FUNCT();
@@ -897,14 +897,14 @@ void SystemCPUAffinityMgr::setNetDevAffinity(
 	m_curr.netdev = netdev_list;
 }
 
-void SystemCPUAffinityMgr::updateRecvRestart()
+void GlobalCPUAffinityMgr::updateRecvRestart()
 {
 	DEB_MEMBER_FUNCT();
 	m_curr.recv = m_curr.lima;
 }
 
-SystemCPUAffinityMgr::ProcessingFinishedEvent *
-SystemCPUAffinityMgr::getProcessingFinishedEvent()
+GlobalCPUAffinityMgr::ProcessingFinishedEvent *
+GlobalCPUAffinityMgr::getProcessingFinishedEvent()
 {
 	DEB_MEMBER_FUNCT();
 	if (!m_proc_finished)
@@ -912,33 +912,33 @@ SystemCPUAffinityMgr::getProcessingFinishedEvent()
 	return m_proc_finished;
 }
 
-void SystemCPUAffinityMgr::prepareAcq()
+void GlobalCPUAffinityMgr::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
 	AutoMutex l = lock();
 	if (m_state != Ready)
-		THROW_HW_ERROR(Error) << "SystemCPUAffinityMgr is not Ready: "
+		THROW_HW_ERROR(Error) << "GlobalCPUAffinityMgr is not Ready: "
 				      << "missing ProcessingFinishedEvent";
 	if (m_proc_finished)
 		m_proc_finished->prepareAcq();
 	m_lima_tids.clear();
 }
 
-void SystemCPUAffinityMgr::startAcq()
+void GlobalCPUAffinityMgr::startAcq()
 {
 	DEB_MEMBER_FUNCT();
 	AutoMutex l = lock();
 	m_state = Acquiring;
 }
 
-void SystemCPUAffinityMgr::stopAcq()
+void GlobalCPUAffinityMgr::stopAcq()
 {
 	DEB_MEMBER_FUNCT();
 	if (m_proc_finished)
 		m_proc_finished->stopAcq();
 }
 
-void SystemCPUAffinityMgr::recvFinished()
+void GlobalCPUAffinityMgr::recvFinished()
 {
 	DEB_MEMBER_FUNCT();
 
@@ -951,9 +951,9 @@ void SystemCPUAffinityMgr::recvFinished()
 	if (m_curr.lima != m_curr.recv.all()) {
 		m_state = Changing;
 		AutoMutexUnlock u(l);
-		ProcCPUAffinityMgr::Filter filter;
-		filter = ProcCPUAffinityMgr::MatchAffinity;
-		m_lima_tids = ProcCPUAffinityMgr::getThreadList(filter,
+		SystemCPUAffinityMgr::Filter filter;
+		filter = SystemCPUAffinityMgr::MatchAffinity;
+		m_lima_tids = SystemCPUAffinityMgr::getThreadList(filter,
 								m_curr.lima);
 		DEB_ALWAYS() << "Lima TIDs: " << PrettyIntList(m_lima_tids);
 		CPUAffinity lima_affinity = (uint64_t(m_curr.lima) | 
@@ -967,7 +967,7 @@ void SystemCPUAffinityMgr::recvFinished()
 	m_cond.broadcast();
 }
 
-void SystemCPUAffinityMgr::limaFinished()
+void GlobalCPUAffinityMgr::limaFinished()
 {
 	DEB_MEMBER_FUNCT();
 
@@ -992,7 +992,7 @@ void SystemCPUAffinityMgr::limaFinished()
 	m_cond.broadcast();
 }
 
-void SystemCPUAffinityMgr::waitLimaFinished()
+void GlobalCPUAffinityMgr::waitLimaFinished()
 {
 	DEB_MEMBER_FUNCT();
 
@@ -1029,7 +1029,7 @@ ostream& lima::SlsDetector::operator <<(ostream& os, const RecvCPUAffinity& a)
 	return os << ">";
 }
 
-ostream& lima::SlsDetector::operator <<(ostream& os, const SystemCPUAffinity& a)
+ostream& lima::SlsDetector::operator <<(ostream& os, const GlobalCPUAffinity& a)
 {
 	os << "<";
 	os << "recv=" << a.recv << ", lima=" << a.lima << ", other=" << a.other;

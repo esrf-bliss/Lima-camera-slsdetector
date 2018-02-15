@@ -100,16 +100,16 @@ bool operator !=(const CPUAffinity& a, const CPUAffinity& b)
 }
 
 
-class ProcCPUAffinityMgr
+class SystemCPUAffinityMgr
 {
-	DEB_CLASS_NAMESPC(DebModCamera, "ProcCPUAffinityMgr", "SlsDetector");
+	DEB_CLASS_NAMESPC(DebModCamera, "SystemCPUAffinityMgr", "SlsDetector");
  public:
 	enum Filter {
 		All, MatchAffinity, NoMatchAffinity, ThisProc=0x10,
 	};
 
-	ProcCPUAffinityMgr();
-	~ProcCPUAffinityMgr();
+	SystemCPUAffinityMgr();
+	~SystemCPUAffinityMgr();
 
 	static ProcList getProcList(Filter filter = All, 
 				    CPUAffinity cpu_affinity = 0);
@@ -122,7 +122,7 @@ class ProcCPUAffinityMgr
 	class WatchDog
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "WatchDog", 
-				  "SlsDetector::ProcCPUAffinityMgr");
+				  "SlsDetector::SystemCPUAffinityMgr");
 	public:
 		WatchDog();
 		~WatchDog();
@@ -213,26 +213,26 @@ bool operator !=(const NetDevGroupCPUAffinity& a,
 typedef std::vector<NetDevGroupCPUAffinity> NetDevGroupCPUAffinityList;
 
 
-struct SystemCPUAffinity {
+struct GlobalCPUAffinity {
 	RecvCPUAffinity recv;
 	CPUAffinity lima;
 	CPUAffinity other;
 	NetDevGroupCPUAffinityList netdev;
 };
 
-typedef std::map<PixelDepth, SystemCPUAffinity> PixelDepthCPUAffinityMap;
+typedef std::map<PixelDepth, GlobalCPUAffinity> PixelDepthCPUAffinityMap;
 
-class SystemCPUAffinityMgr 
+class GlobalCPUAffinityMgr 
 {
-	DEB_CLASS_NAMESPC(DebModCamera, "SystemCPUAffinityMgr", 
+	DEB_CLASS_NAMESPC(DebModCamera, "GlobalCPUAffinityMgr", 
 			  "SlsDetector");
  public:
 	class ProcessingFinishedEvent
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "ProcessingFinishedEvent", 
-				  "SlsDetector::SystemCPUAffinityMgr");
+				  "SlsDetector::GlobalCPUAffinityMgr");
 	public:
-		ProcessingFinishedEvent(SystemCPUAffinityMgr *mgr);
+		ProcessingFinishedEvent(GlobalCPUAffinityMgr *mgr);
 		~ProcessingFinishedEvent();
 
 		void processingFinished();
@@ -240,7 +240,7 @@ class SystemCPUAffinityMgr
 		void registerStatusCallback(CtControl *ct_control);
 
 	private:
-		friend class SystemCPUAffinityMgr;
+		friend class GlobalCPUAffinityMgr;
 
 		class ImageStatusCallback : 
 		public CtControl::ImageStatusCallback
@@ -267,7 +267,7 @@ class SystemCPUAffinityMgr
 
 		void imageStatusChanged(const CtControl::ImageStatus& status);
 
-		SystemCPUAffinityMgr *m_mgr;
+		GlobalCPUAffinityMgr *m_mgr;
 		ImageStatusCallback m_cb;
 		CtControl *m_ct;
 		int m_nb_frames;
@@ -277,10 +277,10 @@ class SystemCPUAffinityMgr
 		Timestamp m_last_cb_ts;
 	};
 
-	SystemCPUAffinityMgr(Camera *cam = NULL);
-	~SystemCPUAffinityMgr();
+	GlobalCPUAffinityMgr(Camera *cam = NULL);
+	~GlobalCPUAffinityMgr();
 
-	void applyAndSet(const SystemCPUAffinity& o);
+	void applyAndSet(const GlobalCPUAffinity& o);
 	void updateRecvRestart();
 
 	ProcessingFinishedEvent *getProcessingFinishedEvent();
@@ -308,9 +308,9 @@ class SystemCPUAffinityMgr
 
 	Camera *m_cam;
 	ProcList m_lima_tids;
-	SystemCPUAffinity m_curr;
-	SystemCPUAffinity m_set;
-	AutoPtr<ProcCPUAffinityMgr> m_proc_mgr;
+	GlobalCPUAffinity m_curr;
+	GlobalCPUAffinity m_set;
+	AutoPtr<SystemCPUAffinityMgr> m_system_mgr;
 	Cond m_cond;
 	State m_state;
 	ProcessingFinishedEvent *m_proc_finished;
@@ -319,7 +319,7 @@ class SystemCPUAffinityMgr
 
 std::ostream& operator <<(std::ostream& os, const CPUAffinity& a);
 std::ostream& operator <<(std::ostream& os, const RecvCPUAffinity& a);
-std::ostream& operator <<(std::ostream& os, const SystemCPUAffinity& a);
+std::ostream& operator <<(std::ostream& os, const GlobalCPUAffinity& a);
 std::ostream& operator <<(std::ostream& os, const PixelDepthCPUAffinityMap& m);
 
 } // namespace SlsDetector

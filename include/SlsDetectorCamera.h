@@ -167,7 +167,7 @@ public:
 	void setPixelDepthCPUAffinityMap(PixelDepthCPUAffinityMap aff_map);
 	void getPixelDepthCPUAffinityMap(PixelDepthCPUAffinityMap& aff_map);
 
-	SystemCPUAffinityMgr::ProcessingFinishedEvent *
+	GlobalCPUAffinityMgr::ProcessingFinishedEvent *
 		getProcessingFinishedEvent();
 
 private:
@@ -318,7 +318,7 @@ private:
 	};
 
 	friend class Model;
-	friend class SystemCPUAffinityMgr;
+	friend class GlobalCPUAffinityMgr;
 
 	void setModel(Model *model);
 
@@ -401,7 +401,7 @@ private:
 	std::vector<PortStats> m_port_stats;
 	TimeRangesChangedCallback *m_time_ranges_cb;
 	PixelDepthCPUAffinityMap m_cpu_affinity_map;
-	SystemCPUAffinityMgr m_system_cpu_affinity_mgr;
+	GlobalCPUAffinityMgr m_global_cpu_affinity_mgr;
 };
 
 } // namespace SlsDetector

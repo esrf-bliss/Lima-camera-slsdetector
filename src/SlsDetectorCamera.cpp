@@ -350,7 +350,7 @@ void Camera::AcqThread::threadFunction()
 	multiSlsDetector *det = m_cam->m_det;
 
 	AutoMutex l = m_cam->lock();
-	m_cam->m_system_cpu_affinity_mgr.startAcq();
+	m_cam->m_global_cpu_affinity_mgr.startAcq();
 	{
 		AutoMutexUnlock u(l);
 		DEB_TRACE() << "calling startReceiver";
@@ -422,8 +422,8 @@ void Camera::AcqThread::threadFunction()
 
 	if (had_frames) {
 		AutoMutexUnlock u(l);
-		m_cam->m_system_cpu_affinity_mgr.recvFinished();
-		m_cam->m_system_cpu_affinity_mgr.waitLimaFinished();
+		m_cam->m_global_cpu_affinity_mgr.recvFinished();
+		m_cam->m_global_cpu_affinity_mgr.waitLimaFinished();
 	}
 
 	m_state = Stopped;
@@ -453,7 +453,7 @@ Camera::Camera(string config_fname)
 	  m_abort_sleep_time(0.1),
 	  m_tol_lost_packets(true),
 	  m_time_ranges_cb(NULL),
-	  m_system_cpu_affinity_mgr(this)
+	  m_global_cpu_affinity_mgr(this)
 {
 	DEB_CONSTRUCTOR();
 
@@ -757,11 +757,11 @@ void Camera::updateCPUAffinity(bool recv_restarted)
 
 	// receiver threads are restarted after DR change
 	if (recv_restarted)
-		m_system_cpu_affinity_mgr.updateRecvRestart();
+		m_global_cpu_affinity_mgr.updateRecvRestart();
 
-	// apply the corresponding SystemCPUAffinity
-	SystemCPUAffinity system_affinity = m_cpu_affinity_map[m_pixel_depth];
-	m_system_cpu_affinity_mgr.applyAndSet(system_affinity);
+	// apply the corresponding GlobalCPUAffinity
+	GlobalCPUAffinity global_affinity = m_cpu_affinity_map[m_pixel_depth];
+	m_global_cpu_affinity_mgr.applyAndSet(global_affinity);
 }
 
 void Camera::setRecvCPUAffinity(const RecvCPUAffinity& recv_affinity)
@@ -921,7 +921,7 @@ void Camera::prepareAcq()
 	}
 
 	m_model->prepareAcq();
-	m_system_cpu_affinity_mgr.prepareAcq();
+	m_global_cpu_affinity_mgr.prepareAcq();
 
 	// recv->resetAcquisitionCount()
 	m_det->resetFramesCaught();
@@ -945,7 +945,7 @@ void Camera::stopAcq()
 {
 	DEB_MEMBER_FUNCT();
 
-	m_system_cpu_affinity_mgr.stopAcq();
+	m_global_cpu_affinity_mgr.stopAcq();
 
 	AutoMutex l = lock();
 	if (getEffectiveState() != Running)
@@ -1467,9 +1467,9 @@ void Camera::getPixelDepthCPUAffinityMap(PixelDepthCPUAffinityMap& aff_map)
 	DEB_RETURN() << DEB_VAR1(aff_map);
 }
 
-SystemCPUAffinityMgr::
+GlobalCPUAffinityMgr::
 ProcessingFinishedEvent *Camera::getProcessingFinishedEvent()
 {
 	DEB_MEMBER_FUNCT();
-	return m_system_cpu_affinity_mgr.getProcessingFinishedEvent();
+	return m_global_cpu_affinity_mgr.getProcessingFinishedEvent();
 }
