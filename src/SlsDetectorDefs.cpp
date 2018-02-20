@@ -422,10 +422,9 @@ SimpleStat& SimpleStat::operator =(const SimpleStat& o)
 
 SimpleStat& SimpleStat::operator +=(const SimpleStat& o)
 {
-	if ((o.factor != factor) || (o.hist_bin != hist_bin)) {
-		cout << "Error!" << endl;
+	if ((o.factor != factor) || (o.hist_bin != hist_bin))
 		throw LIMA_HW_EXC(Error, "Cannot add different SimpleStats");
-	}
+
 	AutoMutex l(o.lock);
 	xmin = xn ? (o.xn ? std::min(xmin, o.xmin) : xmin) : o.xmin;
 	xmax = xn ? (o.xn ? std::max(xmax, o.xmax) : xmin) : o.xmax;
