@@ -298,7 +298,20 @@ private:
 	protected:
 		virtual void threadFunction();
 	private:
+		class ExceptionCleanUp : Thread::ExceptionCleanUp
+		{
+			DEB_CLASS_NAMESPC(DebModCamera, 
+					  "Camera::AcqThread::ExceptionCleanUp",
+					  "SlsDetector");
+		public:
+			ExceptionCleanUp(AcqThread& thread);
+			virtual ~ExceptionCleanUp();
+		};
+
 		bool newFrameReady(FrameType frame);
+		void startAcq();
+		void stopAcq();
+		void cleanUp();
 
 		Camera *m_cam;
 		Cond& m_cond;
