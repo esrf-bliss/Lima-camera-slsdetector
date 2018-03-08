@@ -302,7 +302,7 @@ private:
 
 		Camera *m_cam;
 		Cond& m_cond;
-		volatile State& m_state;
+		State& m_state;
 		FrameQueue& m_frame_queue;
 	};
 
@@ -393,7 +393,7 @@ private:
 	bool m_raw_mode;
 	AutoPtr<BufferThread, true> m_buffer_thread;
 	AutoPtr<AcqThread> m_acq_thread;
-	volatile State m_state;
+	State m_state;
 	FrameQueue m_frame_queue;
 	double m_new_frame_timeout;
 	double m_abort_sleep_time;
