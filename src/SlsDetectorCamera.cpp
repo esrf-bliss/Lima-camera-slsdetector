@@ -964,6 +964,7 @@ void Camera::prepareAcq()
 		AutoMutex l = lock();
 		m_frame_map.setBufferSize(nb_buffers);
 		m_frame_map.clear();
+		m_prev_ifa.clear();
 		DEB_TRACE() << DEB_VAR1(m_frame_queue.size());
 		while (!m_frame_queue.empty())
 			m_frame_queue.pop();
@@ -1050,6 +1051,11 @@ bool Camera::checkLostPackets()
 	DEB_MEMBER_FUNCT();
 
 	FrameArray ifa = m_frame_map.getItemFrameArray();
+	if (ifa != m_prev_ifa) {
+		m_prev_ifa = ifa;
+		return false;
+	}
+
 	FrameType last_frame = getLatestFrame(ifa);
 	if (getOldestFrame(ifa) == last_frame) {
 		DEB_RETURN() << DEB_VAR1(false);

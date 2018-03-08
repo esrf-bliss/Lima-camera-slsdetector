@@ -411,6 +411,7 @@ private:
 	double m_new_frame_timeout;
 	double m_abort_sleep_time;
 	bool m_tol_lost_packets;
+	FrameArray m_prev_ifa;
 	std::vector<PortStats> m_port_stats;
 	TimeRangesChangedCallback *m_time_ranges_cb;
 	PixelDepthCPUAffinityMap m_cpu_affinity_map;
