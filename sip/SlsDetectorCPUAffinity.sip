@@ -299,6 +299,7 @@ public:
 	void recvFinished();
 	void limaFinished();
 	void waitLimaFinished();
+	void cleanUp();
 };
 
 

@@ -363,7 +363,7 @@ void Camera::AcqThread::threadFunction()
 
 	SeqFilter seq_filter;
 	bool had_frames = false;
-
+	bool cont_acq = true;
 	do {
 		while ((m_state != StopReq) && m_frame_queue.empty()) {
 			if (!m_cond.wait(m_cam->m_new_frame_timeout)) {
@@ -377,7 +377,6 @@ void Camera::AcqThread::threadFunction()
 			DEB_TRACE() << DEB_VAR1(frame);
 			seq_filter.addVal(frame);
 			SeqFilter::Range frames = seq_filter.getSeqRange();
-			bool cont_acq = true;
 			if (frames.nb > 0) {
 				AutoMutexUnlock u(l);
 				int f = frames.first;
@@ -387,10 +386,8 @@ void Camera::AcqThread::threadFunction()
 					had_frames = true;
 				} while ((++f != frames.end()) && cont_acq);
 			}
-			if (!cont_acq)
-				m_state = StopReq;
 		}
-	} while (m_state != StopReq);
+	} while ((m_state != StopReq) && cont_acq);
 
 	m_state = Stopping;
 	{
@@ -420,10 +417,14 @@ void Camera::AcqThread::threadFunction()
 	m_cam->getStats(stats);
 	DEB_ALWAYS() << DEB_VAR1(stats);
 
-	if (had_frames) {
+	{
 		AutoMutexUnlock u(l);
-		m_cam->m_global_cpu_affinity_mgr.recvFinished();
-		m_cam->m_global_cpu_affinity_mgr.waitLimaFinished();
+		if (had_frames) {
+			m_cam->m_global_cpu_affinity_mgr.recvFinished();
+			m_cam->m_global_cpu_affinity_mgr.waitLimaFinished();
+		} else {
+			m_cam->m_global_cpu_affinity_mgr.cleanUp();
+		}
 	}
 
 	m_state = Stopped;
