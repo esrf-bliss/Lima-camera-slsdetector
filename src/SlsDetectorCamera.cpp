@@ -502,7 +502,7 @@ Camera::Camera(string config_fname)
 	  m_image_type(Bpp16), 
 	  m_raw_mode(false),
 	  m_state(Idle),
-	  m_new_frame_timeout(1),
+	  m_new_frame_timeout(0.5),
 	  m_abort_sleep_time(0.1),
 	  m_tol_lost_packets(true),
 	  m_time_ranges_cb(NULL),
