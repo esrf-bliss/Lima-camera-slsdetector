@@ -297,7 +297,7 @@ void Camera::BufferThread::processFinishInfo(const FinishInfo& finfo)
 		}
 		SortedIntList::const_iterator it, end = finfo.finished.end();
 		for (it = finfo.finished.begin(); it != end; ++it)
-			m_cam->frameFinished(*it);
+			m_cam->m_acq_thread->queueFinishedFrame(*it);
 	} catch (Exception& e) {
 		ostringstream err_msg;
 		err_msg << "BufferThread::processRecvPort: " << e;
@@ -330,12 +330,17 @@ Camera::AcqThread::ExceptionCleanUp::~ExceptionCleanUp()
 }
 
 Camera::AcqThread::AcqThread(Camera *cam)
-	: m_cam(cam), m_cond(m_cam->m_cond), m_state(m_cam->m_state),
-	  m_frame_queue(m_cam->m_frame_queue)
+	: m_cam(cam), m_cond(m_cam->m_cond), m_state(m_cam->m_state)
 {
 	DEB_CONSTRUCTOR();
+}
+
+void Camera::AcqThread::start()
+{
+	DEB_MEMBER_FUNCT();
+
 	m_state = Starting;
-	start();
+	Thread::start();
 
 	struct sched_param param;
 	param.sched_priority = sched_get_priority_min(SCHED_RR);
@@ -424,6 +429,15 @@ void Camera::AcqThread::threadFunction()
 	}
 
 	m_state = Stopped;
+	m_cond.broadcast();
+}
+
+void Camera::AcqThread::queueFinishedFrame(FrameType frame)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(frame);
+	AutoMutex l = m_cam->lock();
+	m_frame_queue.push(frame);
 	m_cond.broadcast();
 }
 
@@ -965,9 +979,6 @@ void Camera::prepareAcq()
 		m_frame_map.setBufferSize(nb_buffers);
 		m_frame_map.clear();
 		m_prev_ifa.clear();
-		DEB_TRACE() << DEB_VAR1(m_frame_queue.size());
-		while (!m_frame_queue.empty())
-			m_frame_queue.pop();
 		for (int i = 0; i < nb_ports; ++i) {
 			m_port_stats[i].reset();
 			m_buffer_thread[i].prepareAcq();
@@ -993,6 +1004,7 @@ void Camera::startAcq()
 	m_buffer_cb_mgr->setStartTimestamp(Timestamp::now());
 
 	m_acq_thread = new AcqThread(this);
+	m_acq_thread->start();
 }
 
 void Camera::stopAcq()
@@ -1036,15 +1048,6 @@ void Camera::processRecvPort(int port_idx, FrameType frame, char *dptr,
 	Timestamp t1 = Timestamp::now();
 	PortStats& port_stats = m_port_stats[port_idx];
 	port_stats.stats.new_finish.add(t1 - t0);
-}
-
-void Camera::frameFinished(FrameType frame)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(frame);
-	AutoMutex l = lock();
-	m_frame_queue.push(frame);
-	m_cond.broadcast();
 }
 
 bool Camera::checkLostPackets()

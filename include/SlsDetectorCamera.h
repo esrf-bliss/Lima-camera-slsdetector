@@ -294,9 +294,14 @@ private:
 				  "SlsDetector");
 	public:
 		AcqThread(Camera *cam);
+
+		void queueFinishedFrame(FrameType frame);
+		virtual void start();
 		void stop(bool wait);
+
 	protected:
 		virtual void threadFunction();
+
 	private:
 		class ExceptionCleanUp : Thread::ExceptionCleanUp
 		{
@@ -316,7 +321,7 @@ private:
 		Camera *m_cam;
 		Cond& m_cond;
 		State& m_state;
-		FrameQueue& m_frame_queue;
+		FrameQueue m_frame_queue;
 	};
 
 	struct PortStats {
@@ -355,7 +360,6 @@ private:
 	void processRecvFileStart(int recv_idx, uint32_t dsize);
 	void processRecvPort(int port_idx, FrameType frame, char *dptr, 
 			     uint32_t dsize);
-	void frameFinished(FrameType frame);
 
 	bool checkLostPackets();
 	FrameType getLastReceivedFrame();
@@ -407,7 +411,6 @@ private:
 	AutoPtr<BufferThread, true> m_buffer_thread;
 	AutoPtr<AcqThread> m_acq_thread;
 	State m_state;
-	FrameQueue m_frame_queue;
 	double m_new_frame_timeout;
 	double m_abort_sleep_time;
 	bool m_tol_lost_packets;
