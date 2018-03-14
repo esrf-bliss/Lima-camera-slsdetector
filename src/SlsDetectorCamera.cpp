@@ -199,7 +199,7 @@ void Camera::Receiver::portCallback(FrameType frame, int port, char *dptr,
 }
 
 Camera::BufferThread::BufferThread()
-	: m_cam(NULL), m_port_idx(-1)
+	: m_cam(NULL), m_port_idx(-1), m_frame_map_item(NULL)
 {
 	DEB_CONSTRUCTOR();
 }
@@ -209,8 +209,8 @@ void Camera::BufferThread::init(Camera *cam, int port_idx)
 	DEB_MEMBER_FUNCT();
 
 	m_cam = cam;
-	m_frame_map = &m_cam->m_frame_map;
 	m_port_idx = port_idx;
+	m_frame_map_item = &m_cam->m_frame_map.getItem(m_port_idx);
 
 	start();
 }
@@ -235,7 +235,7 @@ Camera::BufferThread::~BufferThread()
 		m_cond.broadcast();
 	}
 
-	m_frame_map->stopPollFrameItemFinished(m_port_idx);
+	m_frame_map_item->stopPollFrameFinished();
 }
 
 void Camera::BufferThread::start()
@@ -269,7 +269,7 @@ void Camera::BufferThread::threadFunction()
 	while (!m_end) {
 		AutoMutexUnlock u(l);
 		FinishInfoList finfo_list;
-		finfo_list = m_frame_map->pollFrameItemFinished(m_port_idx);
+		finfo_list = m_frame_map_item->pollFrameFinished();
 		FinishInfoList::const_iterator it, end = finfo_list.end();
 		for (it = finfo_list.begin(); it != end; ++it) {
 			const FinishInfo& finfo = *it;
@@ -1024,14 +1024,15 @@ void Camera::processRecvPort(int port_idx, FrameType frame, char *dptr,
 {
 	DEB_MEMBER_FUNCT();
 
-	m_frame_map.checkFinishedFrameItem(frame, port_idx);
+	FrameMap::Item& frame_map_item = m_frame_map.getItem(port_idx);
+	frame_map_item.checkFinishedFrame(frame);
 	bool valid = (dptr != NULL);
 	if (valid) {
 		char *bptr = getFrameBufferPtr(frame);
 		m_model->processRecvPort(port_idx, frame, dptr, dsize, bptr);
 	}
 	Timestamp t0 = Timestamp::now();
-	m_frame_map.frameItemFinished(frame, port_idx, true, valid);
+	frame_map_item.frameFinished(frame, true, valid);
 	Timestamp t1 = Timestamp::now();
 	PortStats& port_stats = m_port_stats[port_idx];
 	port_stats.stats.new_finish.add(t1 - t0);

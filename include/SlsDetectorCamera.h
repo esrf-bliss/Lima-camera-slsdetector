@@ -175,8 +175,8 @@ private:
 
 	typedef std::queue<int> FrameQueue;
 
-	typedef FrameMap::FinishInfo FinishInfo;
-	typedef FrameMap::FinishInfoList FinishInfoList;
+	typedef FrameMap::Item::FinishInfo FinishInfo;
+	typedef FrameMap::Item::FinishInfoList FinishInfoList;
 
 	struct AppInputData
 	{
@@ -280,8 +280,8 @@ private:
 		void processFinishInfo(const FinishInfo& finfo);
 
 		Camera *m_cam;
-		FrameMap *m_frame_map;
 		int m_port_idx;
+		FrameMap::Item *m_frame_map_item;
 		pid_t m_tid;
 		bool m_end;
 		Cond m_cond;
