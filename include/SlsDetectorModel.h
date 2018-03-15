@@ -34,6 +34,7 @@ namespace SlsDetector
 {
 
 class Camera;
+class Receiver;
 
 class Model
 {
@@ -88,6 +89,8 @@ class Model
 
  private:
 	friend class Camera;
+	friend class Receiver;
+
 	Camera *m_cam;
 	Type m_type;
 };

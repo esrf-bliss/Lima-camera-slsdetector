@@ -31,10 +31,14 @@ set(SLS_DETECTOR_RECV ${SLS_DETECTOR_DIR}/slsReceiverSoftware)
 
 add_subdirectory(${SLS_DETECTOR_DIR})
 
-set(${NAME}_srcs src/SlsDetectorDefs.cpp  src/SlsDetectorArgs.cpp
-    src/SlsDetectorCPUAffinity.cpp src/SlsDetectorModel.cpp 
-    src/SlsDetectorCamera.cpp src/SlsDetectorEiger.cpp 
-    src/SlsDetectorInterface.cpp)
+set(${NAME}_srcs src/SlsDetectorDefs.cpp
+		 src/SlsDetectorArgs.cpp
+		 src/SlsDetectorCPUAffinity.cpp
+		 src/SlsDetectorModel.cpp
+		 src/SlsDetectorReceiver.cpp
+		 src/SlsDetectorCamera.cpp
+		 src/SlsDetectorEiger.cpp
+		 src/SlsDetectorInterface.cpp)
 
 add_library(lima${NAME} SHARED ${${NAME}_srcs})
 
