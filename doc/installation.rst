@@ -74,8 +74,7 @@ software can run properly:
 ::
 
     # as root
-    lid10eiger1:~ # mkdir -p ~/libc
-    lid10eiger1:~ # cd ~/libc
+    lid10eiger1:~ # mkdir -p ~/libc && cd ~/libc
     lid10eiger1:~/libc # scp lid01eiger1:/nobackup/lid01eiger12/devel/libc/apt-get-source/eglibc-2.13/modified-02/*.deb .
     ...
     lid10eiger1:~/libc # dpkg --install libc6_2.13-38+deb7u10_amd64.deb \
@@ -125,6 +124,38 @@ to different CPU cores:
     # as root
     lid10eiger1:~ # apt-get install irqbalance
     ...
+
+*cmake*
+~~~~~~~~~~~~
+
+A recent version of *cmake* (> 3.0) is needed to compile Lima. Debian 7 package is 
+cmake-2.8.9-1, so it must be compiled from the sources. First un-install the Debian package:
+
+::
+
+    # as root
+    lid10eiger1:~ # p=$(dpkg --list cmake\* | grep '^ii' | awk '{print $2}'); \
+        [ -n "${p}" ] && dpkg --purge ${p}
+    ...
+
+    lid10eiger1:~ # mkdir ~/cmake && cd ~/cmake
+    lid10eiger1:~/cmake # 
+
+    # as opid00
+    (bliss) lid10eiger1:~ % mkdir -p ~/Downloads/cmake && cd ~/Downloads/cmake
+    (bliss) lid10eiger1:~/Downloads/cmake % scp lisgeiger1:Downloads/cmake/cmake-3.8.0.tar.gz .
+    ...
+    (bliss) lid10eiger1:~/Downloads/cmake % tar -xzf cmake-3.8.0.tar.gz 
+    (bliss) lid10eiger1:~/Downloads/cmake % cd cmake-3.8.0
+    (bliss) lid10eiger1:~/Downloads/cmake/cmake-3.8.0 % ./bootstrap --parallel=12 --qt-gui
+    ...
+    (bliss) lid10eiger1:~/Downloads/cmake/cmake-3.8.0 % make -j12
+    ...
+    (bliss) lid10eiger1:~/Downloads/cmake/cmake-3.8.0 % su
+    Password: 
+    lid10eiger1:Downloads/cmake/cmake-3.8.0 # make install
+    ...
+
 
 Disk configuration
 ~~~~~~~~~~~~~~~~~~
@@ -910,71 +941,6 @@ Add the *git-sig* Bash helper for authoring future commits:
 Logout from *opid00* and re-login so changes are taken into account for
 next steps.
 
-Eiger software: SlsDetectorsPackage
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Copy, extract and patch the latest version of the 'SlsDetectorsPackage':
-
-::
-
-    # as opid00
-    (bliss) lid10eiger1:~ % EIGER_DIR=${EIGER_HOME}/eiger/eiger_v2.3.2
-    (bliss) lid10eiger1:~ % mkdir -p ${EIGER_DIR}
-    (bliss) lid10eiger1:~ % scp lisgeiger1:${EIGER_DIR}/slsDetectorsPackage*.tar.gz ${EIGER_DIR}
-    slsDetectorsPackagev2.3.2.tar.gz              100%   43MB  43.1MB/s   00:00
-
-    (bliss) lid10eiger1:~ % EIGER_PATCHES=${EIGER_HOME}/eiger/patches
-    (bliss) lid10eiger1:~ % mkdir -p ${EIGER_PATCHES}
-    (bliss) lid10eiger1:~ % scp -r lisgeiger1:${EIGER_PATCHES}/* ${EIGER_PATCHES}
-    ...
-
-    (bliss) lid10eiger1:~ % cd ${EIGER_DIR}
-    (bliss) lid10eiger1:~/eiger/eiger_v2.3.2 % tar -xzf slsDetectorsPackagev2.3.2.tar.gz
-
-    (bliss) lid10eiger1:~/eiger/eiger_v2.3.2 % cd slsDetectorsPackage
-    (bliss) lid10eiger1:~/eiger/eiger_v2.3.2/slsDetectorsPackage % \
-        for e in *; do \
-            [ -d ${e} ] || continue; \
-            for p in ${EIGER_PATCHES}/*/${e}*.patch; do \
-                [ -e ${p} ] || continue; \
-                echo "Applying ${p} ..." | sed "s:${EIGER_PATCHES}/::" ; \
-                (cd ${e} && patch -p1 < ${p}); \
-            done; \
-        done
-    Applying 2017-04-27/slsDetectorSoftware-multiSlsDetector-decode-mod.patch ...
-    patching file multiSlsDetector/multiSlsDetector.cpp
-    Applying 2017-05-12/slsDetectorSoftware-fix-energy-calibration.patch ...
-    patching file slsDetector/slsDetector.cpp
-    patching file slsDetectorAnalysis/energyConversion.cpp
-    Applying 2017-04-22/slsReceiverSoftware-force-system-buffers-with-error-logs.patch ...
-    patching file include/genericSocket.h
-    patching file src/UDPStandardImplementation.cpp
-    Applying 2017-08-30/slsReceiverSoftware-quiet-acquisition.patch ...
-    patching file src/UDPStandardImplementation.cpp
-
-And build it (12 parallel jobs: one per core):
-
-::
-
-    (bliss) lid10eiger1:~/eiger/eiger_v2.3.2/slsDetectorsPackage % make clean
-    (bliss) lid10eiger1:~/eiger/eiger_v2.3.2/slsDetectorsPackage % make -j12 2>&1 | tee /tmp/slsDetectorPackage.make.log
-    ...
-
-Include the detector software environment in *eiger_setup.sh*:
-
-::
-
-    (bliss) lid10eiger1:~ % tail -n 9 eiger_setup.sh
-
-    EIGER_DIR=${EIGER_HOME}/eiger/eiger_v2.3.2
-    SLS_DETECTORS_DIR=${EIGER_DIR}/slsDetectorsPackage
-    SLS_DETECTORS_BIN=${SLS_DETECTORS_DIR}/bin
-    export EIGER_DIR SLS_DETECTORS_DIR
-
-    PATH=${EIGER_DIR}/eiger_scripts:${SLS_DETECTORS_BIN}:${PATH}
-    LD_LIBRARY_PATH=${SLS_DETECTORS_BIN}:${LD_LIBRARY_PATH}
-    export PATH LD_LIBRARY_PATH
-
 Eiger-500k configuration
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -983,6 +949,7 @@ computer directories:
 
 ::
 
+    (bliss) lid10eiger1:~ % EIGER_DIR=${EIGER_HOME}/eiger/eiger_v2.3.2
     (bliss) lid10eiger1:~ % EIGER_CONFIG=${EIGER_DIR}/config/beb-021-020-direct-FO-10g.config
     (bliss) lid10eiger1:~ % mkdir -p $(dirname ${EIGER_CONFIG})
     (bliss) lid10eiger1:~ % scp lisgeiger1:${EIGER_CONFIG} $(dirname ${EIGER_CONFIG})
@@ -1023,14 +990,13 @@ The resulting configuration file:
 
     rx_hostname lid10eiger1
 
-    settingsdir /users/opid00/eiger/eiger_v2.3.2/slsDetectorsPackage/settingsdir/eiger
+    settingsdir /users/opid00/eiger/eiger_v2.3.2/settingsdir/eiger
     lock 0
-    #caldir /users/opid00/eiger/eiger_v2.3.2/slsDetectorsPackage/settingsdir/eiger
+    #caldir /users/opid00/eiger/eiger_v2.3.2/settingsdir/eiger
     outdir /nobackup/lid10eiger12/data/eiger
 
     tengiga 1
     threaded 1
-    clkdivider 0
     flags parallel
     iodelay 651
 
@@ -1042,9 +1008,9 @@ Copy the detector calibration data:
 
 ::
 
-    (bliss) lid10eiger1:~ % SLS_DETECTORS_SETTINGS=$(grep ^settings ${EIGER_CONFIG} | awk '{print $2}')/standard
-    (bliss) lid10eiger1:~ % mkdir -p $(dirname ${SLS_DETECTORS_SETTINGS})
-    (bliss) lid10eiger1:~ % scp -r lisgeiger1:${SLS_DETECTORS_SETTINGS} $(dirname ${SLS_DETECTORS_SETTINGS})
+    (bliss) lid10eiger1:~ % SLS_DETECTOR_SETTINGS=$(grep ^settings ${EIGER_CONFIG} | awk '{print $2}')/standard
+    (bliss) lid10eiger1:~ % mkdir -p $(dirname ${SLS_DETECTOR_SETTINGS})
+    (bliss) lid10eiger1:~ % scp -r lisgeiger1:${SLS_DETECTOR_SETTINGS} $(dirname ${SLS_DETECTOR_SETTINGS})
     ...
 
 Add the configuration file to *eiger_setup.sh* and decode the
@@ -1052,44 +1018,140 @@ Add the configuration file to *eiger_setup.sh* and decode the
 
 ::
 
-    (bliss) lid10eiger1:~ % tail -n 7 eiger_setup.sh
+    (bliss) lid10eiger1:~ % tail -n 8 eiger_setup.sh
 
+    EIGER_DIR=${EIGER_HOME}/eiger/eiger_v2.3.2
     EIGER_CONFIG=${EIGER_DIR}/config/beb-021-020-direct-FO-10g.config
     EIGER_MODULES=$(grep "^hostname" ${EIGER_CONFIG} | cut -d" " -f2 | tr '+' ' ')
-    export EIGER_CONFIG EIGER_MODULES
+    export EIGER_DIR EIGER_CONFIG EIGER_MODULES
 
-    SLS_DETECTORS_SETTINGS=$(grep ^settings ${EIGER_CONFIG} | awk '{print $2}')/standard
-    export SLS_DETECTORS_SETTINGS
+    SLS_DETECTOR_SETTINGS=$(grep ^settings ${EIGER_CONFIG} | awk '{print $2}')/standard
+    export SLS_DETECTOR_SETTINGS
 
-ESRF scripts on top of SlsDetectors software
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Logout from *opid00* and login again in order to apply the previous
+changes.
+
+
+ESRF package for SlsDetectors
+-----------------------------
 
 Install the [GitLab Hardware/sls_detectors
-project\|\ https://gitlab.esrf.fr/Hardware/sls_detectors] (requires
-personal SSH key added to the active *ssh-agent*):
+project\|\ https://gitlab.esrf.fr/Hardware/sls_detectors]:
 
 ::
 
     (bliss) lid10eiger1:~ % mkdir -p ~/esrf && cd ~/esrf
-    (bliss) lid10eiger1:~/esrf % git clone -o gitlab git@gitlab.esrf.fr:Hardware/sls_detectors.git
+    (bliss) lid10eiger1:~/esrf % git clone -o gitlab git://gitlab.esrf.fr/Hardware/sls_detectors.git
     Cloning into 'sls_detectors'...
     ...
 
-and add the scripts to *eiger_setup.sh*:
+Add the *ESRF scripts* to *eiger_setup.sh*:
 
 ::
 
     (bliss) lid10eiger1:~ % tail -n 5 eiger_setup.sh
 
-    SLS_DETECTORS_SCRIPTS=${EIGER_HOME}/esrf/sls_detectors/eiger/scripts
-    export SLS_DETECTORS_SCRIPTS
-    PATH=${SLS_DETECTORS_SCRIPTS}:${PATH}
+    SLS_DETECTOR_SCRIPTS=${EIGER_HOME}/esrf/sls_detectors/eiger/scripts
+    export SLS_DETECTOR_SCRIPTS
+    PATH=${SLS_DETECTOR_SCRIPTS}:${PATH}
     export PATH
 
-Logout from *opid00* and login again in order to apply the previous
-changes.
+Lima installation in detector software account
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Finally, test the 'slsDetectorGui':
+First install *flex*, which might needed to compile some *Lima* subsystems:
+
+::
+
+    # as root
+    lid10eiger1:~ # apt-get install flex
+    ...
+
+*Lima* is referenced as a submodule by the *sls_detectors* project installed before:
+
+::
+
+    # as opid00
+    (bliss) lid10eiger1:~ % cd ~/esrf/sls_detectors
+    (bliss) lid10eiger1:~/esrf/sls_detectors % git submodule init Lima
+    Submodule 'Lima' (git://gitlab.esrf.fr/limagroup/lima.git) registered for path 'Lima'
+    (bliss) lid10eiger1:~/esrf/sls_detectors % git submodule update
+    ...
+    (bliss) lid10eiger1:~/esrf/sls_detectors % cd Lima
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git remote rename origin gitlab
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git remote add github.bliss git://github.com/esrf-bliss/Lima.git
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git fetch --all
+    ...
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule init \
+        third-party/Processlib third-party/Sps \
+        third-party/gldisplay \
+        camera/slsdetector \
+        applications/spec applications/tango/python \
+        documentation
+    ...
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule update
+    ...
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule foreach git remote rename origin github.bliss
+    ...
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule foreach \
+        'bash -c "git remote add gitlab \$(git config remote.github.bliss.url | sed \"s%git://github.com/esrf-bliss%git://gitlab.esrf.fr/limagroup%\")"'
+    ...
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % (cd third-party/Sps && git remote rm gitlab)
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % (cd third-party/Processlib && \
+        git remote set-url gitlab git://gitlab.esrf.fr/limagroup/processlib.git)
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule foreach git fetch --all
+    ...
+
+Eiger software: slsDetectorPackage
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The *slsDetectorPackage* is in turn a submodule of the *Lima/camera/slsdetector*
+plugin:
+
+::
+
+    # as opid00
+    (bliss) lid10eiger1:~ % cd ~/esrf/sls_detectors/Lima/camera/slsdetector
+    (bliss) lid10eiger1:Lima/camera/slsdetector % git submodule init
+    Submodule 'slsDetectorPackage' (git://github.com/esrf-bliss/slsDetectorPackage.git) registered for path 'slsDetectorPackage'
+    (bliss) lid10eiger1:Lima/camera/slsdetector % git submodule update
+    ...
+    (bliss) lid10eiger1:Lima/camera/slsdetector % cd slsDetectorPackage
+    (bliss) lid10eiger1:camera/slsdetector/slsDetectorPackage % git remote rename origin github.bliss
+    (bliss) lid10eiger1:camera/slsdetector/slsDetectorPackage % git remote add github.slsdetectorgroup \
+        git://github.com/slsdetectorgroup/slsDetectorPackage.git
+    (bliss) lid10eiger1:camera/slsdetector/slsDetectorPackage % git fetch --all
+    ...
+
+*Lima* compilation
+~~~~~~~~~~~~~~~~~~
+
+Compile *Lima*, including *slsDetectorPackage* using *CMake*:
+
+::
+    (bliss) lid10eiger1:~ % cd ~/esrf/sls_detectors/Lima
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % mkdir -p $(pwd)/build/python
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % ./install.sh \
+        --install-prefix=$(pwd)/build \
+        --install-python-prefix=$(pwd)/build/python \
+        slsdetector sps gldisplay edfgz python pytango-server
+    ...
+
+Add *Lima* to the *PATH*, *LD_LIBRARY_PATH* and *PYTHONPATH* environment variables in
+*eiger_setup.sh*:
+
+::
+
+    (bliss) lid10eiger1:~ % tail -n 6 eiger_setup.sh
+
+    LIMA_DIR=${HOME}/esrf/sls_detectors/Lima
+    PATH=${LIMA_DIR}/build/bin:${PATH}
+    LD_LIBRARY_PATH=${LIMA_DIR}/build/lib:${LD_LIBRARY_PATH}
+    PYTHONPATH=${LIMA_DIR}/build/python:${PYTHONPATH}
+    export LIMA_DIR PATH LD_LIBRARY_PATH PYTHONPATH
+
+Logout and re-login as *opid00*, so the previous changes can be tested. 
+First, test the 'slsDetectorGui':
 
 ::
 
@@ -1103,97 +1165,7 @@ to activate the high voltage; answer *No*. In the GUI, disable the *File
 Name* check box and press *Start* for a single acquisition. A frame
 should be taken.
 
-Setup *opid10* account
-~~~~~~~~~~~~~~~~~~~~~~
-
-Include the Eiger environment at login:
-
-::
-
-    # as opid10
-    lid10eiger1:~ % tail -n 3 .bash_profile
-
-    # include the PSI/Eiger environment
-    . ${EIGER_HOME}/eiger_setup.sh
-
-Lima
-----
-
-Lima compilation in detector software account
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-First install *flex*, which is needed to compile
-*Lima/third-party/libconfig*:
-
-::
-
-    # as root
-    lid10eiger1:~ # apt-get install flex
-    ...
-
-*Lima* is refereced as a submodule by the *sls_detectors* project
-already install it:
-
-::
-
-    # as opid00
-    (bliss) lid10eiger1:~ % cd ~/esrf/sls_detectors
-    (bliss) lid10eiger1:~/esrf/sls_detectors % git branch slsdetector gitlab/slsdetector
-    Branch slsdetector set up to track remote branch slsdetector from gitlab.
-    (bliss) lid10eiger1:~/esrf/sls_detectors % git checkout slsdetector
-    Switched to branch 'slsdetector'
-    (bliss) lid10eiger1:~/esrf/sls_detectors % git submodule init Lima
-    Submodule 'Lima' (git@gitlab.esrf.fr:limagroup/lima.git) registered for path 'Lima'
-    (bliss) lid10eiger1:~/esrf/sls_detectors % git submodule update
-    ...
-    (bliss) lid10eiger1:~/esrf/sls_detectors % cd Lima
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git remote rename origin gitlab
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git remote add github.bliss git@github.com:esrf-bliss/Lima.git
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git fetch github.bliss
-    The authenticity of host 'github.com (192.30.253.112)' can't be established.
-    RSA key fingerprint is 16:27:ac:a5:76:28:2d:36:63:1b:56:4d:eb:df:a6:48.
-    Are you sure you want to continue connecting (yes/no)? yes
-    ...
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git branch slsdetector gitlab/slsdetector
-    Branch slsdetector set up to track remote branch slsdetector from gitlab.
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git checkout slsdetector
-    Switched to branch 'slsdetector'
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule init third-party/Processlib third-party/Sps \
-                                                               third-party/gldisplay third-party/libconfig \
-                                                               camera/frelon camera/common/espia \
-                                                               camera/slsdetector \
-                                                               applications/spec applications/tango/python \
-                                                               documentation
-    ...
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule update
-    ...
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule foreach git remote rename origin github.bliss
-    ...
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule foreach 'bash -c "git remote add gitlab \$(git config remote.github.bliss.url | sed \"s%git://github.com/esrf-bliss%git@gitlab.esrf.fr:limagroup%\")"'
-    ...
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % (cd third-party/Sps && git remote rm gitlab)
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule foreach git fetch --all
-    ...
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % sed -e 's/\(COMPILE_GLDISPLAY\|COMPILE_SLSDETECTOR\|COMPILE_EDFGZ_SAVING\)=0/\1=1/' \
-                                                        config.inc_default > config.inc
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % make config
-    ...
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % (make -j12 && make -j12 -C sip && make install) 2>&1
-    ...
-
-Add *Lima* to the *PATH* and *LD_LIBRARY_PATH* environment variables in
-*eiger_setup.sh*:
-
-::
-
-    (bliss) lid10eiger1:~ % tail -n 5 eiger_setup.sh
-
-    LIMA_DIR=${HOME}/esrf/sls_detectors/Lima
-    LD_LIBRARY_PATH=${LIMA_DIR}/install/Lima/${BLOS}/lib:${LD_LIBRARY_PATH}
-    PYTHONPATH=${LIMA_DIR}/install:${PYTHONPATH}
-    export LD_LIBRARY_PATH PYTHONPATH
-
-Logout and re-login as *opid00*, so the previous changes can be tested:
+Finally, test the *Lima* plugin:
 
 ::
 
@@ -1213,6 +1185,21 @@ thay can be re-created by *opid10*:
     (bliss) lid10eiger1:~ % for m in $(ipcs -m | grep '^0x000016' | awk '{print $2}'); do \
                                 ipcrm -m ${m}; \
                             done
+
+
+Setup *opid10* account
+~~~~~~~~~~~~~~~~~~~~~~
+
+Include the Eiger environment at login:
+
+::
+
+    # as opid10
+    lid10eiger1:~ % tail -n 3 .bash_profile
+
+    # include the PSI/Eiger environment
+    . ${EIGER_HOME}/eiger_setup.sh
+
 
 Install Lima Python Tango software in *blissadm*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1241,27 +1228,29 @@ Configure the driver infrastructure by calling *bliss_drivers config*:
 
 Apply all the suggestions and save before quiting.
 
-Replace the Lima installed directories by symbolic links to the
-development version compiled on *opid00*:
-
-::
-
-    # as blissadm
-    lid10eiger1:~ % LIMA_DIR=${EIGER_HOME}/esrf/sls_detectors/Lima
-    lid10eiger1:~ % cd ~/python/bliss_modules
-    lid10eiger1:~/python/bliss_modules % mv Lima Lima-pack
-    lid10eiger1:~/python/bliss_modules % ln -s ${LIMA_DIR}/install/Lima
-    lid10eiger1:~/python/bliss_modules % cd ~/applications
-    lid10eiger1:~/applications % mv LimaCCDs LimaCCDs-pack
-    lid10eiger1:~/applications % ln -s ${LIMA_DIR}/applications/tango/python LimaCCDs
-
-Include the *SlsDetector* libraries in the *BLISS_LIB_PATH*:
+Include the *Lima* libraries and modules in the *BLISS_LIB_PATH* and *PYTHONPATH*, respectively:
 
 ::
 
     # as blissadm
     lid10eiger1:~ % . ${EIGER_HOME}/eiger_setup.sh
-    (bliss) lid10eiger1:~ % blissrc -a BLISS_LIB_PATH ${SLS_DETECTORS_BIN}
+    (bliss) lid10eiger1:~ % blissrc -a BLISS_LIB_PATH ${LIMA_DIR}/build/lib
+    (bliss) lid10eiger1:~ % blissrc -a PYTHONPATH ${LIMA_DIR}/build/python
+
+Rename the Lima installed directories so they are no longer visible, and create the necessary
+symbolic links:
+
+::
+
+    # as blissadm
+    (bliss) lid10eiger1:~ % cd ~/python/bliss_modules
+    (bliss) lid10eiger1:~/python/bliss_modules % mv Lima Lima-pack
+    (bliss) lid10eiger1:~/python/bliss_modules % cd ~/applications
+    (bliss) lid10eiger1:~/applications % mv LimaCCDs LimaCCDs-pack
+    (bliss) lid10eiger1:~/python/bliss_modules % cd ~/server/src
+    (bliss) lid10eiger1:~/server/src % mv LimaCCDs LimaCCDs-pack
+    (bliss) lid10eiger1:~/server/src % ln -s ${LIMA_DIR}/build/bin/LimaCCDs
+
 
 Lima Python Tango server configuration in *blissadm*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
