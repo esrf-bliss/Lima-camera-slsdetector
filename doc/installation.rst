@@ -1051,10 +1051,12 @@ Add the *ESRF scripts* to *eiger_setup.sh*:
 
     (bliss) lid10eiger1:~ % tail -n 5 eiger_setup.sh
 
-    SLS_DETECTOR_SCRIPTS=${EIGER_HOME}/esrf/sls_detectors/eiger/scripts
-    export SLS_DETECTOR_SCRIPTS
-    PATH=${SLS_DETECTOR_SCRIPTS}:${PATH}
+    SLS_DETECTORS=${EIGER_HOME}/esrf/sls_detectors
+    export SLS_DETECTORS
+    PATH=${SLS_DETECTORS}/eiger/scripts:${PATH}
     export PATH
+
+Logout and re-login as *opid00* to have the previous environment set.
 
 Lima installation in detector software account
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1072,12 +1074,13 @@ First install *flex*, which might needed to compile some *Lima* subsystems:
 ::
 
     # as opid00
-    (bliss) lid10eiger1:~ % cd ~/esrf/sls_detectors
+    (bliss) lid10eiger1:~ % cd ${SLS_DETECTORS}
     (bliss) lid10eiger1:~/esrf/sls_detectors % git submodule init Lima
     Submodule 'Lima' (git://gitlab.esrf.fr/limagroup/lima.git) registered for path 'Lima'
     (bliss) lid10eiger1:~/esrf/sls_detectors % git submodule update
     ...
-    (bliss) lid10eiger1:~/esrf/sls_detectors % cd Lima
+    (bliss) lid10eiger1:~/esrf/sls_detectors % LIMA_DIR=${SLS_DETECTORS}/Lima
+    (bliss) lid10eiger1:~/esrf/sls_detectors % cd ${LIMA_DIR}
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git remote rename origin gitlab
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git remote add github.bliss git://github.com/esrf-bliss/Lima.git
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git fetch --all
@@ -1111,7 +1114,7 @@ plugin:
 ::
 
     # as opid00
-    (bliss) lid10eiger1:~ % cd ~/esrf/sls_detectors/Lima/camera/slsdetector
+    (bliss) lid10eiger1:~ % cd ${LIMA_DIR}/camera/slsdetector
     (bliss) lid10eiger1:Lima/camera/slsdetector % git submodule init
     Submodule 'slsDetectorPackage' (git://github.com/esrf-bliss/slsDetectorPackage.git) registered for path 'slsDetectorPackage'
     (bliss) lid10eiger1:Lima/camera/slsdetector % git submodule update
@@ -1129,11 +1132,11 @@ plugin:
 Compile *Lima*, including *slsDetectorPackage* using *CMake*:
 
 ::
-    (bliss) lid10eiger1:~ % cd ~/esrf/sls_detectors/Lima
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % mkdir -p $(pwd)/build/python
+    (bliss) lid10eiger1:~ % cd ${LIMA_DIR}
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % mkdir -p ${LIMA_DIR}/install/python
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % ./install.sh \
-        --install-prefix=$(pwd)/build \
-        --install-python-prefix=$(pwd)/build/python \
+        --install-prefix=${LIMA_DIR}/install \
+        --install-python-prefix=${LIMA_DIR}/install/python \
         slsdetector sps gldisplay edfgz python pytango-server
     ...
 
@@ -1144,10 +1147,10 @@ Add *Lima* to the *PATH*, *LD_LIBRARY_PATH* and *PYTHONPATH* environment variabl
 
     (bliss) lid10eiger1:~ % tail -n 6 eiger_setup.sh
 
-    LIMA_DIR=${HOME}/esrf/sls_detectors/Lima
-    PATH=${LIMA_DIR}/build/bin:${PATH}
-    LD_LIBRARY_PATH=${LIMA_DIR}/build/lib:${LD_LIBRARY_PATH}
-    PYTHONPATH=${LIMA_DIR}/build/python:${PYTHONPATH}
+    LIMA_DIR=${SLS_DETECTORS}/Lima
+    PATH=${LIMA_DIR}/install/bin:${PATH}
+    LD_LIBRARY_PATH=${LIMA_DIR}/install/lib:${LD_LIBRARY_PATH}
+    PYTHONPATH=${LIMA_DIR}/install/python:${PYTHONPATH}
     export LIMA_DIR PATH LD_LIBRARY_PATH PYTHONPATH
 
 Logout and re-login as *opid00*, so the previous changes can be tested. 
@@ -1169,7 +1172,7 @@ Finally, test the *Lima* plugin:
 
 ::
 
-    (bliss) lid10eiger1:~ % cd ~/esrf/sls_detectors/Lima
+    (bliss) lid10eiger1:~ % cd ${LIMA_DIR}
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % mkdir -p /nobackup/lid10eiger12/data/eiger/lima
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % ln -s /nobackup/lid10eiger12/data/eiger/lima data
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % rm -f data/img*.edf && \
@@ -1234,8 +1237,8 @@ Include the *Lima* libraries and modules in the *BLISS_LIB_PATH* and *PYTHONPATH
 
     # as blissadm
     lid10eiger1:~ % . ${EIGER_HOME}/eiger_setup.sh
-    (bliss) lid10eiger1:~ % blissrc -a BLISS_LIB_PATH ${LIMA_DIR}/build/lib
-    (bliss) lid10eiger1:~ % blissrc -a PYTHONPATH ${LIMA_DIR}/build/python
+    (bliss) lid10eiger1:~ % blissrc -a BLISS_LIB_PATH ${LIMA_DIR}/install/lib
+    (bliss) lid10eiger1:~ % blissrc -a PYTHONPATH ${LIMA_DIR}/install/python
 
 Rename the Lima installed directories so they are no longer visible, and create the necessary
 symbolic links:
@@ -1249,7 +1252,7 @@ symbolic links:
     (bliss) lid10eiger1:~/applications % mv LimaCCDs LimaCCDs-pack
     (bliss) lid10eiger1:~/python/bliss_modules % cd ~/server/src
     (bliss) lid10eiger1:~/server/src % mv LimaCCDs LimaCCDs-pack
-    (bliss) lid10eiger1:~/server/src % ln -s ${LIMA_DIR}/build/bin/LimaCCDs
+    (bliss) lid10eiger1:~/server/src % ln -s ${LIMA_DIR}/install/bin/LimaCCDs
 
 
 Lima Python Tango server configuration in *blissadm*

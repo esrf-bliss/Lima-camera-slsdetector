@@ -18,19 +18,17 @@ The current implementation only works with the PSI/Eiger detectors.
 
 Prerequisite
 ````````````
-The slsDetectorsPackage-v2.3.x is needed by the SlsDetector LIMA plugin. In the compilation phase,
-the SLS_DETECTORS_DIR environment variable must point to the directory where the previous package
-is extracted; header files and shared libraries are used during compilation and linkage. In particular,
-the *libSlsDetector.so* and *libSlsReceiver.so* shared libraries must be reachable both by the compiler
-and from the *LD_LIBRARY_PATH* during execution time, in order to run the SlsDetector plugin.
+The *slsDetectorPackage-v2.3.x* is needed by the SlsDetector LIMA plugin. As explained in
+:doc:`installation`, the *slsDetectorPackage* is included as a submodule in the SlsDetector camera
+plugin. It will be automatically compiled and installed during the LIMA build procedure.
 
 In addition to that, a *configuration file*, containing the commands necessary to initialise both
 the *slsDetector" and *slsReceiver* instances, is required.
 
 The library protocol uses Unix System-V IPC shared memory blocks to exchange information between processes.
 The segments, referred to by keys matching hex *000016xx*, must be owned by the user running the plugin,
-if it is not *root*. The following command, which removes the existing segments, must be run by the segments' owner (or *root*) so they
-can be deleted/created by another user:
+if it is not *root*. The following command, which removes the existing segments, must be run by the
+segments' owner (or *root*) so they can be deleted/created by another user:
 
 .. code-block:: sh
 
@@ -43,78 +41,22 @@ can be deleted/created by another user:
 High-performance Acquisitions
 .............................
 
-High-performance acquisitions require a specific setup, refers to the :doc:`installation`.
+High-performance acquisitions require a specific backend computer setup.
+Please refer to the :doc:`installation`.
 
 Installation & Module configuration
 ```````````````````````````````````
 
-- follow first the steps for the linux installation :ref:`linux_installation`
+- Follow the steps indicated in :doc:`installation`
 
-The minimum configuration file is *config.inc* :
+As a reference, see:
 
-.. code-block:: sh
+- :ref:`linux_installation`
 
- COMPILE_CORE=1
- COMPILE_SIMULATOR=0
- COMPILE_SPS_IMAGE=1
- COMPILE_ESPIA=0
- COMPILE_FRELON=0
- COMPILE_MAXIPIX=0
- COMPILE_PILATUS=0
- COMPILE_BASLER=0
- COMPILE_PROSILICA=0
- COMPILE_ROPERSCIENTIFIC=0
- COMPILE_MYTHEN=0
- COMPILE_MYTHEN3=0
- COMPILE_ADSC=0
- COMPILE_UEYE=0
- COMPILE_XH=0
- COMPILE_XSPRESS3=0
- COMPILE_ULTRA=0
- COMPILE_XPAD=0
- COMPILE_PERKINELMER=0
- COMPILE_ANDOR=0
- COMPILE_ANDOR3=0
- COMPILE_PHOTONICSCIENCE=0
- COMPILE_PCO=0
- COMPILE_MARCCD=0
- COMPILE_POINTGREY=0
- COMPILE_IMXPAD=0
- COMPILE_DEXELA=0
- COMPILE_RAYONIXHS=0
- COMPILE_AVIEX=0
- COMPILE_META=0
- COMPILE_MERLIN=0
- COMPILE_V4l2=0
- COMPILE_EIGER=0
- COMPILE_PIXIRAD=0
- COMPILE_HEXITEC=0
- COMPILE_SLSDETECTOR=1
- COMPILE_CBF_SAVING=0
- COMPILE_NXS_SAVING=0
- COMPILE_FITS_SAVING=0
- COMPILE_EDFGZ_SAVING=1
- COMPILE_EDFLZ4_SAVING=0
- COMPILE_TIFF_SAVING=0
- COMPILE_HDF5_SAVING=0
- COMPILE_CONFIG=1
- COMPILE_GLDISPLAY=0
- LINK_STRICT_VERSION=0
- export COMPILE_CORE COMPILE_SPS_IMAGE COMPILE_SIMULATOR \
-        COMPILE_ESPIA COMPILE_FRELON COMPILE_MAXIPIX COMPILE_PILATUS \
-        COMPILE_BASLER COMPILE_PROSILICA COMPILE_ROPERSCIENTIFIC COMPILE_ADSC \
-        COMPILE_UEYE COMPILE_XH COMPILE_XSPRESS3 COMPILE_ULTRA COMPILE_XPAD COMPILE_PERKINELMER \
-        COMPILE_MYTHEN COMPILE_MYTHEN3 COMPILE_HEXITEC \
-        COMPILE_ANDOR COMPILE_ANDOR3 COMPILE_PHOTONICSCIENCE COMPILE_PCO COMPILE_MARCCD COMPILE_DEXELA \
-        COMPILE_POINTGREY COMPILE_IMXPAD COMPILE_RAYONIXHS COMPILE_AVIEX COMPILE_META COMPILE_MERLIN COMPILE_V4l2 COMPILE_EIGER COMPILE_PIXIRAD \
-        COMPILE_SLSDETECTOR \
-        COMPILE_CBF_SAVING COMPILE_NXS_SAVING COMPILE_FITS_SAVING COMPILE_EDFGZ_SAVING COMPILE_EDFLZ4_SAVING COMPILE_TIFF_SAVING \
-        COMPILE_HDF5_SAVING COMPILE_CONFIG COMPILE_GLDISPLAY \
-        LINK_STRICT_VERSION
+- :ref:`linux_compilation`
 
--  start the linux compilation :ref:`linux_compilation`
+- :ref:`tango_installation`
 
--  finally with the Tango server installation :ref:`tango_installation`
 
 Initialisation and Capabilities
 ````````````````````````````````
@@ -123,7 +65,7 @@ provides some important information about the developer's choices.
 
 Camera initialisation
 ......................
-The SlsDetector plugin exports to kind classes: one generic *SlsDetector::Camera* class, with the common
+The SlsDetector plugin exports two kind classes: one generic *SlsDetector::Camera* class, with the common
 interface to *slsDetector* and *slsReceiver* classes, and detector-specific classes, like *SlsDetector::Eiger*
 which manage the particularities of each model.
 
