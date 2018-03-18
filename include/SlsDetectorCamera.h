@@ -298,11 +298,24 @@ private:
 	protected:
 		virtual void threadFunction();
 	private:
+		class ExceptionCleanUp : Thread::ExceptionCleanUp
+		{
+			DEB_CLASS_NAMESPC(DebModCamera, 
+					  "Camera::AcqThread::ExceptionCleanUp",
+					  "SlsDetector");
+		public:
+			ExceptionCleanUp(AcqThread& thread);
+			virtual ~ExceptionCleanUp();
+		};
+
 		bool newFrameReady(FrameType frame);
+		void startAcq();
+		void stopAcq();
+		void cleanUp();
 
 		Camera *m_cam;
 		Cond& m_cond;
-		volatile State& m_state;
+		State& m_state;
 		FrameQueue& m_frame_queue;
 	};
 
@@ -393,11 +406,12 @@ private:
 	bool m_raw_mode;
 	AutoPtr<BufferThread, true> m_buffer_thread;
 	AutoPtr<AcqThread> m_acq_thread;
-	volatile State m_state;
+	State m_state;
 	FrameQueue m_frame_queue;
 	double m_new_frame_timeout;
 	double m_abort_sleep_time;
 	bool m_tol_lost_packets;
+	FrameArray m_prev_ifa;
 	std::vector<PortStats> m_port_stats;
 	TimeRangesChangedCallback *m_time_ranges_cb;
 	PixelDepthCPUAffinityMap m_cpu_affinity_map;

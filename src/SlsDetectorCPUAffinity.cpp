@@ -1104,6 +1104,13 @@ void GlobalCPUAffinityMgr::waitLimaFinished()
 	}
 }
 
+void GlobalCPUAffinityMgr::cleanUp()
+{
+	DEB_MEMBER_FUNCT();
+	AutoMutex l = lock();
+	m_state = Ready;
+}
+
 ostream& lima::SlsDetector::operator <<(ostream& os, const CPUAffinity& a)
 {
 	return os << hex << showbase << uint64_t(a) << dec << noshowbase;

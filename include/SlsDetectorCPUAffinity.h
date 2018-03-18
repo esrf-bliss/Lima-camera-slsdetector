@@ -308,6 +308,7 @@ class GlobalCPUAffinityMgr
 	void recvFinished();
 	void limaFinished();
 	void waitLimaFinished();
+	void cleanUp();
 
  private:
 	friend class ProcessingFinishedEvent;

@@ -316,6 +316,19 @@ bool Camera::BufferThread::isBadFrame(FrameType frame)
 	return (find(m_bad_frame_list.begin(), end, frame) != end); 
 }
 
+Camera::AcqThread::ExceptionCleanUp::ExceptionCleanUp(AcqThread& thread)
+	: Thread::ExceptionCleanUp(thread)
+{
+	DEB_CONSTRUCTOR();
+}
+
+Camera::AcqThread::ExceptionCleanUp::~ExceptionCleanUp()
+{
+	DEB_DESTRUCTOR();
+	AcqThread *thread = static_cast<AcqThread *>(&m_thread);
+	thread->cleanUp();
+}
+
 Camera::AcqThread::AcqThread(Camera *cam)
 	: m_cam(cam), m_cond(m_cam->m_cond), m_state(m_cam->m_state),
 	  m_frame_queue(m_cam->m_frame_queue)
@@ -347,23 +360,22 @@ void Camera::AcqThread::threadFunction()
 {
 	DEB_MEMBER_FUNCT();
 
-	multiSlsDetector *det = m_cam->m_det;
+	ExceptionCleanUp cleanup(*this);
 
 	AutoMutex l = m_cam->lock();
-	m_cam->m_global_cpu_affinity_mgr.startAcq();
+
+	GlobalCPUAffinityMgr& affinity_mgr = m_cam->m_global_cpu_affinity_mgr;
 	{
 		AutoMutexUnlock u(l);
-		DEB_TRACE() << "calling startReceiver";
-		det->startReceiver();
-		DEB_TRACE() << "calling startAcquisition";
-		det->startAcquisition();
+		affinity_mgr.startAcq();
+		startAcq();
 	}
 	m_state = Running;
 	m_cond.broadcast();
 
 	SeqFilter seq_filter;
 	bool had_frames = false;
-
+	bool cont_acq = true;
 	do {
 		while ((m_state != StopReq) && m_frame_queue.empty()) {
 			if (!m_cond.wait(m_cam->m_new_frame_timeout)) {
@@ -377,7 +389,6 @@ void Camera::AcqThread::threadFunction()
 			DEB_TRACE() << DEB_VAR1(frame);
 			seq_filter.addVal(frame);
 			SeqFilter::Range frames = seq_filter.getSeqRange();
-			bool cont_acq = true;
 			if (frames.nb > 0) {
 				AutoMutexUnlock u(l);
 				int f = frames.first;
@@ -387,47 +398,89 @@ void Camera::AcqThread::threadFunction()
 					had_frames = true;
 				} while ((++f != frames.end()) && cont_acq);
 			}
-			if (!cont_acq)
-				m_state = StopReq;
 		}
-	} while (m_state != StopReq);
+	} while ((m_state != StopReq) && cont_acq);
 
 	m_state = Stopping;
 	{
 		AutoMutexUnlock u(l);
-		if (m_cam->getDetStatus() == Defs::Running) {
-			DEB_TRACE() << "calling stopAcquisition";
-			det->stopAcquisition();
-			Timestamp t0 = Timestamp::now();
-			while (m_cam->getDetStatus() != Defs::Idle)
-				Sleep(m_cam->m_abort_sleep_time);
-			double milli_sec = (Timestamp::now() - t0) * 1e3;
-			DEB_TRACE() << "Abort -> Idle: " << DEB_VAR1(milli_sec);
-		}
-		DEB_TRACE() << "calling stopReceiver";
-		det->stopReceiver();
-	}
+		stopAcq();
 
-	{
-		AutoMutexUnlock u(l);
 		IntList bfl;
 		m_cam->getSortedBadFrameList(bfl);
 		DEB_ALWAYS() << "bad_frames=" << bfl.size() << ": "
 			     << PrettyIntList(bfl);
-	}
 
-	Stats stats;
-	m_cam->getStats(stats);
-	DEB_ALWAYS() << DEB_VAR1(stats);
+		Stats stats;
+		m_cam->getStats(stats);
+		DEB_ALWAYS() << DEB_VAR1(stats);
 
-	if (had_frames) {
-		AutoMutexUnlock u(l);
-		m_cam->m_global_cpu_affinity_mgr.recvFinished();
-		m_cam->m_global_cpu_affinity_mgr.waitLimaFinished();
+		if (had_frames) {
+			affinity_mgr.recvFinished();
+			affinity_mgr.waitLimaFinished();
+		} else {
+			affinity_mgr.cleanUp();
+		}
 	}
 
 	m_state = Stopped;
 	m_cond.broadcast();
+}
+
+void Camera::AcqThread::cleanUp()
+{
+	DEB_MEMBER_FUNCT();
+
+	AutoMutex l = m_cam->lock();
+
+	if ((m_state == Stopped) || (m_state == Idle))
+		return;
+
+	if ((m_state == Running) || (m_state == StopReq)) {
+		m_state = Stopping;
+		AutoMutexUnlock u(l);
+		stopAcq();
+	}
+
+	{
+		AutoMutexUnlock u(l);
+		string err_msg = "AcqThread: exception thrown";
+		Event::Code err_code = Event::CamFault;
+		Event *event = new Event(Hardware, Event::Error, Event::Camera, 
+					 err_code, err_msg);
+		DEB_EVENT(*event) << DEB_VAR1(*event);
+		m_cam->reportEvent(event);
+	}
+
+	m_state = Stopped;
+	m_cond.broadcast();
+}
+
+void Camera::AcqThread::startAcq()
+{
+	DEB_MEMBER_FUNCT();
+	DEB_TRACE() << "calling startReceiver";
+	multiSlsDetector *det = m_cam->m_det;
+	det->startReceiver();
+	DEB_TRACE() << "calling startAcquisition";
+	det->startAcquisition();
+}
+
+void Camera::AcqThread::stopAcq()
+{
+	DEB_MEMBER_FUNCT();
+	multiSlsDetector *det = m_cam->m_det;
+	if (m_cam->getDetStatus() == Defs::Running) {
+		DEB_TRACE() << "calling stopAcquisition";
+		det->stopAcquisition();
+		Timestamp t0 = Timestamp::now();
+		while (m_cam->getDetStatus() != Defs::Idle)
+			Sleep(m_cam->m_abort_sleep_time);
+		double milli_sec = (Timestamp::now() - t0) * 1e3;
+		DEB_TRACE() << "Abort -> Idle: " << DEB_VAR1(milli_sec);
+	}
+	DEB_TRACE() << "calling stopReceiver";
+	det->stopReceiver();
 }
 
 bool Camera::AcqThread::newFrameReady(FrameType frame)
@@ -449,7 +502,7 @@ Camera::Camera(string config_fname)
 	  m_image_type(Bpp16), 
 	  m_raw_mode(false),
 	  m_state(Idle),
-	  m_new_frame_timeout(1),
+	  m_new_frame_timeout(0.5),
 	  m_abort_sleep_time(0.1),
 	  m_tol_lost_packets(true),
 	  m_time_ranges_cb(NULL),
@@ -911,6 +964,7 @@ void Camera::prepareAcq()
 		AutoMutex l = lock();
 		m_frame_map.setBufferSize(nb_buffers);
 		m_frame_map.clear();
+		m_prev_ifa.clear();
 		DEB_TRACE() << DEB_VAR1(m_frame_queue.size());
 		while (!m_frame_queue.empty())
 			m_frame_queue.pop();
@@ -997,6 +1051,11 @@ bool Camera::checkLostPackets()
 	DEB_MEMBER_FUNCT();
 
 	FrameArray ifa = m_frame_map.getItemFrameArray();
+	if (ifa != m_prev_ifa) {
+		m_prev_ifa = ifa;
+		return false;
+	}
+
 	FrameType last_frame = getLatestFrame(ifa);
 	if (getOldestFrame(ifa) == last_frame) {
 		DEB_RETURN() << DEB_VAR1(false);
