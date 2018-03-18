@@ -24,11 +24,10 @@
 #define __SLS_DETECTOR_CAMERA_H
 
 #include "SlsDetectorArgs.h"
-#include "SlsDetectorModel.h"
+#include "SlsDetectorReceiver.h"
 #include "SlsDetectorCPUAffinity.h"
 
 #include "multiSlsDetector.h"
-#include "slsReceiverUsers.h"
 
 #include "lima/HwBufferMgr.h"
 #include "lima/HwMaxImageSizeCallback.h"
@@ -74,10 +73,14 @@ public:
 	{ return m_det->getNMods(); }
 
 	int getTotNbPorts()
-	{ return m_recv_list.size() * m_recv_ports; }
+	{ return m_recv_list.size() * m_recv_nb_ports; }
 
 	int getPortIndex(int recv_idx, int port)
-	{ return recv_idx * m_recv_ports + port; }
+	{ return recv_idx * m_recv_nb_ports + port; }
+
+	std::pair<int, int> splitPortIndex(int port_idx)
+	{ return std::pair<int, int>(port_idx / m_recv_nb_ports, 
+				     port_idx % m_recv_nb_ports);}
 
 	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr)
 	{ m_buffer_cb_mgr = buffer_cb_mgr; }
@@ -172,11 +175,9 @@ public:
 
 private:
 	typedef std::map<int, int> RecvPortMap;
-
 	typedef std::queue<int> FrameQueue;
-
-	typedef FrameMap::FinishInfo FinishInfo;
-	typedef FrameMap::FinishInfoList FinishInfoList;
+	typedef std::vector<AutoPtr<Receiver> > RecvList;
+	typedef std::vector<Receiver::Port *> RecvPortList;
 
 	struct AppInputData
 	{
@@ -190,113 +191,20 @@ private:
 		void parseConfigFile();
 	};
 
-	class Receiver 
-	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Camera::Receiver", 
-				  "SlsDetector");
-
-	public:
-		Receiver(Camera *cam, int idx, int rx_port);
-		~Receiver();
-		void start();
-
-	private:
-		friend class Camera;
-
-		static int fileStartCallback(char *fpath, char *fname, 
-					 FrameType fidx, uint32_t dsize, 
-					 void *priv);
-
-		static void portCallback(FrameType frame, 
-					 uint32_t exp_len,
-					 uint32_t recv_packets,
-					 uint64_t bunch_id,
-					 uint64_t timestamp,
-					 uint16_t mod_id,
-					 uint16_t x, uint16_t y, uint16_t z,
-					 uint32_t debug,
-					 uint16_t rr_nb,
-					 uint8_t det_type,
-					 uint8_t cb_version,
-					 char *dptr, 
-					 uint32_t dsize, 
-					 void *priv);
-		int fileStartCallback(char *fpath, char *fname, uint64_t fidx, 
-				      uint32_t dsize);
-		void portCallback(FrameType frame, int port, char *dptr, 
-				  uint32_t dsize);
-
-		Camera *m_cam;
-		int m_idx;
-		int m_rx_port;
-		Args m_args;
-		AutoPtr<slsReceiverUsers> m_recv;
-	}; 
-
-	typedef std::vector<AutoPtr<Receiver> > RecvList;
-
-	class BufferThread : public Thread
-	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Camera::BufferThread", 
-				  "SlsDetector");
-	public:
-		typedef std::vector<FinishInfo> FinishInfoArray;
-
-		BufferThread();
-		~BufferThread();
-
-		void init(Camera *cam, int port_idx);
-
-		void prepareAcq();
-
-		pid_t getTID()
-		{ return m_tid; }
-
-		bool isBadFrame(FrameType frame);
-
-		int getNbBadFrames()
-		{
-			AutoMutex l = lock();
-			return m_bad_frame_list.size();
-		}
-
-		void getBadFrameList(int first_idx, int last_idx, IntList& bfl)
-		{
-			AutoMutex l = lock();
-			IntList::const_iterator b = m_bad_frame_list.begin();
-			bfl.assign(b + first_idx, b + last_idx);
-		}
-
-	protected:
-		virtual void start();
-		virtual void threadFunction();
-
-	private:
-		friend class Camera;
-
-		AutoMutex lock()
-		{ return m_cond.mutex(); }
-
-		void processFinishInfo(const FinishInfo& finfo);
-
-		Camera *m_cam;
-		FrameMap *m_frame_map;
-		int m_port_idx;
-		pid_t m_tid;
-		bool m_end;
-		Cond m_cond;
-		IntList m_bad_frame_list;
-	};
-
 	class AcqThread : public Thread
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Camera::AcqThread", 
 				  "SlsDetector");
 	public:
 		AcqThread(Camera *cam);
+
+		void queueFinishedFrame(FrameType frame);
+		virtual void start();
 		void stop(bool wait);
+
 	protected:
 		virtual void threadFunction();
+
 	private:
 		class ExceptionCleanUp : Thread::ExceptionCleanUp
 		{
@@ -316,24 +224,17 @@ private:
 		Camera *m_cam;
 		Cond& m_cond;
 		State& m_state;
-		FrameQueue& m_frame_queue;
-	};
-
-	struct PortStats {
-		Stats stats;
-		Timestamp last_t0;
-		Timestamp last_t1;
-		void reset()
-		{
-			stats.reset();
-			last_t0 = last_t1 = Timestamp();
-		}
+		FrameQueue m_frame_queue;
 	};
 
 	friend class Model;
+	friend class Receiver;
 	friend class GlobalCPUAffinityMgr;
 
 	void setModel(Model *model);
+
+	RecvPortList getRecvPortList();
+	Receiver::Port *getRecvPort(int port_idx);
 
 	AutoMutex lock()
 	{ return AutoMutex(m_cond.mutex()); }
@@ -351,11 +252,6 @@ private:
 	char *getFrameBufferPtr(FrameType frame_nb);
 	void removeSharedMem();
 	void createReceivers();
-
-	void processRecvFileStart(int recv_idx, uint32_t dsize);
-	void processRecvPort(int port_idx, FrameType frame, char *dptr, 
-			     uint32_t dsize);
-	void frameFinished(FrameType frame);
 
 	bool checkLostPackets();
 	FrameType getLastReceivedFrame();
@@ -389,8 +285,10 @@ private:
 	Model *m_model;
 	Cond m_cond;
 	AutoPtr<AppInputData> m_input_data;
-	RecvList m_recv_list;
 	AutoPtr<multiSlsDetector> m_det;
+	FrameMap m_frame_map;
+	int m_recv_nb_ports;
+	RecvList m_recv_list;
 	int m_recv_fifo_depth;
 	TrigMode m_trig_mode;
 	FrameType m_nb_frames;
@@ -398,21 +296,16 @@ private:
 	double m_lat_time;
 	double m_frame_period;
 	Settings m_settings;
-	FrameMap m_frame_map;
-	int m_recv_ports;
 	StdBufferCbMgr *m_buffer_cb_mgr;
 	PixelDepth m_pixel_depth;
 	ImageType m_image_type;
 	bool m_raw_mode;
-	AutoPtr<BufferThread, true> m_buffer_thread;
 	AutoPtr<AcqThread> m_acq_thread;
 	State m_state;
-	FrameQueue m_frame_queue;
 	double m_new_frame_timeout;
 	double m_abort_sleep_time;
 	bool m_tol_lost_packets;
 	FrameArray m_prev_ifa;
-	std::vector<PortStats> m_port_stats;
 	TimeRangesChangedCallback *m_time_ranges_cb;
 	PixelDepthCPUAffinityMap m_cpu_affinity_map;
 	GlobalCPUAffinityMgr m_global_cpu_affinity_mgr;

@@ -351,8 +351,6 @@ public:
 	typedef std::set<int> List;
 	typedef std::map<unsigned long, std::set<int> > Map;
 
-	~FrameMap();
-
 	void setNbItems(int nb_items);
 	void setBufferSize(int buffer_size);
 	void clear();

@@ -573,26 +573,27 @@ TimeRangesChangedCallback::~TimeRangesChangedCallback()
 		m_cam->unregisterTimeRangesChangedCallback(*this);
 }
 
-FrameMap::FrameQueue::FrameQueue(int size) 
+FrameMap::Item::FrameQueue::FrameQueue(int size) 
 	: m_size(size + 1), m_write_idx(0), m_read_idx(0), m_stopped(false)
 {
 	m_array.resize(m_size);
 }
 
-void FrameMap::FrameQueue::clear()
+void FrameMap::Item::FrameQueue::clear()
 {
 	m_write_idx = m_read_idx = 0;
 }
 
-void FrameMap::FrameQueue::push(FrameData data)
+void FrameMap::Item::FrameQueue::push(FrameData data)
 {
 	if (index(m_write_idx + 1) == m_read_idx)
-		throw LIMA_EXC(Hardware, Error, "FrameMap::FrameQueue full");
+		throw LIMA_EXC(Hardware, Error, 
+			       "FrameMap::Item::FrameQueue full");
 	m_array[m_write_idx] = data;
 	m_write_idx = index(m_write_idx + 1);
 }
 
-FrameMap::FrameDataList FrameMap::FrameQueue::pop_all()
+FrameMap::Item::FrameDataList FrameMap::Item::FrameQueue::pop_all()
 {
 	while ((m_read_idx == m_write_idx) && !m_stopped)
 		Sleep(1e-3);
@@ -609,108 +610,84 @@ FrameMap::FrameDataList FrameMap::FrameQueue::pop_all()
 	return ret;
 }
 
-void FrameMap::FrameQueue::stop()
+void FrameMap::Item::FrameQueue::stop()
 {
 	m_stopped = true;
 }
 
-FrameMap::FrameMap()
-	: m_nb_items(0), m_buffer_size(0)
+FrameMap::Item::Item()
+	: m_map(NULL), m_last_pushed_frame(-1), m_last_frame(-1)
 {
 	DEB_CONSTRUCTOR();
 }
 
-FrameMap::~FrameMap()
+FrameMap::Item::~Item()
 {
 	DEB_DESTRUCTOR();
+	stopPollFrameFinished();
 }
 
-void FrameMap::setNbItems(int nb_items)
+void FrameMap::Item::setFrameMap(FrameMap *map)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(nb_items);
-	if (nb_items == m_nb_items)
-		return;
-
-	m_frame_queue_list.resize(nb_items);
-	m_last_item_frame.resize(nb_items);
-	m_nb_items = nb_items;
+	m_map = map;
 }
 
-void FrameMap::setBufferSize(int buffer_size)
+void FrameMap::Item::clear()
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(buffer_size);
-	if (buffer_size == m_buffer_size)
-		return;
-
-	m_frame_item_count.resize(buffer_size);
-	m_buffer_size = buffer_size;
+	m_frame_queue.clear();
+	m_last_pushed_frame = -1;
+	m_last_frame = -1;
 }
 
-void FrameMap::clear()
-{
-	DEB_MEMBER_FUNCT();
-	for (int i = 0; i < m_nb_items; ++i) {
-		m_frame_queue_list[i].clear();
-		m_last_item_frame[i] = -1;
-	}
-	for (int i = 0; i < m_buffer_size; ++i)
-		m_frame_item_count[i].set(m_nb_items);
-}
-
-void FrameMap::checkFinishedFrameItem(FrameType frame, int item)
+void FrameMap::Item::checkFinishedFrame(FrameType frame)
 {
 	DEB_MEMBER_FUNCT();
 
-	if (m_nb_items == 0)		
-		THROW_HW_ERROR(InvalidValue) << "No items defined";
-	else if (m_buffer_size == 0)
+	if (m_map->m_buffer_size == 0)
 		THROW_HW_ERROR(InvalidValue) << "No buffer size defined";
-	else if ((item < 0) || (item >= m_nb_items))
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR2(item, m_nb_items);
 
-	FrameType &last = m_last_item_frame[item];
+	FrameType& last = m_last_pushed_frame;
 	if (isValidFrame(last) && (frame <= last))
 		THROW_HW_ERROR(Error) << DEB_VAR1(frame) << " finished already";
 }
 
-void FrameMap::frameItemFinished(FrameType frame, int item, 
-				 bool no_check, bool valid)
+void FrameMap::Item::frameFinished(FrameType frame, bool no_check, bool valid)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR4(frame, item, no_check, m_nb_items);
+	DEB_PARAM() << DEB_VAR3(frame, no_check, valid);
 
 	if (!no_check)
-		checkFinishedFrameItem(frame, item);
+		checkFinishedFrame(frame);
 
-	m_frame_queue_list[item].push(FrameData(frame, valid));
+	m_frame_queue.push(FrameData(frame, valid));
+	m_last_pushed_frame = frame;
 }
 
-FrameMap::FinishInfoList FrameMap::pollFrameItemFinished(int item)
+FrameMap::Item::FinishInfoList FrameMap::Item::pollFrameFinished()
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(item);
 
-	FrameDataList data_list = m_frame_queue_list[item].pop_all();
+	FrameDataList data_list = m_frame_queue.pop_all();
 
 	FinishInfoList finfo_list;
+	FrameMap& m = *m_map;
 	FrameDataList::const_iterator it, end = data_list.end();
-	FrameType &last = m_last_item_frame[item];
 	for (it = data_list.begin(); it != end; ++it) {
 		FrameType frame = it->first;
 		bool valid = it->second;
 		FinishInfo finfo;
-		finfo.first_lost = last + 1;
+		finfo.first_lost = m_last_frame + 1;
 		finfo.nb_lost = frame - finfo.first_lost + (!valid ? 1 : 0);
-		for (FrameType f = last + 1; f != (frame + 1); ++f) {
-			int idx = f % m_buffer_size;
-			AtomicCounter& count = m_frame_item_count[idx];
-			bool finished = count.dec_test_and_reset(m_nb_items);
+		for (FrameType f = m_last_frame + 1; f != (frame + 1); ++f) {
+			int idx = f % m.m_buffer_size;
+			AtomicCounter& count = m.m_frame_item_count_list[idx];
+			bool finished = count.dec_test_and_reset(m.m_nb_items);
 			if (finished)
 				finfo.finished.insert(f);
 		}
-		last = frame;
+		m_last_frame = frame;
 
 		if (DEB_CHECK_ANY(DebTypeReturn)) {
 			PrettySortedList finished_list(finfo.finished);
@@ -724,13 +701,66 @@ FrameMap::FinishInfoList FrameMap::pollFrameItemFinished(int item)
 	return finfo_list;
 }
 
-void FrameMap::stopPollFrameItemFinished(int item)
+void FrameMap::Item::stopPollFrameFinished()
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(item);
-	m_frame_queue_list[item].stop();
+	m_frame_queue.stop();
 }
 
+
+FrameMap::FrameMap()
+	: m_nb_items(0), m_buffer_size(0)
+{
+	DEB_CONSTRUCTOR();
+}
+
+void FrameMap::setNbItems(int nb_items)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(nb_items, m_nb_items);
+	if (nb_items == m_nb_items)
+		return;
+
+	m_item_list.resize(nb_items);
+	if (nb_items > m_nb_items) {
+		ItemList::iterator it, end = m_item_list.end();
+		for (it = m_item_list.begin() + m_nb_items; it != end; ++it)
+			it->setFrameMap(this);
+	}
+	m_nb_items = nb_items;
+}
+
+void FrameMap::setBufferSize(int buffer_size)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(buffer_size);
+	if (buffer_size == m_buffer_size)
+		return;
+
+	m_frame_item_count_list.resize(buffer_size);
+	m_buffer_size = buffer_size;
+}
+
+void FrameMap::clear()
+{
+	DEB_MEMBER_FUNCT();
+	ItemList::iterator it, end = m_item_list.end();
+	for (it = m_item_list.begin(); it != end; ++it)
+		it->clear();
+	CounterList& count_list = m_frame_item_count_list;
+	CounterList::iterator cit, cend = count_list.end();
+	for (cit = count_list.begin(); cit != cend; ++cit)
+		cit->set(m_nb_items);
+}
+
+FrameArray FrameMap::getItemFrameArray() const
+{
+	FrameArray frame_array;
+	ItemList::const_iterator it, end = m_item_list.end();
+	for (it = m_item_list.begin(); it != end; ++it)
+		frame_array.push_back(it->m_last_frame);
+	return frame_array;
+}
 
 ostream& lima::SlsDetector::operator <<(ostream& os, const FrameMap& m)
 {
