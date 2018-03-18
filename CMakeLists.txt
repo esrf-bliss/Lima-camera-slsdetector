@@ -25,11 +25,11 @@ set(NAME slsdetector)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=format-security")
 
-add_subdirectory(slsDetectorPackage)
-
 set(SLS_DETECTOR_DIR slsDetectorPackage)
 set(SLS_DETECTOR_SW ${SLS_DETECTOR_DIR}/slsDetectorSoftware)
 set(SLS_DETECTOR_RECV ${SLS_DETECTOR_DIR}/slsReceiverSoftware)
+
+add_subdirectory(${SLS_DETECTOR_DIR})
 
 set(${NAME}_srcs src/SlsDetectorDefs.cpp  src/SlsDetectorArgs.cpp
     src/SlsDetectorCPUAffinity.cpp src/SlsDetectorModel.cpp 
@@ -51,7 +51,7 @@ target_include_directories(lima${NAME} PUBLIC
 
 target_link_libraries(lima${NAME}
 		      limacore
-		      slsDetectorShared slsReceiverShared)
+		      slsDetectorShared slsReceiverShared zmq)
 
 limatools_set_library_soversion(lima${NAME} VERSION)
 install(TARGETS lima${NAME} LIBRARY DESTINATION lib)
