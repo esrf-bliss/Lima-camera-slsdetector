@@ -108,7 +108,7 @@ class SlsDetectorAcq:
         self.m_acq_state     = Core.AcqState()
 
         self.m_corr = None
-        if self.m_cam.getType() == SlsDetector.Camera.EigerDet:
+        if self.m_cam.getType() == SlsDetector.EigerDet:
             self.m_eiger = SlsDetector.Eiger(self.m_cam)
             self.m_corr = self.m_eiger.createCorrectionTask()
         else:
@@ -196,7 +196,7 @@ class SlsDetectorAcq:
 
                 time.sleep(self.m_sleep_time)
 
-        self.m_cam.waitState(SlsDetector.Camera.Idle);
+        self.m_cam.waitState(SlsDetector.Idle);
         deb.Trace("Camera finished");
 
         pool_thread_mgr = processlib.PoolThreadMgr.get()
@@ -228,6 +228,16 @@ class SlsDetectorAcq:
     @Core.DEB_MEMBER_FUNCT
     def setBin(self, bin):
         self.m_ct_image.setBin(bin)
+
+    @Core.DEB_MEMBER_FUNCT
+    def checkValidRoi(self, roi):
+        frame_dim = self.m_ct_image.getImageDim()
+        valid = True
+        try:
+            frame_dim.checkValidRoi(roi)
+        except:
+            valid = False
+        return valid
 
     @Core.DEB_MEMBER_FUNCT
     def setRoi(self, roi):
@@ -278,14 +288,15 @@ def test_slsdetector_control(config_fname, enable_debug, use_events,
     deb.Always("Done!")
     
     roi = Core.Roi(Core.Point(256, 512), Core.Size(256, 512));
-    acq.setRoi(roi);
+    if acq.checkValidRoi(roi):
+        acq.setRoi(roi);
 
-    roi_tl, roi_size = roi.getTopLeft(), roi.getSize()
-    deb.Always("Run roi=<%s,%s>-<%sx%s>" %
-               (roi_tl.x, roi_tl.y,
-                roi_size.getWidth(), roi_size.getHeight()))
-    acq.run()
-    deb.Always("Done!")
+        roi_tl, roi_size = roi.getTopLeft(), roi.getSize()
+        deb.Always("Run roi=<%s,%s>-<%sx%s>" %
+                   (roi_tl.x, roi_tl.y,
+                    roi_size.getWidth(), roi_size.getHeight()))
+        acq.run()
+        deb.Always("Done!")
     
 
 def main(argv):
