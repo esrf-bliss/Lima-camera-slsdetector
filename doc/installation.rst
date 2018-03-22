@@ -289,22 +289,85 @@ the highest priority:
     lid10eiger1:~ # cat /etc/security/limits.d/net-performance.conf
     @netperf         -       rtprio 99
 
-and also to execute *sudo* in order to change other tasks' CPU affinity
-(*taskset*) and configure configure the network devices (*ethtool* and
+Compile the *netdev_set_queue_rps_cpus* util, used by the *SlsDetector* plugin
+to change the network packet dispatching tasks' CPU affinity, and install it 
+in */usr/local/bin*:
+
+::
+
+    lid10eiger1:~ # cat /tmp/netdev_set_queue_rps_cpus.c
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <string.h>
+    #include <errno.h>
+    #include <unistd.h>
+    #include <sys/types.h>
+    #include <sys/stat.h>
+    #include <fcntl.h>
+    
+    int main(int argc, char *argv[])
+    {
+            char *dev, *queue, *p, fname[256], buffer[128];
+            int fd, len, ret;
+            long aff;
+    
+            if (argc != 4)
+                    exit(1);
+            if (!strlen(argv[1]) || !strlen(argv[2]) || !strlen(argv[3]))
+                    exit(2);
+    
+            dev = argv[1];
+            queue = argv[2];
+    
+            errno = 0;
+            aff = strtol(argv[3], &p, 0);
+            if (errno || *p)
+                    exit(3);
+    
+            len = sizeof(fname);
+            ret = snprintf(fname, len, "/sys/class/net/%s/queues/%s/rps_cpus",
+                           dev, queue);
+            if ((ret < 0) || (ret == len))
+                    exit(4);
+    
+            len = sizeof(buffer);
+            ret = snprintf(buffer, len, "%016lx", aff);
+            if ((ret < 0) || (ret == len))
+                    exit(5);
+    
+            fd = open(fname, O_WRONLY);
+            if (fd < 0)
+                    exit(6);
+    
+            for (p = buffer; *p; p += ret)
+                    if ((ret = write(fd, p, strlen(p))) < 0)
+                            exit(7);
+    
+            if (close(fd) < 0)
+                    exit(8);
+            return 0;
+    }
+    
+    lid10eiger1:~ # gcc -Wall -o /tmp/netdev_set_queue_rps_cpus /tmp/netdev_set_queue_rps_cpus.c
+    lid10eiger1:~ # cp /tmp/netdev_set_queue_rps_cpus /usr/local/bin
+
+Allow *netperf* users to execute *sudo* in order to change other tasks' CPU affinity
+(*taskset* and *netdev_set_queue_rps_cpus*) and to configure the network devices (*ethtool* and
 *ifconfig*):
 
 ::
 
     lid10eiger1:~ # cat /etc/sudoers.d/netperf
-    %netperf    ALL=(root) NOPASSWD: /usr/bin/taskset, /sbin/ethtool, \
-                         /sbin/ifconfig
+    %netperf        ALL=(root) NOPASSWD: /usr/bin/taskset, /sbin/ethtool, \
+                                         /sbin/ifconfig, \
+                                         /usr/local/bin/netdev_set_queue_rps_cpus
 
 Tune the OS network buffer sizes:
 
 ::
 
     lid10eiger1:~ # cat /etc/sysctl.d/net-performance.conf
-    # Receive buffers
+    # Tune network buffers for UDP RX performance
 
     # Original values: sysctl -a | grep net
     #...
@@ -323,15 +386,11 @@ Tune the OS network buffer sizes:
     #net.ipv4.udp_rmem_min = 4096
     #net.ipv4.udp_wmem_min = 4096
 
-    # Max & default OS receive buffer size (Bytes) for all types
+    # Max OS socket receive buffer size (in bytes) for all types
     net.core.rmem_max = 134217728
-    net.core.rmem_default = 134217728
 
-    # Buffer before Linux Kernel processes them
+    # Size of per-device buffer (in packets) before Linux kernel dispatching
     net.core.netdev_max_backlog = 262144
-
-    # The minimum UDP receive buffer size (Bytes)
-    net.ipv4.udp_rmem_min = 134217728
 
 Network configuration
 ---------------------
@@ -380,8 +439,8 @@ Then check the PCI tree:
                  |               \-00.1
     ...
 
-From the tree we identify the parent root device of each Intel X520
-Ethernet adapter:
+From the tree we identify the parent root device of each *Intel X520
+Ethernet adapter*:
 
 +--------------+--------------+
 | Node         | Parent       |
@@ -1132,12 +1191,13 @@ plugin:
 Compile *Lima*, including *slsDetectorPackage* using *CMake*:
 
 ::
+
     (bliss) lid10eiger1:~ % cd ${LIMA_DIR}
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % mkdir -p ${LIMA_DIR}/install/python
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % ./install.sh \
         --install-prefix=${LIMA_DIR}/install \
         --install-python-prefix=${LIMA_DIR}/install/python \
-        slsdetector sps gldisplay edfgz python pytango-server
+        slsdetector sps-image gldisplay edfgz python pytango-server
     ...
 
 Add *Lima* to the *PATH*, *LD_LIBRARY_PATH* and *PYTHONPATH* environment variables in
@@ -1281,25 +1341,43 @@ local database:
     (bliss) lid10eiger1:~ % bliss_dserver -fg start LimaCCDs
     Starting: LimaCCDs/eiger500k
 
-Add LimaCCDs and SlsDetector class devices:
+Add LimaCCDs and SlsDetector class devices.
 
-+-----------------------------------+-----------------------------------+
-| LimaCCDs/eiger500k/DEVICE/LimaCCD | id10/limaccds/eiger500k           |
-| s                                 |                                   |
-+-----------------------------------+-----------------------------------+
-| id10/limaccds/eiger500k->LimaCame | SlsDetector                       |
-| raType                            |                                   |
-+-----------------------------------+-----------------------------------+
-| id10/limaccds/eiger500k->NbProces | 10                                |
-| singThread                        |                                   |
-+-----------------------------------+-----------------------------------+
-| LimaCCDs/eiger500k/DEVICE/SlsDete | id10/slsdetector/eiger500k        |
-| ctor                              |                                   |
-+-----------------------------------+-----------------------------------+
-| id10/slsdetector/eiger500k->confi | /users/opid00/eiger/eiger_v2.3.2/ |
-| g_fname                           | config/beb-021-020-direct-FO-10g. |
-|                                   | config                            |
-+-----------------------------------+-----------------------------------+
++----------------------------------------------------------+-------------------------------------------+
+| LimaCCDs/eiger500k/DEVICE/LimaCCDs                       | id10/limaccds/eiger500k                   |
++----------------------------------------------------------+-------------------------------------------+
+| id10/limaccds/eiger500k->LimaCameraType                  | SlsDetector                               |
++----------------------------------------------------------+-------------------------------------------+
+| id10/limaccds/eiger500k->NbProcessingThread              | 11                                        |
++----------------------------------------------------------+-------------------------------------------+
+| LimaCCDs/eiger500k/DEVICE/SlsDetector                    | id10/slsdetector/eiger500k                |
++----------------------------------------------------------+-------------------------------------------+
+| id10/slsdetector/eiger500k->config_fname                 | /users/opid00/eiger/eiger_v2.3.2/config/  |
+|                                                          | beb-021-020-direct-FO-10g.config          |
++----------------------------------------------------------+-------------------------------------------+
+| id10/slsdetector/eiger500k->netdev_groups                | | eth0,eth1,eth2,eth4,eth6,eth7,eth8,eth9 |
+|                                                          | | eth3,eth5                               |
++----------------------------------------------------------+-------------------------------------------+
+| id10/slsdetector/eiger500k->pixel_depth_cpu_affinity_map | | 4,0xf00,0xfc,0x2,0x1,0x1,0x2            |
+|                                                          | | 8,0xf00,0xfc,0x2,0x1,0x1,0x2            |
+|                                                          | | 16,0xfff,0xfff,0xfff,0xfff,0xfff,0xfff  |
+|                                                          | | 32,0xfff,0xfff,0xfff,0xfff,0xfff,0xfff  |
++----------------------------------------------------------+-------------------------------------------+
+
+**Note:** in order to perform high frame rate acquisitions, the CPU affinity must be fixed for 
+the following tasks:
+
+ * Receiver listeners
+ * Receiver writers
+ * Lima processing threads
+ * OS processes
+ * Net-dev group #1 packet dispatching
+ * Net-dev group #2 packet dispatching
+ * ...
+
+The previous example is based on a dual 6-core CPUs backend (12 cores). After the data acquisition
+the Lima processing threads will run also on the CPUs assigned to listeners and writers (0xffe), that is
+11 cores, which is used for setting the NbProcessingThreads. Please note that there are two network groups.
 
 Finally, configure *opid10* as the default *DSERVER_USER*, which is used
 by the *dserver_daemon*
@@ -1323,12 +1401,13 @@ and restart the *blcontrol* subsystem:
      BL control ...
     ...
 
-**Note**: when running the *LimaCCDs* server from the *dserver_daemon*,
-the real-time priority capabilities are lost. **The server must be
-started using the *bliss_dserver* script**. Moreover, **the command
-*bliss_dserver start* must be used (start in background, avoid *-fg*
-option)**, so the *LimaCCDs* process is decoupled from the terminal,
-reducing the risks of CPU blocking.
+**Note:** the latest version of the *daemon_adm* package allows the
+propagation of the real-time priority capabilities configured as
+resource limits, so **it is safe** to start the server through the
+*dserver* remote utility. **If the command *bliss_dserver start* is
+used, start the server in background and avoid *-fg* option**, so the
+*LimaCCDs* process is decoupled from the terminal, reducing the
+risks of CPU blocking.
 
 SPEC
 ----
