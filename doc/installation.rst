@@ -216,8 +216,8 @@ the entire disk:
     (parted) quit
     Information: You may need to update /etc/fstab.
 
-Note: the partition is aligned to 2048 sectors (1 MByte). The end sector
-is obtained by:
+.. note:: the partition is aligned to 2048 sectors (1 MByte). The end sector
+   is obtained by:
 
 ::
 
@@ -1364,24 +1364,26 @@ Add LimaCCDs and SlsDetector class devices.
 |                                                          | | 32,0xfff,0xfff,0xfff,0xfff,0xfff,0xfff  |
 +----------------------------------------------------------+-------------------------------------------+
 
-**Note:** in order to perform high frame rate acquisitions, the CPU affinity must be fixed for 
-the following tasks:
+.. note:: in order to perform high frame rate acquisitions, the CPU affinity must be fixed for 
+   the following tasks:
 
- * Receiver listeners
- * Receiver writers
- * Lima processing threads
- * OS processes
- * Net-dev group #1 packet dispatching
- * Net-dev group #2 packet dispatching
- * ...
+   * Receiver listeners
+   * Receiver writers
+   * Lima processing threads
+   * OS processes
+   * Net-dev group #1 packet dispatching
+   * Net-dev group #2 packet dispatching
+   * ...
 
-The previous example is based on a dual 6-core CPUs backend (12 cores). After the data acquisition
-the Lima processing threads will run also on the CPUs assigned to listeners and writers (0xffe), that is
-11 cores, which is used for setting the NbProcessingThreads. Please note that there are two network groups.
-
+   The previous example is based on a dual 6-core CPUs backend (12 cores). After the data acquisition finishes
+   the Lima processing threads will run also on the CPUs assigned to listeners and writers (0xffe), that is
+   11 cores in total, which is used for setting the NbProcessingThreads. Please note that there are two network
+   groups and four pixel_depth->cpu_affinity settings (4-, 8-, 16- and 32-bit), each one represented by a line
+   in a multi-line string array.
+  
 Finally, configure *opid10* as the default *DSERVER_USER*, which is used
 by the *dserver_daemon*
-
+   
 ::
 
     # as blissadm
@@ -1401,14 +1403,14 @@ and restart the *blcontrol* subsystem:
      BL control ...
     ...
 
-**Note:** the latest version of the *daemon_adm* package allows the
-propagation of the real-time priority capabilities configured as
-resource limits, so **it is safe** to start the server through the
-*dserver* remote utility. **If the command *bliss_dserver start* is
-used, start the server in background and avoid *-fg* option**, so the
-*LimaCCDs* process is decoupled from the terminal, reducing the
-risks of CPU blocking.
-
+.. note:: the latest version of the *daemon_adm* package allows the
+   propagation of the real-time priority capabilities configured as
+   resource limits, so **it is safe** to start the server through the
+   *dserver* remote utility. **If the command *bliss_dserver start* is
+   used, start the server in background and avoid *-fg* option**, so the
+   *LimaCCDs* process is decoupled from the terminal, reducing the
+   risks of CPU blocking.
+   
 SPEC
 ----
 
@@ -1516,12 +1518,13 @@ interfaces.
             #########################
             if (index(ccd_dev, "eiger500k") > 0) {
                 limaccdsetup eiger500k ccd_u id10/limaccds/eiger500k
-            taco_io(ccd_dev, "timeout", 30)
+                taco_io(ccd_dev, "timeout", 30)
+                tango_io("id10/slsdetector/eiger500k", "timeout", 30)
             }
         }
     }'
 
     lima_ccd_resetup_all
 
-***Note:*** The 30 seconds timeout is necessary for large memory
-allocations (long sequences)
+.. note:: the 30 seconds timeout is necessary for large memory 
+   allocations (long sequences)
