@@ -138,9 +138,6 @@ cmake-2.8.9-1, so it must be compiled from the sources. First un-install the Deb
         [ -n "${p}" ] && dpkg --purge ${p}
     ...
 
-    lid10eiger1:~ # mkdir ~/cmake && cd ~/cmake
-    lid10eiger1:~/cmake # 
-
     # as opid00
     (bliss) lid10eiger1:~ % mkdir -p ~/Downloads/cmake && cd ~/Downloads/cmake
     (bliss) lid10eiger1:~/Downloads/cmake % scp lisgeiger1:Downloads/cmake/cmake-3.8.0.tar.gz .
