@@ -28,7 +28,7 @@ using namespace lima::SlsDetector;
 
 
 Model::Model(Camera *cam, Type type)
-	: m_cam(cam), m_type(type)
+	: m_cam(cam), m_det(m_cam->m_det), m_type(type)
 {
 	DEB_CONSTRUCTOR();
 	DEB_PARAM() << DEB_VAR1(type);

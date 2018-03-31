@@ -24,7 +24,9 @@
 #include "lima/MiscUtils.h"
 
 #include <glob.h>
+#include <unistd.h>
 #include <sys/syscall.h>
+#include <cmath>
 
 using namespace std;
 using namespace lima;
@@ -70,6 +72,22 @@ ostream& lima::SlsDetector::Defs::operator <<(ostream& os, Settings settings)
 	}
 	return os << name;
 }
+
+
+typedef pair<DACIndex, string> DACCmdPair;
+static const DACCmdPair DACCmdCList[] = {
+	DACCmdPair(EigerVcmpLL, "vcmp_ll"),
+	DACCmdPair(EigerVcmpLR, "vcmp_lr"),
+	DACCmdPair(EigerVcmpRL, "vcmp_rl"),
+	DACCmdPair(EigerVcmpRR, "vcmp_rr"),
+	DACCmdPair(Threshold,   "vthreshold"),
+	DACCmdPair(EigerVrf,    "vrf"),
+	DACCmdPair(EigerVrs,    "vrs"),
+	DACCmdPair(EigerVtr,    "vtr"),
+	DACCmdPair(EigerVcal,   "vcall"),
+	DACCmdPair(EigerVcp,    "vcp"),
+};
+DACCmdMapType lima::SlsDetector::Defs::DACCmdMap(C_LIST_ITERS(DACCmdCList));
 
 ostream& lima::SlsDetector::Defs::operator <<(ostream& os, DACIndex dac_idx)
 {
@@ -133,6 +151,19 @@ ostream& lima::SlsDetector::Defs::operator <<(ostream& os, DACIndex dac_idx)
 	return os << name;
 }
 
+typedef pair<ADCIndex, string> ADCCmdPair;
+static const ADCCmdPair ADCCmdCList[] = {
+	ADCCmdPair(TempFPGA, "temp_fpga"),
+	ADCCmdPair(TempFPGAExt, "temp_fpgaext"),
+	ADCCmdPair(Temp10GE, "temp_10ge"),
+	ADCCmdPair(TempDCDC, "temp_dcdc"),
+	ADCCmdPair(TempSODL, "temp_sodl"),
+	ADCCmdPair(TempSODR, "temp_sodr"),
+	ADCCmdPair(TempFPGAFL, "temp_fpgafl"),
+	ADCCmdPair(TempFPGAFR, "temp_fpgafr"),
+};
+ADCCmdMapType lima::SlsDetector::Defs::ADCCmdMap(C_LIST_ITERS(ADCCmdCList));
+
 ostream& lima::SlsDetector::Defs::operator <<(ostream& os, ADCIndex adc_idx)
 {
 	const char *name = "Unknown";
@@ -160,42 +191,6 @@ ostream& lima::SlsDetector::Defs::operator <<(ostream& os, ClockDiv clock_div)
 	case SuperSlowSpeed:	name = "SuperSlowSpeed";	break;
 	}
 	return os << name;
-}
-
-ostream& lima::SlsDetector::Defs::operator <<(ostream& os, ReadoutFlags flags)
-{
-#define READOUT_FLAG(x)		{#x, x}
-
-	static struct FlagData {
-		const char *name;
-		ReadoutFlags flag;
-	} ReadoutFlagNamesCList[] = {
-		READOUT_FLAG(StoreInRAM),
-		READOUT_FLAG(ReadHits),
-		READOUT_FLAG(ZeroCompress),
-		READOUT_FLAG(PumpProbe),
-		READOUT_FLAG(BackgndCorr),
-		READOUT_FLAG(TOTMode),
-		READOUT_FLAG(Continous),
-		READOUT_FLAG(Parallel),
-		READOUT_FLAG(NonParallel),
-		READOUT_FLAG(Safe),
-	};
-	const unsigned int size = C_LIST_SIZE(ReadoutFlagNamesCList);
-
-	struct FlagData *data = &ReadoutFlagNamesCList[size - 1];
-	bool empty = true;
-	for (unsigned int i = 0; i < size; ++i, --data) {
-		if (flags & data->flag) {
-			if (!empty)
-				os << " + ";
-			os << data->name;
-			empty = false;
-		}
-	}
-	if (empty)
-		os << ((flags == Normal) ? "Normal" : "Unknown");
-	return os;
 }
 
 ostream& lima::SlsDetector::Defs::operator <<(ostream& os, DetStatus status)

@@ -27,6 +27,8 @@
 
 #include "lima/SizeUtils.h"
 
+#include "slsDetectorUsers.h"
+
 namespace lima 
 {
 
@@ -41,7 +43,6 @@ class Model
 	DEB_CLASS_NAMESPC(DebModCamera, "Model", "SlsDetector");
  public:
 	typedef Defs::Settings Settings;
-	typedef Defs::ReadoutFlags ReadoutFlags;
 
 	Model(Camera *cam, Type type);
 	virtual ~Model();
@@ -75,10 +76,6 @@ class Model
 
 	virtual bool checkSettings(Settings settings) = 0;
 
-	virtual ReadoutFlags getReadoutFlagsMask() = 0;
-	virtual bool checkReadoutFlags(ReadoutFlags flags, IntList& flag_list,
-				       bool silent = false) = 0;
-
 	virtual int getRecvPorts() = 0;
 
 	virtual void prepareAcq() = 0;
@@ -86,6 +83,8 @@ class Model
 	// TODO: add file finished callback
 	virtual void processRecvPort(int port_idx, FrameType frame, char *dptr, 
 				     uint32_t dsize, char *bptr) = 0;
+
+	AutoPtr<slsDetectorUsers> m_det;
 
  private:
 	friend class Camera;

@@ -99,10 +99,6 @@ public:
 
 	void setClockDiv(SlsDetector::Defs::ClockDiv  clock_div);
 	void getClockDiv(SlsDetector::Defs::ClockDiv& clock_div /Out/);
-	void setReadoutFlags(SlsDetector::Defs::ReadoutFlags  flags);
-	void getReadoutFlags(SlsDetector::Defs::ReadoutFlags& flags /Out/);
-	void getValidReadoutFlags(std::vector<int>& flag_list /Out/,
-	     			std::vector<std::string>& flag_name_list /Out/);
 
 	void setNetworkParameter(SlsDetector::Defs::NetworkParameter net_param,
 				 std::string& val /In,Out/);

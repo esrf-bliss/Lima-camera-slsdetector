@@ -6,9 +6,13 @@ GlobalCPUAffinity = SlsDetector.GlobalCPUAffinity
 import os
 config_fname = os.environ['EIGER_CONFIG']
 cam = SlsDetector.Camera(config_fname)
-print cam.getNetworkParameter(SlsDetector.Defs.FlowCtrl10G)
-print cam.setNetworkParameter(SlsDetector.Defs.FlowCtrl10G, "0")
-print cam.setNetworkParameter(SlsDetector.Defs.FlowCtrl10G, "1")
+try:
+	print cam.getNetworkParameter(SlsDetector.Defs.FlowCtrl10G)
+	print cam.setNetworkParameter(SlsDetector.Defs.FlowCtrl10G, "0")
+	print cam.setNetworkParameter(SlsDetector.Defs.FlowCtrl10G, "1")
+except:
+	print "Exception on NetworkParameter management"
+
 global_aff_map = cam.getPixelDepthCPUAffinityMap()
 
 if not global_aff_map:

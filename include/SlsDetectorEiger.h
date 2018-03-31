@@ -45,6 +45,10 @@ class Eiger : public Model
 	typedef unsigned short Word;
 	typedef unsigned int Long;
 
+	enum ParallelMode {
+		NonParallel, Parallel, Safe,
+	};
+
 	class Correction : public LinkTask
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Correction", 
@@ -76,15 +80,13 @@ class Eiger : public Model
 	// the returned object must be deleted by the caller
 	Correction *createCorrectionTask();
 
+	void setParallelMode(ParallelMode  mode);
+	void getParallelMode(ParallelMode& mode);
+
  protected:
 	virtual void updateImageSize();
 
 	virtual bool checkSettings(Settings settings);
-
-	virtual ReadoutFlags getReadoutFlagsMask();
-	virtual bool checkReadoutFlags(ReadoutFlags flags,
-				       IntList& flag_list,
-				       bool silent = false);
 
 	virtual int getRecvPorts();
 
@@ -309,8 +311,6 @@ class Eiger : public Model
 		std::vector<BorderFactor> m_f;
 	};
 
-	int countFlags(ReadoutFlags flags);
-
 	bool isPixelDepth4()
 	{
 		PixelDepth pixel_depth;
@@ -349,6 +349,7 @@ class Eiger : public Model
 	PortGeometryList m_port_geom_list;
 };
 
+std::ostream& operator <<(std::ostream& os, Eiger::ParallelMode mode);
 
 } // namespace SlsDetector
 

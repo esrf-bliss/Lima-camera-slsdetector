@@ -23,11 +23,13 @@
 ############################################################################
 set(NAME slsdetector)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=format-security")
-
 set(SLS_DETECTOR_DIR slsDetectorPackage)
 set(SLS_DETECTOR_SW ${SLS_DETECTOR_DIR}/slsDetectorSoftware)
 set(SLS_DETECTOR_RECV ${SLS_DETECTOR_DIR}/slsReceiverSoftware)
+
+option (USE_TEXTCLIENT "Text Client" ON)
+option (USE_RECEIVER "Receiver" ON)
+option (USE_GUI "GUI" ON)
 
 add_subdirectory(${SLS_DETECTOR_DIR})
 

@@ -383,32 +383,23 @@ void Eiger::getDACInfo(NameList& name_list, IntList& idx_list,
 {
 	DEB_MEMBER_FUNCT();
 
+#define EIGER_DAC(x)			{x, 0}
 #define EIGER_DAC_MV(x)			{x, 1}
-#define EIGER_DAC_OTHER(x)		{x, 0}
 
 	static struct DACData {
 		DACIndex idx;
 		int milli_volt;
 	} EigerDACList[] = {
-		EIGER_DAC_MV(EigerSvP),
-		EIGER_DAC_MV(EigerSvN),
-		EIGER_DAC_MV(EigerVrf),
-		EIGER_DAC_MV(EigerVrs),
-		EIGER_DAC_MV(EigerVtr),
-		EIGER_DAC_MV(EigerVtgstv),
-		EIGER_DAC_MV(EigerVcal),
-		EIGER_DAC_MV(EigerVcp),
-		EIGER_DAC_MV(EigerVcn),
-		EIGER_DAC_MV(EigerVis),
-		EIGER_DAC_MV(EigerVcmpLL),
-		EIGER_DAC_MV(EigerVcmpLR),
-		EIGER_DAC_MV(EigerVcmpRL),
-		EIGER_DAC_MV(EigerVcmpRR),
-		EIGER_DAC_MV(EigerRxbLB),
-		EIGER_DAC_MV(EigerRxbRB),
-		EIGER_DAC_MV(Threshold),
-		EIGER_DAC_OTHER(IODelay),
-		EIGER_DAC_OTHER(HVNew),
+		EIGER_DAC(EigerVrf),
+		EIGER_DAC(EigerVrs),
+		EIGER_DAC(EigerVtr),
+		EIGER_DAC(EigerVcal),
+		EIGER_DAC(EigerVcp),
+		EIGER_DAC(EigerVcmpLL),
+		EIGER_DAC(EigerVcmpLR),
+		EIGER_DAC(EigerVcmpRL),
+		EIGER_DAC(EigerVcmpRR),
+		EIGER_DAC(Threshold),
 	};
 	const unsigned int size = C_LIST_SIZE(EigerDACList);
 
@@ -472,14 +463,14 @@ void Eiger::getTimeRanges(TimeRanges& time_ranges)
 	DEB_MEMBER_FUNCT();
 
 	Camera* cam = getCamera();
-	ReadoutFlags readout_flags;
-	cam->getReadoutFlags(readout_flags);
+	ParallelMode parallel_mode;
+	getParallelMode(parallel_mode);
 	ClockDiv clock_div;
 	cam->getClockDiv(clock_div);
 	PixelDepth pixel_depth;
 	cam->getPixelDepth(pixel_depth);
 
-	bool parallel = (readout_flags & Parallel);
+	bool parallel = (parallel_mode == Parallel);
 
 	double min_exp = 10;
 	double min_lat = 500;
@@ -573,64 +564,18 @@ bool Eiger::checkSettings(Settings settings)
 	return ok;
 }
 
-Eiger::ReadoutFlags Eiger::getReadoutFlagsMask()
+void Eiger::setParallelMode(ParallelMode mode)
 {
 	DEB_MEMBER_FUNCT();
-	ReadoutFlags flags = ReadoutFlags(Parallel | NonParallel | Safe | 
-					  StoreInRAM | Continous);
-	DEB_RETURN() << DEB_VAR1(flags);
-	return flags;
+	DEB_PARAM() << DEB_VAR1(mode);
+	m_det->setParallelMode(mode);
 }
 
-bool Eiger::checkReadoutFlags(ReadoutFlags flags, IntList& flag_list, 
-			      bool silent)
+void Eiger::getParallelMode(ParallelMode& mode)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(flags, silent);
-
-	bool ok = false;
-	ReadoutFlags mask, result;
-
-	mask = ReadoutFlags(Parallel | NonParallel | Safe);
-	result = ReadoutFlags(flags & mask);
-	flags = ReadoutFlags(flags & ~mask);
-	if (countFlags(result) != 1) {
-		if (!silent)
-			DEB_ERROR() << "Invalid number of readout-mode flags";
-		goto out;
-	}
-	flag_list.push_back(result);
-
-	mask = ReadoutFlags(StoreInRAM | Continous);
-	result = ReadoutFlags(flags & mask);
-	flags = ReadoutFlags(flags & ~mask);
-	if (countFlags(result) != 1) {
-		if (!silent)
-			DEB_ERROR() << "Invalid number of store-in-mem flags";
-		goto out;
-	}
-	flag_list.push_back(result);
-
-	if (flags != 0) {
-		if (!silent)
-			DEB_ERROR() << "Invalid flags for Eiger: " << flags;
-		goto out;
-	}
-
-	ok = true;
- out:
-	DEB_RETURN() << DEB_VAR1(ok);
-	return ok;
-}
-
-int Eiger::countFlags(ReadoutFlags flags)
-{
-	const unsigned int nb_bits = sizeof(flags) * 8;
-	int count = 0;
-	for (unsigned int i = 0; i < nb_bits; ++i)
-		if (flags & (1 << i))
-			count++;
-	return count;
+	mode = ParallelMode(m_det->setParallelMode(-1));
+	DEB_RETURN() << DEB_VAR1(mode);
 }
 
 int Eiger::getRecvPorts()
@@ -779,5 +724,16 @@ int Eiger::getInterModuleGap(int det)
 	if (det >= getNbEigerModules() - 1)
 		THROW_HW_ERROR(InvalidValue) << "Invalid " << DEB_VAR1(det);
 	return 36;
+}
+
+ostream& lima::SlsDetector::operator <<(ostream& os, Eiger::ParallelMode mode)
+{
+	const char *name = "Invalid";
+	switch (mode) {
+	case Eiger::NonParallel:	name = "NonParallel";	break;
+	case Eiger::Parallel:		name = "Parallel";	break;
+	case Eiger::Safe:		name = "Safe";		break;
+	}
+	return os << name;
 }
 

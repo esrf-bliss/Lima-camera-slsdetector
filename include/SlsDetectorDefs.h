@@ -68,6 +68,9 @@ enum Settings {
 	Unitialized   = slsDetectorDefs::UNINITIALIZED,
 };
 
+#define MultiSlsDetectorErr	(-100)
+#define SlsDetectorBadIndexErr	(-9999)
+
 enum DACIndex {
 	Threshold        = slsDetectorDefs::THRESHOLD,
 	CalibPulse       = slsDetectorDefs::CALIBRATION_PULSE,
@@ -125,7 +128,8 @@ enum DACIndex {
 	PowerChip        = slsDetectorDefs::V_POWER_CHIP,
 };
 
-#define MultiSlsDetectorErr (-100)
+typedef std::map<DACIndex, std::string> DACCmdMapType;
+extern DACCmdMapType DACCmdMap;
 
 enum ADCIndex {
 	TempADC          = slsDetectorDefs::TEMPERATURE_ADC,
@@ -139,25 +143,14 @@ enum ADCIndex {
 	TempFPGAFR       = slsDetectorDefs::TEMPERATURE_FPGA3,
 };
 
+typedef std::map<ADCIndex, std::string> ADCCmdMapType;
+extern ADCCmdMapType ADCCmdMap;
+
 enum ClockDiv {
 	FullSpeed,
 	HalfSpeed,
 	QuarterSpeed,
 	SuperSlowSpeed, 
-};
-
-enum ReadoutFlags {
-	Normal       = slsDetectorDefs::NORMAL_READOUT,
-	StoreInRAM   = slsDetectorDefs::STORE_IN_RAM,
-	ReadHits     = slsDetectorDefs::READ_HITS,
-	ZeroCompress = slsDetectorDefs::ZERO_COMPRESSION,
-	PumpProbe    = slsDetectorDefs::PUMP_PROBE_MODE,
-	BackgndCorr  = slsDetectorDefs::BACKGROUND_CORRECTIONS,
-	TOTMode      = slsDetectorDefs::TOT_MODE,
-	Continous    = slsDetectorDefs::CONTINOUS_RO,
-	Parallel     = slsDetectorDefs::PARALLEL,
-	NonParallel  = slsDetectorDefs::NONPARALLEL,
-	Safe         = slsDetectorDefs::SAFE,
 };
 
 enum DetStatus {
@@ -191,7 +184,6 @@ std::ostream& operator <<(std::ostream& os, Settings settings);
 std::ostream& operator <<(std::ostream& os, DACIndex dac_idx);
 std::ostream& operator <<(std::ostream& os, ADCIndex adc_idx);
 std::ostream& operator <<(std::ostream& os, ClockDiv clock_div);
-std::ostream& operator <<(std::ostream& os, ReadoutFlags flags);
 std::ostream& operator <<(std::ostream& os, DetStatus status);
 std::ostream& operator <<(std::ostream& os, NetworkParameter net_param);
 
