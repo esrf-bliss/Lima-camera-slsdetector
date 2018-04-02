@@ -144,6 +144,7 @@ void Camera::AcqThread::threadFunction()
 		startAcq();
 	}
 	m_state = Running;
+	DEB_TRACE() << DEB_VAR1(m_state);
 	m_cond.broadcast();
 
 	SeqFilter seq_filter;
@@ -173,8 +174,10 @@ void Camera::AcqThread::threadFunction()
 			}
 		}
 	} while ((m_state != StopReq) && cont_acq);
+	State prev_state = m_state;
 
 	m_state = Stopping;
+	DEB_TRACE() << DEB_VAR2(prev_state, m_state);
 	{
 		AutoMutexUnlock u(l);
 		stopAcq();
@@ -197,6 +200,7 @@ void Camera::AcqThread::threadFunction()
 	}
 
 	m_state = Stopped;
+	DEB_TRACE() << DEB_VAR1(m_state);
 	m_cond.broadcast();
 }
 

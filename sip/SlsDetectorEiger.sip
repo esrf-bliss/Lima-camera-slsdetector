@@ -36,6 +36,10 @@ class Eiger : public SlsDetector::Model
 %End
 
  public:
+	enum ParallelMode {
+		NonParallel, Parallel, Safe,
+	};
+
 	class Correction : public LinkTask
 	{
 	public:
@@ -61,6 +65,9 @@ class Eiger : public SlsDetector::Model
 				std::vector<double>& min_val_list /Out/);
 
 	virtual void getTimeRanges(SlsDetector::TimeRanges& time_ranges /Out/);
+
+	void setParallelMode(SlsDetector::Eiger::ParallelMode  mode);
+	void getParallelMode(SlsDetector::Eiger::ParallelMode& mode);
 
  protected:
 	virtual void updateImageSize();

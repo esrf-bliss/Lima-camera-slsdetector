@@ -1239,11 +1239,13 @@ Compile *Lima*, including *slsDetectorPackage* using *CMake*:
 ::
 
     (bliss) lid10eiger1:~ % cd ${LIMA_DIR}
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % cp scripts/config.txt_default scripts/config.txt
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % echo "CMAKE_BUILD_TYPE=RelWithDebInfo" >> scripts/config.txt
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % mkdir -p ${LIMA_DIR}/install/python
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % ./install.sh \
         --install-prefix=${LIMA_DIR}/install \
         --install-python-prefix=${LIMA_DIR}/install/python \
-        slsdetector sps-image gldisplay edfgz python pytango-server
+        slsdetector sps-image gldisplay edfgz python pytango-server tests
     ...
 
 Build the documentation:
@@ -1291,11 +1293,14 @@ to activate the high voltage; answer *No*. In the GUI, disable the *File
 Name* check box and press *Start* for a single acquisition. A frame
 should be taken.
 
-Finally, test the *Lima* plugin:
+Finally, test the *Lima* plugin without and with *CtControl* instantiation:
 
 ::
 
     (bliss) lid10eiger1:~ % cd ${LIMA_DIR}
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % rm -f /tmp/eiger.edf && \
+                                                    build/camera/slsdetector/test/test_slsdetector -c ${EIGER_CONFIG}
+    ...
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % mkdir -p /nobackup/lid10eiger12/data/eiger/lima
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % ln -s /nobackup/lid10eiger12/data/eiger/lima data
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % rm -f data/img*.edf && \

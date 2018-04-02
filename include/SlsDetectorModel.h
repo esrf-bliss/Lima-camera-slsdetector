@@ -84,14 +84,15 @@ class Model
 	virtual void processRecvPort(int port_idx, FrameType frame, char *dptr, 
 				     uint32_t dsize, char *bptr) = 0;
 
-	AutoPtr<slsDetectorUsers> m_det;
-
  private:
 	friend class Camera;
 	friend class Receiver;
 
 	Camera *m_cam;
 	Type m_type;
+
+ protected:
+	AutoPtr<slsDetectorUsers> m_det;
 };
 
 

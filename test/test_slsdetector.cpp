@@ -140,6 +140,13 @@ TestApp::TestApp(int argc, char *argv[])
 	m_alloc_mgr = new SoftBufferAllocMgr();
 	m_buffer_mgr = new StdBufferCbMgr(*m_alloc_mgr);
 	m_buffer_mgr->registerFrameCallback(m_cb);
+	m_cam->setBufferCbMgr(m_buffer_mgr);
+
+	Type det_type = m_cam->getType();
+	if (det_type != EigerDet)
+		THROW_HW_ERROR(Error) << "Unknown detector: " << det_type;
+
+	m_model = new Eiger(m_cam);
 }
 
 void TestApp::run()
@@ -157,7 +164,6 @@ void TestApp::run()
 		int max_buffers = m_buffer_mgr->getMaxNbBuffers(frame_dim, 1);
 		int nb_buffers = min(m_pars.nb_frames, max_buffers);
 		m_buffer_mgr->allocBuffers(nb_buffers, 1, frame_dim);
-		m_cam->setBufferCbMgr(m_buffer_mgr);
 
 		m_cam->prepareAcq();
 		m_last_msg_timestamp = Timestamp::now();
