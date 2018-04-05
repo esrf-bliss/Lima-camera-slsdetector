@@ -362,11 +362,14 @@ int main(int argc, char *argv[])
 {
 	DEB_GLOBAL_FUNCT();
 
-	if (argc < 2) {
-		DEB_ERROR() << "Must provide configuration file";
-		exit(1);
+	string config_fname = getenv("EIGER_CONFIG");
+	if (config_fname.empty()) {
+		if (argc < 2) {
+			DEB_ERROR() << "Must provide configuration file";
+			exit(1);
+		}
+		config_fname = argv[1];
 	}
-	string config_fname = argv[1];
 
 	string par;
 	if (argc > 2)

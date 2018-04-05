@@ -46,6 +46,7 @@ TestApp::Pars::Pars()
 void TestApp::Pars::loadDefaults()
 {
 	DEB_MEMBER_FUNCT();
+	config_fname = getenv("EIGER_CONFIG");
 	nb_frames = 10;
 	exp_time = 2.0e-3;
 	frame_period = 2.5e-3;
