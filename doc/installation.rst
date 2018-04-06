@@ -389,6 +389,36 @@ Tune the OS network buffer sizes:
     # Size of per-device buffer (in packets) before Linux kernel dispatching
     net.core.netdev_max_backlog = 262144
 
+Linux *maxcpus* option
+~~~~~~~~~~~~~~~~~~~~~~
+
+The *Supermicro* BIOS does not always acknowledge the *Disable Hyper-Threading* option,
+so after some reboot conditions the Hyper-Threading is activated and Linux sees twice the
+number of CPUs. The only way to control this is to limit the number of CPUs used by 
+Linux in the kernel command line.
+
+Edit the */etc/default/grub* file and add *maxcpus=12* to the *GRUB_CMDLINE_LINUX_DEFAULT*
+variable and force the update *GRUB* configuration file:
+
+::
+
+    # as root
+    lid10eiger1:~ # cat /etc/default/grub
+    # If you change this file, run 'update-grub' afterwards to update
+    # /boot/grub/grub.cfg.
+    # For full documentation of the options in this file, see:
+    #   info -f grub -n 'Simple configuration'
+    
+    GRUB_DEFAULT=0
+    GRUB_TIMEOUT=5
+    GRUB_DISTRIBUTOR=`lsb_release -i -s 2> /dev/null || echo Debian`
+    GRUB_CMDLINE_LINUX_DEFAULT="ipv6.disable=1 quiet maxcpus=12"
+    GRUB_CMDLINE_LINUX=""
+    ...    
+
+    lid10eiger1:~ # update-grub
+    ...
+
 Network configuration
 ---------------------
 
