@@ -45,6 +45,8 @@ class Eiger : public Model
 	typedef unsigned short Word;
 	typedef unsigned int Long;
 
+	typedef Defs::ClockDiv ClockDiv;
+
 	enum ParallelMode {
 		NonParallel, Parallel, Safe,
 	};
@@ -82,6 +84,19 @@ class Eiger : public Model
 
 	void setParallelMode(ParallelMode  mode);
 	void getParallelMode(ParallelMode& mode);
+
+	void setClockDiv(ClockDiv  clock_div);
+	void getClockDiv(ClockDiv& clock_div);
+
+	void setAllTrimBits(int sub_mod_idx, int  val);
+	void getAllTrimBits(int sub_mod_idx, int& val);
+	void getAllTrimBitsList(IntList& val_list);
+
+	void setHighVoltage(int  hvolt);
+	void getHighVoltage(int& hvolt);
+
+	void setThresholdEnergy(int  thres);
+	void getThresholdEnergy(int& thres);
 
  protected:
 	virtual void updateImageSize();
@@ -319,7 +334,7 @@ class Eiger : public Model
 	}
 
 	int getNbEigerModules()
-	{ return m_nb_det_modules / 2; }
+	{ return getNbDetModules() / 2; }
 
 	static double KiloHzPeriod(double f)
 	{ return 1e6 / (f * 1e3); }
@@ -343,7 +358,6 @@ class Eiger : public Model
 	static const int HalfModuleChips;
 	static const int RecvPorts;
 
-	int m_nb_det_modules;
 	FrameDim m_recv_frame_dim;
 	CorrList m_corr_list;
 	PortGeometryList m_port_geom_list;

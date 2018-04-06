@@ -55,6 +55,12 @@ class Model
 	Type getType()
 	{ return m_type; }
 
+	int getNbDetModules()
+	{ return m_nb_det_modules; }
+
+	int getNbDetSubModules()
+	{ return m_nb_det_submodules; }
+
 	virtual std::string getName() = 0;
 	virtual void getPixelSize(double& x_size, double& y_size) = 0;
 
@@ -68,6 +74,7 @@ class Model
 
  protected:
 	void updateCameraModel();
+	void updateTimeRanges();
 
 	virtual void updateImageSize() = 0;
 
@@ -90,6 +97,8 @@ class Model
 
 	Camera *m_cam;
 	Type m_type;
+	int m_nb_det_modules;
+	int m_nb_det_submodules;
 
  protected:
 	AutoPtr<slsDetectorUsers> m_det;

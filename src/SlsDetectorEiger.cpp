@@ -304,10 +304,10 @@ Eiger::Eiger(Camera *cam)
 {
 	DEB_CONSTRUCTOR();
 
-	m_nb_det_modules = getCamera()->getNbDetModules();
-	DEB_TRACE() << "Using Eiger detector, " << DEB_VAR1(m_nb_det_modules);
+	int nb_det_modules = getNbDetModules();
+	DEB_TRACE() << "Using Eiger detector, " << DEB_VAR1(nb_det_modules);
 
-	for (int i = 0; i < m_nb_det_modules; ++i) {
+	for (int i = 0; i < nb_det_modules; ++i) {
 		for (int j = 0; j < RecvPorts; ++j) {
 			RecvPortGeometry *g = new RecvPortGeometry(this, i, j);
 			m_port_geom_list.push_back(g);
@@ -329,7 +329,7 @@ void Eiger::getFrameDim(FrameDim& frame_dim, bool raw)
 	DEB_PARAM() << DEB_VAR1(raw);
 	getRecvFrameDim(frame_dim, raw, true);
 	Size size = frame_dim.getSize();
-	size *= Point(1, m_nb_det_modules);
+	size *= Point(1, getNbDetModules());
 	if (!raw)
 		for (int i = 0; i < getNbEigerModules() - 1; ++i)
 			size += Point(0, getInterModuleGap(i));
@@ -466,7 +466,7 @@ void Eiger::getTimeRanges(TimeRanges& time_ranges)
 	ParallelMode parallel_mode;
 	getParallelMode(parallel_mode);
 	ClockDiv clock_div;
-	cam->getClockDiv(clock_div);
+	getClockDiv(clock_div);
 	PixelDepth pixel_depth;
 	cam->getPixelDepth(pixel_depth);
 
@@ -576,6 +576,91 @@ void Eiger::getParallelMode(ParallelMode& mode)
 	DEB_MEMBER_FUNCT();
 	mode = ParallelMode(m_det->setParallelMode(-1));
 	DEB_RETURN() << DEB_VAR1(mode);
+}
+
+void Eiger::setClockDiv(ClockDiv clock_div)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(clock_div);
+	m_det->setClockDivider(clock_div);
+	updateTimeRanges();
+}
+
+void Eiger::getClockDiv(ClockDiv& clock_div)
+{
+	DEB_MEMBER_FUNCT();
+	int ret = m_det->setClockDivider(-1);
+	if (ret == MultiSlsDetectorErr)
+		THROW_HW_ERROR(Error) << "Error getting clock divider";
+	clock_div = ClockDiv(ret);
+	DEB_RETURN() << DEB_VAR1(clock_div);
+}
+
+void Eiger::setAllTrimBits(int sub_mod_idx, int val)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(sub_mod_idx, val);
+
+	if ((sub_mod_idx < -1) || (sub_mod_idx >= getNbDetSubModules()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(sub_mod_idx);
+
+	int ret = m_det->setAllTrimbits(val, sub_mod_idx);
+	if (ret == MultiSlsDetectorErr)
+		THROW_HW_ERROR(Error) << "Error setting all trim bits"
+				      << " on (sub)module " << sub_mod_idx;
+}
+
+void Eiger::getAllTrimBits(int sub_mod_idx, int& val)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(sub_mod_idx);
+
+	if ((sub_mod_idx < 0) || (sub_mod_idx >= getNbDetSubModules()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(sub_mod_idx);
+
+	int ret = m_det->setAllTrimbits(-1, sub_mod_idx);
+	if (ret == MultiSlsDetectorErr)
+		THROW_HW_ERROR(Error) << "Error getting all trim bits"
+				      << " on (sub)module " << sub_mod_idx;
+	val = ret;
+	DEB_RETURN() << DEB_VAR1(val);
+}
+
+void Eiger::getAllTrimBitsList(IntList& val_list)
+{
+	DEB_MEMBER_FUNCT();
+	int nb_sub_modules = getNbDetSubModules();
+	val_list.resize(nb_sub_modules);
+	for (int i = 0; i < nb_sub_modules; ++i)
+		getAllTrimBits(i, val_list[i]);
+}
+
+void Eiger::setHighVoltage(int hvolt)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(hvolt);
+	m_det->setHighVoltage(hvolt);
+}
+
+void Eiger::getHighVoltage(int& hvolt)
+{
+	DEB_MEMBER_FUNCT();
+	hvolt = m_det->setHighVoltage(-1);
+	DEB_RETURN() << DEB_VAR1(hvolt);
+}
+
+void Eiger::setThresholdEnergy(int thres)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(thres);
+	m_det->setThresholdEnergy(thres);
+}
+
+void Eiger::getThresholdEnergy(int& thres)
+{
+	DEB_MEMBER_FUNCT();
+	thres = m_det->setThresholdEnergy(-1);
+	DEB_RETURN() << DEB_VAR1(thres);
 }
 
 int Eiger::getRecvPorts()

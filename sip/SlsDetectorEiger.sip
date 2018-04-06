@@ -69,6 +69,19 @@ class Eiger : public SlsDetector::Model
 	void setParallelMode(SlsDetector::Eiger::ParallelMode  mode);
 	void getParallelMode(SlsDetector::Eiger::ParallelMode& mode);
 
+	void setClockDiv(SlsDetector::Defs::ClockDiv  clock_div);
+	void getClockDiv(SlsDetector::Defs::ClockDiv& clock_div /Out/);
+
+	void setAllTrimBits(int sub_mod_idx, int  val);
+	void getAllTrimBits(int sub_mod_idx, int& val /Out/);
+	void getAllTrimBitsList(std::vector<int>& val_list /Out/);
+
+	void setHighVoltage(int  hvolt);
+	void getHighVoltage(int& hvolt /Out/);
+
+	void setThresholdEnergy(int  thres);
+	void getThresholdEnergy(int& thres /Out/);
+
  protected:
 	virtual void updateImageSize();
 

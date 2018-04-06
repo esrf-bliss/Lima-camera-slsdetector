@@ -50,7 +50,6 @@ public:
 	typedef Defs::Settings Settings;
 	typedef Defs::DACIndex DACIndex;
 	typedef Defs::ADCIndex ADCIndex;
-	typedef Defs::ClockDiv ClockDiv;
 	typedef Defs::DetStatus DetStatus;
 	typedef Defs::NetworkParameter NetworkParameter;
 
@@ -131,17 +130,8 @@ public:
 	void getADC(int sub_mod_idx, ADCIndex adc_idx, int& val);
 	void getADCList(ADCIndex adc_idx, IntList& val_list);
 
-	void setAllTrimBits(int sub_mod_idx, int  val);
-	void getAllTrimBits(int sub_mod_idx, int& val);
-	void getAllTrimBitsList(IntList& val_list);
-
 	void setSettings(Settings  settings);
 	void getSettings(Settings& settings);
-	void setThresholdEnergy(int  thres);
-	void getThresholdEnergy(int& thres);
-
-	void setClockDiv(ClockDiv  clock_div);
-	void getClockDiv(ClockDiv& clock_div);
 
 	void setNetworkParameter(NetworkParameter net_param, std::string& val);
 	void getNetworkParameter(NetworkParameter net_param, std::string& val);

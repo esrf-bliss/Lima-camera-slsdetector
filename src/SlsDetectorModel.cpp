@@ -32,6 +32,9 @@ Model::Model(Camera *cam, Type type)
 {
 	DEB_CONSTRUCTOR();
 	DEB_PARAM() << DEB_VAR1(type);
+
+	m_nb_det_modules = m_cam->getNbDetModules();
+	m_nb_det_submodules = m_cam->getNbDetSubModules();
 }
 
 Model::~Model()
@@ -46,6 +49,12 @@ void Model::updateCameraModel()
 {
 	DEB_MEMBER_FUNCT();
 	m_cam->setModel(this);	
+}
+
+void Model::updateTimeRanges()
+{
+	DEB_MEMBER_FUNCT();
+	m_cam->updateTimeRanges();
 }
 
 void Model::putCmd(const string& s, int idx)
