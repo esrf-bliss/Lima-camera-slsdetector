@@ -640,7 +640,7 @@ void Camera::setRecvCPUAffinity(const RecvCPUAffinity& recv_affinity)
 	RecvPortList port_list = getRecvPortList();
 	RecvPortList::iterator pit, pend = port_list.end();
 	for (pit = port_list.begin(); pit != pend; ++pit) {
-		pid_t tid = (*pit)->getTID();
+		pid_t tid = (*pit)->getThreadID();
 		writers_affinity.applyToTask(tid, false);
 	}
 }

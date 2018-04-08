@@ -69,8 +69,8 @@ private:
 	
 		Port(Receiver& recv, int port);
 
-		pid_t getTID()
-		{ return m_thread.getTID(); }
+		pid_t getThreadID()
+		{ return m_thread.getThreadID(); }
 		
 		void prepareAcq();
 
@@ -110,9 +110,6 @@ private:
 		public:
 			Thread(Port& port);
 			virtual ~Thread();
-
-			pid_t getTID()
-			{ return m_tid; }
 
 			virtual void start();
 

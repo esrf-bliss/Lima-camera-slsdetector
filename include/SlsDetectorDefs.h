@@ -616,9 +616,6 @@ typedef RegEx::MatchListType MatchList;
 typedef MatchList::const_iterator MatchListIt;
 
 
-pid_t gettid();
-
-
 } // namespace SlsDetector
 
 } // namespace lima

@@ -24,8 +24,6 @@
 #include "lima/MiscUtils.h"
 
 #include <glob.h>
-#include <unistd.h>
-#include <sys/syscall.h>
 #include <cmath>
 
 using namespace std;
@@ -795,10 +793,5 @@ ostream& lima::SlsDetector::operator <<(ostream& os, const Stats& s)
 	   << "cb_exec=" << s.cb_exec << ", "
 	   << "recv_exec=" << s.recv_exec;
 	return os << ">";
-}
-
-
-pid_t lima::SlsDetector::gettid() {
-	return syscall(SYS_gettid);
 }
 
