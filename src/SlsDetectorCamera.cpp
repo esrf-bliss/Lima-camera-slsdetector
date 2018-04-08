@@ -309,6 +309,7 @@ Camera::Camera(string config_fname)
 	const char *fname = m_input_data->config_file_name.c_str();
 	m_det->readConfigurationFile(fname);
 
+	m_det->setReceiverSilentMode(1);
 	setReceiverFifoDepth(m_recv_fifo_depth);
 
 	m_pixel_depth = PixelDepth(m_det->setBitDepth(-1));
