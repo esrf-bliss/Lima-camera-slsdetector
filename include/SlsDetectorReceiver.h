@@ -135,8 +135,8 @@ private:
 		Mutex m_mutex;
 		FrameMap::Item *m_frame_map_item;
 		IntList m_bad_frame_list;
-		Thread m_thread;
 		Stats m_stats;
+		Thread m_thread;
 	};
 	typedef std::vector<AutoPtr<Port> > PortList;
 

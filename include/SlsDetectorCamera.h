@@ -288,7 +288,6 @@ private:
 	PixelDepth m_pixel_depth;
 	ImageType m_image_type;
 	bool m_raw_mode;
-	AutoPtr<AcqThread> m_acq_thread;
 	State m_state;
 	double m_new_frame_timeout;
 	double m_abort_sleep_time;
@@ -297,6 +296,7 @@ private:
 	TimeRangesChangedCallback *m_time_ranges_cb;
 	PixelDepthCPUAffinityMap m_cpu_affinity_map;
 	GlobalCPUAffinityMgr m_global_cpu_affinity_mgr;
+	AutoPtr<AcqThread> m_acq_thread;
 };
 
 } // namespace SlsDetector
