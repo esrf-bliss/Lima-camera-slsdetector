@@ -1167,28 +1167,39 @@ First install *flex*, which might needed to compile some *Lima* subsystems:
     ...
     (bliss) lid10eiger1:~/esrf/sls_detectors % LIMA_DIR=${SLS_DETECTORS}/Lima
     (bliss) lid10eiger1:~/esrf/sls_detectors % cd ${LIMA_DIR}
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git remote rename origin gitlab
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git remote add github.bliss git://github.com/esrf-bliss/Lima.git
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git fetch --all
-    ...
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule init \
-        third-party/Processlib third-party/Sps \
-        third-party/gldisplay \
-        camera/slsdetector \
-        applications/spec applications/tango/python \
-        documentation
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % submod="third-party/Processlib
+        third-party/Sps
+        third-party/gldisplay
+        camera/slsdetector
+        applications/spec
+        applications/tango/python"
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % github_submod_names="Sps"
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % github_submod=$(for s in ${submod}; do \
+        for m in ${github_submod_names}; do \
+            echo ${s} | grep ${m}; \
+        done; \
+    done)
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % re_pat="(${github_submod_names// /|})"
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % gitlab_submod=$(echo "${submod}" | grep -Ev ${re_pat})
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule init ${submod}
     ...
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule update
     ...
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule foreach git remote rename origin github.bliss
-    ...
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule foreach \
-        'bash -c "git remote add gitlab \$(git config remote.github.bliss.url | sed \"s%git://github.com/esrf-bliss%git://gitlab.esrf.fr/limagroup%\")"'
-    ...
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % (cd third-party/Sps && git remote rm gitlab)
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % (cd third-party/Processlib && \
-        git remote set-url gitlab git://gitlab.esrf.fr/limagroup/processlib.git)
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % for s in ${github_submod}; do \
+        (cd ${s} && \
+             git remote rename origin github.bliss); \
+    done
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % for s in ${gitlab_submod}; do \
+        (cd ${s} && \
+             git remote rename origin gitlab && \
+             git remote add github.bliss \
+                 $(git config remote.gitlab.url | sed "s%git://gitlab.esrf.fr/limagroup%git://github.com/esrf-bliss%")); \
+    done
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git remote rename origin gitlab
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git remote add github.bliss git://github.com/esrf-bliss/Lima.git
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule foreach git fetch --all
+    ...
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git fetch --all
     ...
 
 Eiger software: slsDetectorPackage
