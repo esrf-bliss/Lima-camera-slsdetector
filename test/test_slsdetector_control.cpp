@@ -110,7 +110,7 @@ public:
 
 	void initSaving(string dir, string prefix, string suffix, int idx, 
 			CtSaving::FileFormat fmt, CtSaving::SavingMode mode,
-			int frames_per_file);
+			int frames_per_file, bool overwrite=false);
 
 	void setExpTime(double exp_time);
 	void setNbAcqFrames(int nb_acq_frames);
@@ -254,7 +254,8 @@ void SlsDetectorAcq::run()
 
 void SlsDetectorAcq::initSaving(string dir, string prefix, string suffix, 
 				int idx, CtSaving::FileFormat fmt, 
-				CtSaving::SavingMode mode, int frames_per_file)
+				CtSaving::SavingMode mode, int frames_per_file,
+				bool overwrite)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -265,6 +266,8 @@ void SlsDetectorAcq::initSaving(string dir, string prefix, string suffix,
 	m_ct_saving->setFormat(fmt);
 	m_ct_saving->setSavingMode(mode);
 	m_ct_saving->setFramesPerFile(frames_per_file);
+	m_ct_saving->setOverwritePolicy(overwrite ? CtSaving::Overwrite : 
+						    CtSaving::Append);
 }
 
 void SlsDetectorAcq::setExpTime(double exp_time)
@@ -318,8 +321,10 @@ void test_slsdetector_control(string config_fname, bool enable_debug = false)
 	SlsDetectorAcq acq(config_fname);
 	DEB_ALWAYS() << "Done!";
 
+	system("mkdir -p data");
+
 	acq.initSaving("data", "img", ".edf", 0, CtSaving::EDF, 
-		       CtSaving::AutoFrame, 1);
+		       CtSaving::AutoFrame, 1, true);
 
 	DEB_ALWAYS() << "First run with default pars";
 	acq.run();
