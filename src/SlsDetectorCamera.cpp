@@ -222,6 +222,7 @@ void Camera::AcqThread::cleanUp()
 	if ((m_state == Stopped) || (m_state == Idle))
 		return;
 
+	State prev_state = m_state;
 	if ((m_state == Running) || (m_state == StopReq)) {
 		m_state = Stopping;
 		AutoMutexUnlock u(l);
@@ -230,10 +231,12 @@ void Camera::AcqThread::cleanUp()
 
 	{
 		AutoMutexUnlock u(l);
-		string err_msg = "AcqThread: exception thrown";
+		ostringstream err_msg;
+		err_msg << "AcqThread: exception thrown: "
+			<< "m_state=" << prev_state;
 		Event::Code err_code = Event::CamFault;
 		Event *event = new Event(Hardware, Event::Error, Event::Camera, 
-					 err_code, err_msg);
+					 err_code, err_msg.str());
 		DEB_EVENT(*event) << DEB_VAR1(*event);
 		m_cam->reportEvent(event);
 	}
