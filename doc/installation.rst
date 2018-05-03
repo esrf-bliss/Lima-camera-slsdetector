@@ -918,6 +918,16 @@ Install *PyTango*, needed by *Lima*:
     Installing package PyTango-debian7-9.5-1.src.rpm
     ...
 
+Install the Python modules needed for building the HTML documentation
+with Doxygen, Sphinx and Read-the-Docs:
+
+::
+
+    # as blissadm
+    lid10eiger1:~ . blissrc
+    (bliss) lid10eiger1:~ % pip install sphinx_rtd_theme breathe
+    ...
+
 Eiger calibration development: *Seaborn* and *Spyder*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -1236,6 +1246,13 @@ Compile *Lima*, including *slsDetectorPackage* using *CMake*:
         --install-prefix=${LIMA_DIR}/install \
         --install-python-prefix=${LIMA_DIR}/install/python \
         slsdetector sps-image gldisplay edfgz python pytango-server
+    ...
+
+Build the documentation:
+
+::
+
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % make -C docs html
     ...
 
 Add *Lima* to the *PATH*, *LD_LIBRARY_PATH* and *PYTHONPATH* environment variables in
