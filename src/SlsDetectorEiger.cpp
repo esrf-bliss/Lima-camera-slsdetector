@@ -33,6 +33,13 @@ const int Eiger::ChipGap = 2;
 const int Eiger::HalfModuleChips = 4;
 const int Eiger::RecvPorts = 2;
 
+const int Eiger::BitsPerXfer = 4;
+const int Eiger::SuperColNbCols = 8;
+const double Eiger::BaseChipXferFreq = 200; // Mbit/s
+const double Eiger::MaxFebBebBandwidth = 25600; // Mbit/s
+const Eiger::LinScale Eiger::ChipXfer2Buff(2.59, 0.85);
+const Eiger::LinScale Eiger::ChipRealReadout(1.074, -4);
+
 Eiger::CorrBase::CorrBase(Eiger *eiger)
 	: m_eiger(eiger)
 {
@@ -464,52 +471,54 @@ void Eiger::getTimeRanges(TimeRanges& time_ranges)
 {
 	DEB_MEMBER_FUNCT();
 
-	Camera* cam = getCamera();
 	ParallelMode parallel_mode;
 	getParallelMode(parallel_mode);
+	bool parallel = (parallel_mode == Parallel);
 	ClockDiv clock_div;
 	getClockDiv(clock_div);
 	PixelDepth pixel_depth;
+	Camera* cam = getCamera();
 	cam->getPixelDepth(pixel_depth);
 
-	bool parallel = (parallel_mode == Parallel);
+	// times are in usec, freq in MHz
+	int period_factor = 1 << int(clock_div);
+	double xfer_freq = BaseChipXferFreq / period_factor;
+	DEB_TRACE() << DEB_VAR2(period_factor, xfer_freq);
+
+	double xfer_2_buff = ChipXfer2Buff.calcY(period_factor);
+	DEB_TRACE() << DEB_VAR1(xfer_2_buff);
+
+	const int super_col_pixels = SuperColNbCols * ChipSize;
+	double theo_single_readout = super_col_pixels * BitsPerXfer / xfer_freq;
+	// theoretical -> measured correction
+	double real_single_readout = ChipRealReadout.calcY(theo_single_readout);
+	DEB_TRACE() << DEB_VAR2(theo_single_readout, real_single_readout);
+
+	int readout_cycles;
+	if (pixel_depth == PixelDepth4)
+		readout_cycles = 1;
+	else if (pixel_depth == PixelDepth8)
+		readout_cycles = 2;
+	else
+		readout_cycles = 3;
+	double min_chip_readout = real_single_readout * readout_cycles;
+	DEB_TRACE() << DEB_VAR2(readout_cycles, min_chip_readout);
+
+	int mem_xfer_blocks = pixel_depth / BitsPerXfer;
+	const int nb_super_cols = ChipSize / SuperColNbCols * HalfModuleChips;
+	double feb_beb_bw = (xfer_freq * nb_super_cols / readout_cycles *
+			     mem_xfer_blocks);
+	DEB_TRACE() << DEB_VAR2(feb_beb_bw, MaxFebBebBandwidth);
+	double chip_readout = min_chip_readout;
+	if (feb_beb_bw > MaxFebBebBandwidth) {
+		chip_readout *= feb_beb_bw / MaxFebBebBandwidth;
+		DEB_TRACE() << "limiting chip readout freq: "
+			    << DEB_VAR2(min_chip_readout, chip_readout);
+	}
 
 	double min_exp = 10;
-	double min_lat = 500;
-	double min_period = 500;
-	double max_freq_p = 0;
-	double readout_p = 0;
-	double readout_np = 0;
-	if (pixel_depth == PixelDepth4) {
-		min_lat = 10;
-		min_period = KiloHzPeriod(22);
-	} else if (pixel_depth == PixelDepth8) {
-		min_lat = 10;
-		min_period = KiloHzPeriod(11);
-	} else if (pixel_depth == PixelDepth16) {
-		if (clock_div == FullSpeed) {
-			max_freq_p = 6;
-			readout_p = 2.75;
-			readout_np = 126;
-		} else if (clock_div == HalfSpeed) {
-			max_freq_p = 2.9;
-			readout_p = 5.36;
-			readout_np = 252;
-		} else if (clock_div == QuarterSpeed) {
-			max_freq_p = 1.5;
-			readout_p = 10.6;
-			readout_np = 504;
-		}
-	} else if (clock_div == QuarterSpeed) {
-		max_freq_p = 2;
-		readout_p = 10.6;
-		readout_np = 504;
-	}
-
-	if (max_freq_p * readout_p * readout_np != 0) {
-		min_lat = parallel ? readout_p : readout_np;
-		min_period = min_lat + KiloHzPeriod(max_freq_p) - readout_p;
-	}
+	double min_period = xfer_2_buff + chip_readout;
+	double min_lat = parallel ? xfer_2_buff : min_period;
 
 	time_ranges.min_exp_time = min_exp * 1e-6;
 	time_ranges.max_exp_time = 1e3;

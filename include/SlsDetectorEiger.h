@@ -338,9 +338,6 @@ class Eiger : public Model
 	int getNbEigerModules()
 	{ return getNbDetModules() / 2; }
 
-	static double KiloHzPeriod(double f)
-	{ return 1e6 / (f * 1e3); }
-
 	void getRecvFrameDim(FrameDim& frame_dim, bool raw, bool geom);
 
 	CorrBase *createBadRecvFrameCorr();
@@ -359,6 +356,22 @@ class Eiger : public Model
 	static const int ChipGap;
 	static const int HalfModuleChips;
 	static const int RecvPorts;
+
+	struct LinScale {
+		double factor, offset;
+		LinScale(double f, double o) : factor(f), offset(o) {}
+		double calcY(double x) const
+		{ return x * factor + offset; }
+		double calcX(double y) const
+		{ return (y - offset) / factor; }
+	};
+
+	static const int BitsPerXfer;
+	static const int SuperColNbCols;
+	static const double BaseChipXferFreq;
+	static const double MaxFebBebBandwidth;
+	static const LinScale ChipXfer2Buff;
+	static const LinScale ChipRealReadout;
 
 	FrameDim m_recv_frame_dim;
 	CorrList m_corr_list;
