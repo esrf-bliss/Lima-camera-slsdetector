@@ -138,9 +138,6 @@ cmake-2.8.9-1, so it must be compiled from the sources. First un-install the Deb
         [ -n "${p}" ] && dpkg --purge ${p}
     ...
 
-    lid10eiger1:~ # mkdir ~/cmake && cd ~/cmake
-    lid10eiger1:~/cmake # 
-
     # as opid00
     (bliss) lid10eiger1:~ % mkdir -p ~/Downloads/cmake && cd ~/Downloads/cmake
     (bliss) lid10eiger1:~/Downloads/cmake % scp lisgeiger1:Downloads/cmake/cmake-3.8.0.tar.gz .
@@ -391,6 +388,36 @@ Tune the OS network buffer sizes:
 
     # Size of per-device buffer (in packets) before Linux kernel dispatching
     net.core.netdev_max_backlog = 262144
+
+Linux *maxcpus* option
+~~~~~~~~~~~~~~~~~~~~~~
+
+The *Supermicro* BIOS does not always acknowledge the *Disable Hyper-Threading* option,
+so after some reboot conditions the Hyper-Threading is activated and Linux sees twice the
+number of CPUs. The only way to control this is to limit the number of CPUs used by 
+Linux in the kernel command line.
+
+Edit the */etc/default/grub* file and add *maxcpus=12* to the *GRUB_CMDLINE_LINUX_DEFAULT*
+variable and force the update *GRUB* configuration file:
+
+::
+
+    # as root
+    lid10eiger1:~ # cat /etc/default/grub
+    # If you change this file, run 'update-grub' afterwards to update
+    # /boot/grub/grub.cfg.
+    # For full documentation of the options in this file, see:
+    #   info -f grub -n 'Simple configuration'
+    
+    GRUB_DEFAULT=0
+    GRUB_TIMEOUT=5
+    GRUB_DISTRIBUTOR=`lsb_release -i -s 2> /dev/null || echo Debian`
+    GRUB_CMDLINE_LINUX_DEFAULT="ipv6.disable=1 quiet maxcpus=12"
+    GRUB_CMDLINE_LINUX=""
+    ...    
+
+    lid10eiger1:~ # update-grub
+    ...
 
 Network configuration
 ---------------------
@@ -891,6 +918,16 @@ Install *PyTango*, needed by *Lima*:
     Installing package PyTango-debian7-9.5-1.src.rpm
     ...
 
+Install the Python modules needed for building the HTML documentation
+with Doxygen, Sphinx and Read-the-Docs:
+
+::
+
+    # as blissadm
+    lid10eiger1:~ . blissrc
+    (bliss) lid10eiger1:~ % pip install sphinx_rtd_theme breathe
+    ...
+
 Eiger calibration development: *Seaborn* and *Spyder*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -1140,28 +1177,39 @@ First install *flex*, which might needed to compile some *Lima* subsystems:
     ...
     (bliss) lid10eiger1:~/esrf/sls_detectors % LIMA_DIR=${SLS_DETECTORS}/Lima
     (bliss) lid10eiger1:~/esrf/sls_detectors % cd ${LIMA_DIR}
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git remote rename origin gitlab
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git remote add github.bliss git://github.com/esrf-bliss/Lima.git
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git fetch --all
-    ...
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule init \
-        third-party/Processlib third-party/Sps \
-        third-party/gldisplay \
-        camera/slsdetector \
-        applications/spec applications/tango/python \
-        documentation
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % submod="third-party/Processlib
+        third-party/Sps
+        third-party/gldisplay
+        camera/slsdetector
+        applications/spec
+        applications/tango/python"
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % github_submod_names="Sps"
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % github_submod=$(for s in ${submod}; do \
+        for m in ${github_submod_names}; do \
+            echo ${s} | grep ${m}; \
+        done; \
+    done)
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % re_pat="(${github_submod_names// /|})"
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % gitlab_submod=$(echo "${submod}" | grep -Ev ${re_pat})
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule init ${submod}
     ...
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule update
     ...
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule foreach git remote rename origin github.bliss
-    ...
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule foreach \
-        'bash -c "git remote add gitlab \$(git config remote.github.bliss.url | sed \"s%git://github.com/esrf-bliss%git://gitlab.esrf.fr/limagroup%\")"'
-    ...
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % (cd third-party/Sps && git remote rm gitlab)
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % (cd third-party/Processlib && \
-        git remote set-url gitlab git://gitlab.esrf.fr/limagroup/processlib.git)
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % for s in ${github_submod}; do \
+        (cd ${s} && \
+             git remote rename origin github.bliss); \
+    done
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % for s in ${gitlab_submod}; do \
+        (cd ${s} && \
+             git remote rename origin gitlab && \
+             git remote add github.bliss \
+                 $(git config remote.gitlab.url | sed "s%git://gitlab.esrf.fr/limagroup%git://github.com/esrf-bliss%")); \
+    done
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git remote rename origin gitlab
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git remote add github.bliss git://github.com/esrf-bliss/Lima.git
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule foreach git fetch --all
+    ...
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git fetch --all
     ...
 
 Eiger software: slsDetectorPackage
@@ -1198,6 +1246,13 @@ Compile *Lima*, including *slsDetectorPackage* using *CMake*:
         --install-prefix=${LIMA_DIR}/install \
         --install-python-prefix=${LIMA_DIR}/install/python \
         slsdetector sps-image gldisplay edfgz python pytango-server
+    ...
+
+Build the documentation:
+
+::
+
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % make -C docs html
     ...
 
 Add *Lima* to the *PATH*, *LD_LIBRARY_PATH* and *PYTHONPATH* environment variables in
