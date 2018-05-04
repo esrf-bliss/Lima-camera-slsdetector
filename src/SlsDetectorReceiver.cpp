@@ -65,8 +65,6 @@ void Receiver::Port::Thread::threadFunction()
 {
 	DEB_MEMBER_FUNCT();
 
-	m_tid = gettid();
-
 	m_end = false;
 	while (!m_end)
 		m_port.pollFrameFinished();

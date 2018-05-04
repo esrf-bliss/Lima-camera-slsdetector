@@ -24,9 +24,12 @@
 #define __TEST_SLS_DETECTOR_H
 
 #include "SlsDetectorCamera.h"
+#include "SlsDetectorEiger.h"
 #include "lima/AcqState.h"
 
 #include <cstdlib>
+#include <iomanip>
+#include <fstream>
 
 namespace lima 
 {
@@ -153,9 +156,10 @@ class TestApp
 	void save_edf_frame(ofstream& of, int acq_idx, int edf_idx);
 
 	Pars m_pars;
-	AutoPtr<Camera> m_cam;
 	AutoPtr<SoftBufferAllocMgr> m_alloc_mgr;
 	AutoPtr<StdBufferCbMgr> m_buffer_mgr;
+	AutoPtr<Camera> m_cam;
+	AutoPtr<Model> m_model;
 	AcqState m_state;
 	FrameCallback m_cb;
 	Timestamp m_last_msg_timestamp;

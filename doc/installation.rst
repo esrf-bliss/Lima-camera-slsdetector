@@ -125,35 +125,6 @@ to different CPU cores:
     lid10eiger1:~ # apt-get install irqbalance
     ...
 
-*cmake*
-~~~~~~~~~~~~
-
-A recent version of *cmake* (> 3.0) is needed to compile Lima. Debian 7 package is 
-cmake-2.8.9-1, so it must be compiled from the sources. First un-install the Debian package:
-
-::
-
-    # as root
-    lid10eiger1:~ # p=$(dpkg --list cmake\* | grep '^ii' | awk '{print $2}'); \
-        [ -n "${p}" ] && dpkg --purge ${p}
-    ...
-
-    # as opid00
-    (bliss) lid10eiger1:~ % mkdir -p ~/Downloads/cmake && cd ~/Downloads/cmake
-    (bliss) lid10eiger1:~/Downloads/cmake % scp lisgeiger1:Downloads/cmake/cmake-3.8.0.tar.gz .
-    ...
-    (bliss) lid10eiger1:~/Downloads/cmake % tar -xzf cmake-3.8.0.tar.gz 
-    (bliss) lid10eiger1:~/Downloads/cmake % cd cmake-3.8.0
-    (bliss) lid10eiger1:~/Downloads/cmake/cmake-3.8.0 % ./bootstrap --parallel=12 --qt-gui
-    ...
-    (bliss) lid10eiger1:~/Downloads/cmake/cmake-3.8.0 % make -j12
-    ...
-    (bliss) lid10eiger1:~/Downloads/cmake/cmake-3.8.0 % su
-    Password: 
-    lid10eiger1:Downloads/cmake/cmake-3.8.0 # make install
-    ...
-
-
 Disk configuration
 ~~~~~~~~~~~~~~~~~~
 
@@ -417,6 +388,38 @@ variable and force the update *GRUB* configuration file:
     ...    
 
     lid10eiger1:~ # update-grub
+    ...
+
+*cmake*
+~~~~~~~
+
+A recent version of *cmake* (> 3.0) is needed to compile Lima. Debian 7 package is 
+cmake-2.8.9-1, so it must be compiled from the sources. First un-install the Debian package:
+
+::
+
+    # as root
+    lid10eiger1:~ # p=$(dpkg --list cmake\* | grep '^ii' | awk '{print $2}'); \
+        [ -n "${p}" ] && dpkg --purge ${p}
+    ...
+
+and then copy and compile the sources as *opid00* and install as *root*:
+
+::
+
+    # as opid00
+    lid10eiger1:~ % mkdir -p ~/Downloads/cmake && cd ~/Downloads/cmake
+    lid10eiger1:~/Downloads/cmake % scp lisgeiger1:Downloads/cmake/cmake-3.8.0.tar.gz .
+    ...
+    lid10eiger1:~/Downloads/cmake % tar -xzf cmake-3.8.0.tar.gz 
+    lid10eiger1:~/Downloads/cmake % cd cmake-3.8.0
+    lid10eiger1:~/Downloads/cmake/cmake-3.8.0 % ./bootstrap --parallel=12 --qt-gui
+    ...
+    lid10eiger1:~/Downloads/cmake/cmake-3.8.0 % make -j12
+    ...
+    lid10eiger1:~/Downloads/cmake/cmake-3.8.0 % su
+    Password: 
+    lid10eiger1:Downloads/cmake/cmake-3.8.0 # make install
     ...
 
 Network configuration
@@ -772,6 +775,7 @@ Restart the detector, wait for 20 sec and check that the links are OK:
     1 packets transmitted, 1 received, 0% packet loss, time 0ms
     rtt min/avg/max/mdev = 0.399/0.399/0.399/0.000 ms
 
+
 SlsDetectors Software
 ---------------------
 
@@ -873,21 +877,16 @@ Then clone the project:
 
 ::
 
+    # as blissadm
     lid10eiger1:~ % mkdir -p ~/src/install
     lid10eiger1:~ % cd ~/src/install
     lid10eiger1:~/src/install % git clone git@blissinstaller.gitlab.esrf.fr:Admin/bliss_python_install.git
-    lid10eiger1:~/src/install % ssh root@localhost
-    The authenticity of host 'localhost (127.0.0.1)' can't be established.
-    ECDSA key fingerprint is d7:da:38:9c:c4:20:8f:87:66:73:5a:85:62:44:01:f8.
-    Are you sure you want to continue connecting (yes/no)? yes
-    Warning: Permanently added 'localhost' (ECDSA) to the list of known hosts.
-    root@localhost's password:
-    ...
 
 And execute the script as *root*:
 
 ::
 
+    # as blissadm
     lid10eiger1:~/src/install % ssh root@localhost
     The authenticity of host 'localhost (127.0.0.1)' can't be established.
     ECDSA key fingerprint is d7:da:38:9c:c4:20:8f:87:66:73:5a:85:62:44:01:f8.
@@ -953,15 +952,14 @@ Configure *spyder* to use the BLISS python:
 ::
 
     # as opid00
-    (bliss) lid10eiger1:~ % spyder
+    lid10eiger1:~ % (. blissrc && spyder)
 
 and go to 'Tools -> Preferences -> Console -> Advanced Settings ->
 Python executable' and set:
 
-+-----------------------------------+-----------------------------------+
-| Path to Python interpreter        | /users/blissadm/lib/virtualenvs/b |
-| executable binary                 | liss/bin/python                   |
-+-----------------------------------+-----------------------------------+
++----------------------------------------------+--------------------------------------------------+
+| Path to Python interpreter executable binary | /users/blissadm/lib/virtualenvs/bliss/bin/python |
++----------------------------------------------+--------------------------------------------------+
 
 Detector software and development account: *opid00*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1045,7 +1043,7 @@ computer directories:
 
 ::
 
-    (bliss) lid10eiger1:~ % EIGER_DIR=${EIGER_HOME}/eiger/eiger_v2.3.2
+    (bliss) lid10eiger1:~ % EIGER_DIR=${EIGER_HOME}/eiger/eiger_v3.1.1
     (bliss) lid10eiger1:~ % EIGER_CONFIG=${EIGER_DIR}/config/beb-021-020-direct-FO-10g.config
     (bliss) lid10eiger1:~ % mkdir -p $(dirname ${EIGER_CONFIG})
     (bliss) lid10eiger1:~ % scp lisgeiger1:${EIGER_CONFIG} $(dirname ${EIGER_CONFIG})
@@ -1062,6 +1060,8 @@ The resulting configuration file:
     #type Eiger+
     #top+bottom+
     hostname beb021+beb020+
+
+    rx_hostname lid10eiger1
 
     #port 1952
     #stopport 1953
@@ -1084,11 +1084,9 @@ The resulting configuration file:
     1:detectormac 00:50:c2:46:d9:29
     1:flippeddatax 1
 
-    rx_hostname lid10eiger1
-
-    settingsdir /users/opid00/eiger/eiger_v2.3.2/settingsdir/eiger
+    settingsdir /users/opid00/eiger/eiger_v3.1.1/settingsdir/eiger
     lock 0
-    #caldir /users/opid00/eiger/eiger_v2.3.2/settingsdir/eiger
+    #caldir /users/opid00/eiger/eiger_v3.1.1/settingsdir/eiger
     outdir /nobackup/lid10eiger12/data/eiger
 
     tengiga 1
@@ -1116,7 +1114,7 @@ Add the configuration file to *eiger_setup.sh* and decode the
 
     (bliss) lid10eiger1:~ % tail -n 8 eiger_setup.sh
 
-    EIGER_DIR=${EIGER_HOME}/eiger/eiger_v2.3.2
+    EIGER_DIR=${EIGER_HOME}/eiger/eiger_v3.1.1
     EIGER_CONFIG=${EIGER_DIR}/config/beb-021-020-direct-FO-10g.config
     EIGER_MODULES=$(grep "^hostname" ${EIGER_CONFIG} | cut -d" " -f2 | tr '+' ' ')
     export EIGER_DIR EIGER_CONFIG EIGER_MODULES
@@ -1241,11 +1239,13 @@ Compile *Lima*, including *slsDetectorPackage* using *CMake*:
 ::
 
     (bliss) lid10eiger1:~ % cd ${LIMA_DIR}
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % cp scripts/config.txt_default scripts/config.txt
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % echo "CMAKE_BUILD_TYPE=RelWithDebInfo" >> scripts/config.txt
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % mkdir -p ${LIMA_DIR}/install/python
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % ./install.sh \
         --install-prefix=${LIMA_DIR}/install \
         --install-python-prefix=${LIMA_DIR}/install/python \
-        slsdetector sps-image gldisplay edfgz python pytango-server
+        slsdetector sps-image gldisplay edfgz python pytango-server tests
     ...
 
 Build the documentation:
@@ -1268,6 +1268,16 @@ Add *Lima* to the *PATH*, *LD_LIBRARY_PATH* and *PYTHONPATH* environment variabl
     PYTHONPATH=${LIMA_DIR}/install/python:${PYTHONPATH}
     export LIMA_DIR PATH LD_LIBRARY_PATH PYTHONPATH
 
+*eigerDetectorServer* and detector firmwares
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+If necessary, the *eigerDetectorServer* corresponding to the installed *slsDetectorPackage* version
+must be copied into the modules embedded Linux. Please refer to :doc:`installation_eiger_server_and_fw`
+
+
+Test the *slsDetectorSoftware* and *Lima*
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 Logout and re-login as *opid00*, so the previous changes can be tested. 
 First, test the 'slsDetectorGui':
 
@@ -1283,11 +1293,14 @@ to activate the high voltage; answer *No*. In the GUI, disable the *File
 Name* check box and press *Start* for a single acquisition. A frame
 should be taken.
 
-Finally, test the *Lima* plugin:
+Finally, test the *Lima* plugin without and with *CtControl* instantiation:
 
 ::
 
     (bliss) lid10eiger1:~ % cd ${LIMA_DIR}
+    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % rm -f /tmp/eiger.edf && \
+                                                    build/camera/slsdetector/test/test_slsdetector -c ${EIGER_CONFIG}
+    ...
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % mkdir -p /nobackup/lid10eiger12/data/eiger/lima
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % ln -s /nobackup/lid10eiger12/data/eiger/lima data
     (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % rm -f data/img*.edf && \
@@ -1407,7 +1420,7 @@ Add LimaCCDs and SlsDetector class devices.
 +----------------------------------------------------------+-------------------------------------------+
 | LimaCCDs/eiger500k/DEVICE/SlsDetector                    | id10/slsdetector/eiger500k                |
 +----------------------------------------------------------+-------------------------------------------+
-| id10/slsdetector/eiger500k->config_fname                 | /users/opid00/eiger/eiger_v2.3.2/config/  |
+| id10/slsdetector/eiger500k->config_fname                 | /users/opid00/eiger/eiger_v3.1.1/config/  |
 |                                                          | beb-021-020-direct-FO-10g.config          |
 +----------------------------------------------------------+-------------------------------------------+
 | id10/slsdetector/eiger500k->netdev_groups                | | eth0,eth1,eth2,eth4,eth6,eth7,eth8,eth9 |

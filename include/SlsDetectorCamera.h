@@ -27,7 +27,7 @@
 #include "SlsDetectorReceiver.h"
 #include "SlsDetectorCPUAffinity.h"
 
-#include "multiSlsDetector.h"
+#include "slsDetectorUsers.h"
 
 #include "lima/HwBufferMgr.h"
 #include "lima/HwMaxImageSizeCallback.h"
@@ -50,8 +50,6 @@ public:
 	typedef Defs::Settings Settings;
 	typedef Defs::DACIndex DACIndex;
 	typedef Defs::ADCIndex ADCIndex;
-	typedef Defs::ClockDiv ClockDiv;
-	typedef Defs::ReadoutFlags ReadoutFlags;
 	typedef Defs::DetStatus DetStatus;
 	typedef Defs::NetworkParameter NetworkParameter;
 
@@ -80,7 +78,7 @@ public:
 
 	std::pair<int, int> splitPortIndex(int port_idx)
 	{ return std::pair<int, int>(port_idx / m_recv_nb_ports, 
-				     port_idx % m_recv_nb_ports);}
+				     port_idx % m_recv_nb_ports); }
 
 	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr)
 	{ m_buffer_cb_mgr = buffer_cb_mgr; }
@@ -132,20 +130,8 @@ public:
 	void getADC(int sub_mod_idx, ADCIndex adc_idx, int& val);
 	void getADCList(ADCIndex adc_idx, IntList& val_list);
 
-	void setAllTrimBits(int sub_mod_idx, int  val);
-	void getAllTrimBits(int sub_mod_idx, int& val);
-	void getAllTrimBitsList(IntList& val_list);
-
 	void setSettings(Settings  settings);
 	void getSettings(Settings& settings);
-	void setThresholdEnergy(int  thres);
-	void getThresholdEnergy(int& thres);
-
-	void setClockDiv(ClockDiv  clock_div);
-	void getClockDiv(ClockDiv& clock_div);
-	void setReadoutFlags(ReadoutFlags  flags);
-	void getReadoutFlags(ReadoutFlags& flags);
-	void getValidReadoutFlags(IntList& flag_list, NameList& flag_name_list);
 
 	void setNetworkParameter(NetworkParameter net_param, std::string& val);
 	void getNetworkParameter(NetworkParameter net_param, std::string& val);
@@ -261,9 +247,6 @@ private:
 	void getSortedBadFrameList(IntList& bad_frame_list)
 	{ getSortedBadFrameList(IntList(), IntList(), bad_frame_list); }
 
-	void addValidReadoutFlags(DebObj *deb_ptr, ReadoutFlags flags, 
-				  IntList& flag_list, NameList& flag_name_list);
-
 	template <class T>
 	void putNbCmd(const std::string& cmd, T val, int idx = -1)
 	{
@@ -282,10 +265,15 @@ private:
 		return val;
 	}
 
+	void setReceiverFifoDepth(int fifo_depth);
+	bool isTenGigabitEthernetEnabled();
+	void setFlowControl10G(bool enabled);
+	void resetFramesCaught();
+
 	Model *m_model;
 	Cond m_cond;
 	AutoPtr<AppInputData> m_input_data;
-	AutoPtr<multiSlsDetector> m_det;
+	AutoPtr<slsDetectorUsers> m_det;
 	FrameMap m_frame_map;
 	int m_recv_nb_ports;
 	RecvList m_recv_list;
@@ -300,7 +288,6 @@ private:
 	PixelDepth m_pixel_depth;
 	ImageType m_image_type;
 	bool m_raw_mode;
-	AutoPtr<AcqThread> m_acq_thread;
 	State m_state;
 	double m_new_frame_timeout;
 	double m_abort_sleep_time;
@@ -309,6 +296,7 @@ private:
 	TimeRangesChangedCallback *m_time_ranges_cb;
 	PixelDepthCPUAffinityMap m_cpu_affinity_map;
 	GlobalCPUAffinityMgr m_global_cpu_affinity_mgr;
+	AutoPtr<AcqThread> m_acq_thread;
 };
 
 } // namespace SlsDetector

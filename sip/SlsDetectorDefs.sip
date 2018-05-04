@@ -241,20 +241,6 @@ enum ClockDiv {
 	SuperSlowSpeed, 
 };
 
-enum ReadoutFlags {
-	Normal       = NORMAL_READOUT,
-	StoreInRAM   = STORE_IN_RAM,
-	ReadHits     = READ_HITS,
-	ZeroCompress = ZERO_COMPRESSION,
-	PumpProbe    = PUMP_PROBE_MODE,
-	BackgndCorr  = BACKGROUND_CORRECTIONS,
-	TOTMode      = TOT_MODE,
-	Continous    = CONTINOUS_RO,
-	Parallel     = PARALLEL,
-	NonParallel  = NONPARALLEL,
-	Safe         = SAFE,
-};
-
 enum DetStatus {
 	Idle         = IDLE,
 	Error        = ERROR,

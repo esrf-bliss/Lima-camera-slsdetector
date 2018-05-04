@@ -45,6 +45,12 @@ class Eiger : public Model
 	typedef unsigned short Word;
 	typedef unsigned int Long;
 
+	typedef Defs::ClockDiv ClockDiv;
+
+	enum ParallelMode {
+		NonParallel, Parallel, Safe,
+	};
+
 	class Correction : public LinkTask
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Correction", 
@@ -76,15 +82,26 @@ class Eiger : public Model
 	// the returned object must be deleted by the caller
 	Correction *createCorrectionTask();
 
+	void setParallelMode(ParallelMode  mode);
+	void getParallelMode(ParallelMode& mode);
+
+	void setClockDiv(ClockDiv  clock_div);
+	void getClockDiv(ClockDiv& clock_div);
+
+	void setAllTrimBits(int sub_mod_idx, int  val);
+	void getAllTrimBits(int sub_mod_idx, int& val);
+	void getAllTrimBitsList(IntList& val_list);
+
+	void setHighVoltage(int  hvolt);
+	void getHighVoltage(int& hvolt);
+
+	void setThresholdEnergy(int  thres);
+	void getThresholdEnergy(int& thres);
+
  protected:
 	virtual void updateImageSize();
 
 	virtual bool checkSettings(Settings settings);
-
-	virtual ReadoutFlags getReadoutFlagsMask();
-	virtual bool checkReadoutFlags(ReadoutFlags flags,
-				       IntList& flag_list,
-				       bool silent = false);
 
 	virtual int getRecvPorts();
 
@@ -309,8 +326,6 @@ class Eiger : public Model
 		std::vector<BorderFactor> m_f;
 	};
 
-	int countFlags(ReadoutFlags flags);
-
 	bool isPixelDepth4()
 	{
 		PixelDepth pixel_depth;
@@ -319,7 +334,7 @@ class Eiger : public Model
 	}
 
 	int getNbEigerModules()
-	{ return m_nb_det_modules / 2; }
+	{ return getNbDetModules() / 2; }
 
 	static double KiloHzPeriod(double f)
 	{ return 1e6 / (f * 1e3); }
@@ -343,12 +358,12 @@ class Eiger : public Model
 	static const int HalfModuleChips;
 	static const int RecvPorts;
 
-	int m_nb_det_modules;
 	FrameDim m_recv_frame_dim;
 	CorrList m_corr_list;
 	PortGeometryList m_port_geom_list;
 };
 
+std::ostream& operator <<(std::ostream& os, Eiger::ParallelMode mode);
 
 } // namespace SlsDetector
 

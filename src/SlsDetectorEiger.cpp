@@ -304,10 +304,10 @@ Eiger::Eiger(Camera *cam)
 {
 	DEB_CONSTRUCTOR();
 
-	m_nb_det_modules = getCamera()->getNbDetModules();
-	DEB_TRACE() << "Using Eiger detector, " << DEB_VAR1(m_nb_det_modules);
+	int nb_det_modules = getNbDetModules();
+	DEB_TRACE() << "Using Eiger detector, " << DEB_VAR1(nb_det_modules);
 
-	for (int i = 0; i < m_nb_det_modules; ++i) {
+	for (int i = 0; i < nb_det_modules; ++i) {
 		for (int j = 0; j < RecvPorts; ++j) {
 			RecvPortGeometry *g = new RecvPortGeometry(this, i, j);
 			m_port_geom_list.push_back(g);
@@ -329,7 +329,7 @@ void Eiger::getFrameDim(FrameDim& frame_dim, bool raw)
 	DEB_PARAM() << DEB_VAR1(raw);
 	getRecvFrameDim(frame_dim, raw, true);
 	Size size = frame_dim.getSize();
-	size *= Point(1, m_nb_det_modules);
+	size *= Point(1, getNbDetModules());
 	if (!raw)
 		for (int i = 0; i < getNbEigerModules() - 1; ++i)
 			size += Point(0, getInterModuleGap(i));
@@ -383,32 +383,23 @@ void Eiger::getDACInfo(NameList& name_list, IntList& idx_list,
 {
 	DEB_MEMBER_FUNCT();
 
+#define EIGER_DAC(x)			{x, 0}
 #define EIGER_DAC_MV(x)			{x, 1}
-#define EIGER_DAC_OTHER(x)		{x, 0}
 
 	static struct DACData {
 		DACIndex idx;
 		int milli_volt;
 	} EigerDACList[] = {
-		EIGER_DAC_MV(EigerSvP),
-		EIGER_DAC_MV(EigerSvN),
-		EIGER_DAC_MV(EigerVrf),
-		EIGER_DAC_MV(EigerVrs),
-		EIGER_DAC_MV(EigerVtr),
-		EIGER_DAC_MV(EigerVtgstv),
-		EIGER_DAC_MV(EigerVcal),
-		EIGER_DAC_MV(EigerVcp),
-		EIGER_DAC_MV(EigerVcn),
-		EIGER_DAC_MV(EigerVis),
-		EIGER_DAC_MV(EigerVcmpLL),
-		EIGER_DAC_MV(EigerVcmpLR),
-		EIGER_DAC_MV(EigerVcmpRL),
-		EIGER_DAC_MV(EigerVcmpRR),
-		EIGER_DAC_MV(EigerRxbLB),
-		EIGER_DAC_MV(EigerRxbRB),
-		EIGER_DAC_MV(Threshold),
-		EIGER_DAC_OTHER(IODelay),
-		EIGER_DAC_OTHER(HVNew),
+		EIGER_DAC(EigerVrf),
+		EIGER_DAC(EigerVrs),
+		EIGER_DAC(EigerVtr),
+		EIGER_DAC(EigerVcal),
+		EIGER_DAC(EigerVcp),
+		EIGER_DAC(EigerVcmpLL),
+		EIGER_DAC(EigerVcmpLR),
+		EIGER_DAC(EigerVcmpRL),
+		EIGER_DAC(EigerVcmpRR),
+		EIGER_DAC(Threshold),
 	};
 	const unsigned int size = C_LIST_SIZE(EigerDACList);
 
@@ -472,14 +463,14 @@ void Eiger::getTimeRanges(TimeRanges& time_ranges)
 	DEB_MEMBER_FUNCT();
 
 	Camera* cam = getCamera();
-	ReadoutFlags readout_flags;
-	cam->getReadoutFlags(readout_flags);
+	ParallelMode parallel_mode;
+	getParallelMode(parallel_mode);
 	ClockDiv clock_div;
-	cam->getClockDiv(clock_div);
+	getClockDiv(clock_div);
 	PixelDepth pixel_depth;
 	cam->getPixelDepth(pixel_depth);
 
-	bool parallel = (readout_flags & Parallel);
+	bool parallel = (parallel_mode == Parallel);
 
 	double min_exp = 10;
 	double min_lat = 500;
@@ -573,64 +564,103 @@ bool Eiger::checkSettings(Settings settings)
 	return ok;
 }
 
-Eiger::ReadoutFlags Eiger::getReadoutFlagsMask()
+void Eiger::setParallelMode(ParallelMode mode)
 {
 	DEB_MEMBER_FUNCT();
-	ReadoutFlags flags = ReadoutFlags(Parallel | NonParallel | Safe | 
-					  StoreInRAM | Continous);
-	DEB_RETURN() << DEB_VAR1(flags);
-	return flags;
+	DEB_PARAM() << DEB_VAR1(mode);
+	m_det->setParallelMode(mode);
 }
 
-bool Eiger::checkReadoutFlags(ReadoutFlags flags, IntList& flag_list, 
-			      bool silent)
+void Eiger::getParallelMode(ParallelMode& mode)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(flags, silent);
-
-	bool ok = false;
-	ReadoutFlags mask, result;
-
-	mask = ReadoutFlags(Parallel | NonParallel | Safe);
-	result = ReadoutFlags(flags & mask);
-	flags = ReadoutFlags(flags & ~mask);
-	if (countFlags(result) != 1) {
-		if (!silent)
-			DEB_ERROR() << "Invalid number of readout-mode flags";
-		goto out;
-	}
-	flag_list.push_back(result);
-
-	mask = ReadoutFlags(StoreInRAM | Continous);
-	result = ReadoutFlags(flags & mask);
-	flags = ReadoutFlags(flags & ~mask);
-	if (countFlags(result) != 1) {
-		if (!silent)
-			DEB_ERROR() << "Invalid number of store-in-mem flags";
-		goto out;
-	}
-	flag_list.push_back(result);
-
-	if (flags != 0) {
-		if (!silent)
-			DEB_ERROR() << "Invalid flags for Eiger: " << flags;
-		goto out;
-	}
-
-	ok = true;
- out:
-	DEB_RETURN() << DEB_VAR1(ok);
-	return ok;
+	mode = ParallelMode(m_det->setParallelMode(-1));
+	DEB_RETURN() << DEB_VAR1(mode);
 }
 
-int Eiger::countFlags(ReadoutFlags flags)
+void Eiger::setClockDiv(ClockDiv clock_div)
 {
-	const unsigned int nb_bits = sizeof(flags) * 8;
-	int count = 0;
-	for (unsigned int i = 0; i < nb_bits; ++i)
-		if (flags & (1 << i))
-			count++;
-	return count;
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(clock_div);
+	m_det->setClockDivider(clock_div);
+	updateTimeRanges();
+}
+
+void Eiger::getClockDiv(ClockDiv& clock_div)
+{
+	DEB_MEMBER_FUNCT();
+	int ret = m_det->setClockDivider(-1);
+	if (ret == MultiSlsDetectorErr)
+		THROW_HW_ERROR(Error) << "Error getting clock divider";
+	clock_div = ClockDiv(ret);
+	DEB_RETURN() << DEB_VAR1(clock_div);
+}
+
+void Eiger::setAllTrimBits(int sub_mod_idx, int val)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(sub_mod_idx, val);
+
+	if ((sub_mod_idx < -1) || (sub_mod_idx >= getNbDetSubModules()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(sub_mod_idx);
+
+	int ret = m_det->setAllTrimbits(val, sub_mod_idx);
+	if (ret == MultiSlsDetectorErr)
+		THROW_HW_ERROR(Error) << "Error setting all trim bits"
+				      << " on (sub)module " << sub_mod_idx;
+}
+
+void Eiger::getAllTrimBits(int sub_mod_idx, int& val)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(sub_mod_idx);
+
+	if ((sub_mod_idx < 0) || (sub_mod_idx >= getNbDetSubModules()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(sub_mod_idx);
+
+	int ret = m_det->setAllTrimbits(-1, sub_mod_idx);
+	if (ret == MultiSlsDetectorErr)
+		THROW_HW_ERROR(Error) << "Error getting all trim bits"
+				      << " on (sub)module " << sub_mod_idx;
+	val = ret;
+	DEB_RETURN() << DEB_VAR1(val);
+}
+
+void Eiger::getAllTrimBitsList(IntList& val_list)
+{
+	DEB_MEMBER_FUNCT();
+	int nb_sub_modules = getNbDetSubModules();
+	val_list.resize(nb_sub_modules);
+	for (int i = 0; i < nb_sub_modules; ++i)
+		getAllTrimBits(i, val_list[i]);
+}
+
+void Eiger::setHighVoltage(int hvolt)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(hvolt);
+	m_det->setHighVoltage(hvolt);
+}
+
+void Eiger::getHighVoltage(int& hvolt)
+{
+	DEB_MEMBER_FUNCT();
+	hvolt = m_det->setHighVoltage(-1);
+	DEB_RETURN() << DEB_VAR1(hvolt);
+}
+
+void Eiger::setThresholdEnergy(int thres)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(thres);
+	m_det->setThresholdEnergy(thres);
+}
+
+void Eiger::getThresholdEnergy(int& thres)
+{
+	DEB_MEMBER_FUNCT();
+	thres = m_det->setThresholdEnergy(-1);
+	DEB_RETURN() << DEB_VAR1(thres);
 }
 
 int Eiger::getRecvPorts()
@@ -779,5 +809,16 @@ int Eiger::getInterModuleGap(int det)
 	if (det >= getNbEigerModules() - 1)
 		THROW_HW_ERROR(InvalidValue) << "Invalid " << DEB_VAR1(det);
 	return 36;
+}
+
+ostream& lima::SlsDetector::operator <<(ostream& os, Eiger::ParallelMode mode)
+{
+	const char *name = "Invalid";
+	switch (mode) {
+	case Eiger::NonParallel:	name = "NonParallel";	break;
+	case Eiger::Parallel:		name = "Parallel";	break;
+	case Eiger::Safe:		name = "Safe";		break;
+	}
+	return os << name;
 }
 

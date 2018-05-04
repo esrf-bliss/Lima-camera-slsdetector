@@ -66,14 +66,6 @@ protected:
 	virtual 
 	bool checkSettings(SlsDetector::Defs::Settings settings) = 0;
 
-	virtual
-	SlsDetector::Defs::ReadoutFlags getReadoutFlagsMask() = 0;
-	virtual 
-	bool checkReadoutFlags(
-			SlsDetector::Defs::ReadoutFlags flags,
-			std::vector<int>& flag_list /Out/,
-			bool silent = false) = 0;
-
 	virtual int getRecvPorts() = 0;
 
 	virtual void prepareAcq() = 0;
