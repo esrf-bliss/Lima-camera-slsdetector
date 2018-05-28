@@ -589,6 +589,7 @@ void Eiger::setParallelMode(ParallelMode mode)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(mode);
 	m_det->setParallelMode(mode);
+	updateTimeRanges();
 }
 
 void Eiger::getParallelMode(ParallelMode& mode)
