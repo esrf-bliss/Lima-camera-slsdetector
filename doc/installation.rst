@@ -652,11 +652,11 @@ needed):
     #============= Eiger ====================
     # Direct Connection - Top half
     192.168.11.10   beb021.esrf.fr  beb021
-    #192.168.12.20  beb02110ge1.esrf.fr     beb02110ge1
+    #192.168.12.22  beb02110ge1.esrf.fr     beb02110ge1
 
     # Direct Connection - Bottom half
     192.168.13.11   beb020.esrf.fr  beb020
-    #192.168.14.21  beb02010ge1.esrf.fr     beb02010ge1
+    #192.168.14.23  beb02010ge1.esrf.fr     beb02010ge1
 
     #============= OS ====================
     # The following lines are desirable for IPv6 capable hosts
@@ -1078,7 +1078,7 @@ The resulting configuration file:
     0:rx_udpport 50010
     0:rx_udpport2 50011
     0:rx_udpip 192.168.12.1
-    0:detectorip 192.168.12.20
+    0:detectorip 192.168.12.22
     0:detectormac 00:50:c2:46:d9:2b
     0:flippeddatax 0
 
@@ -1087,7 +1087,7 @@ The resulting configuration file:
     1:rx_udpport 50012
     1:rx_udpport2 50013
     1:rx_udpip 192.168.14.1
-    1:detectorip 192.168.14.21
+    1:detectorip 192.168.14.23
     1:detectormac 00:50:c2:46:d9:29
     1:flippeddatax 1
 
@@ -1446,8 +1446,8 @@ Add LimaCCDs and SlsDetector class devices.
    * Receiver writers
    * Lima processing threads
    * OS processes
+   * Net-dev group #0 packet dispatching
    * Net-dev group #1 packet dispatching
-   * Net-dev group #2 packet dispatching
    * ...
 
    The previous example is based on a dual 6-core CPUs backend (12 cores). After the data acquisition finishes
@@ -1455,7 +1455,154 @@ Add LimaCCDs and SlsDetector class devices.
    11 cores in total, which is used for setting the NbProcessingThreads. Please note that there are two network
    groups and four pixel_depth->cpu_affinity settings (4-, 8-, 16- and 32-bit), each one represented by a line
    in a multi-line string array.
-  
+
+.. important:: The Intel 10 Gigabit Ethernet Server Adapter has multiple hardware FIFOs per port, called
+   queues in the OS terminology. The hardware uses a hash algorithm to dispatch packets into the active
+   queues, which includes the source IP address. Each FIFO has an associated IRQ, so the Intel ixgbe
+   driver activates the Receive-Side Scaling (RSS) mechanism by distributing the queues IRQ Service 
+   Routine (ISR) CPU affinity on different cores.
+   
+   The destination FIFO in the Intel adapter depends on the Eiger 10 Gigabit Ethernet data interface IP,
+   and thus the CPU where the corresponding ISR will run. The above configuration of the Lima plugin sets the
+   (network stack dispatching) Receive Packet Steering (RPS) CPU Affinity for both data interfaces eth3/eth5
+   (netdev_group CPU affinity). ISRs have higher priority than packet dispatch tasks. If the queue IRQs are
+   serviced by the same CPU that does the packet dispatching, the latter is affected when the frame rate is
+   important. So care must be taken to avoid this kind of CPU conflict.
+   
+   The *ethtool -S* command shows the statistics of a network device, including the bytes/packets received
+   per FIFO. The files:
+   
+   * */proc/interrupts*
+   * */sys/class/net/<netdev>/device/msi_irqs/<irq>*
+   * */proc/irq/<irq>/smp_affinity_list*
+   
+   can be used to find out the CPU affinity of the network FIFO IRQs. Let's see the following Eiger
+   configuration file example:
+   
+   ::
+   
+       (bliss) lid10eiger1:~ % grep detectorip ${EIGER_CONFIG}
+       0:detectorip 192.168.12.20
+       1:detectorip 192.168.14.21
+       
+   The Intel FIFOs and their IRQ affinities can be inspected:
+   
+   ::
+   
+       # as root      
+       lid10eiger1:~ # for i in eth3 eth5; do \
+           echo; \
+           echo '**' ${i} '**'; \
+           ethtool -S ${i} | grep rx_queue | grep -Ev ': 0$'; \
+           (cd /sys/class/net/${i}/device/msi_irqs && ls) | \
+               while read irq; do \
+                   echo "$(grep "^ *${irq}" /proc/interrupts)" - \
+                        Affinity: $(cat /proc/irq/${irq}/smp_affinity_list); \
+               done; \
+       done
+   
+       ** eth3 **
+            rx_queue_9_packets: 3388477
+            rx_queue_9_bytes: 13658530162
+        128:   7272      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-0 - Affinity: 0
+        129:     53   6832      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-1 - Affinity: 1
+        130:     53      0   6840      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-2 - Affinity: 2
+        131:     53      0      0   6837      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-3 - Affinity: 3
+        132:     53      0      0      0   6833      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-4 - Affinity: 4
+        133:     53      0      0      0      0   6832      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-5 - Affinity: 5
+        134:   6882      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-6 - Affinity: 0-5
+        135:   6882      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-7 - Affinity: 0-5
+        136:   6882      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-8 - Affinity: 0-5
+        137: 192718      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-9 - Affinity: 0-5
+        138:   6882      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-10 - Affinity: 0-5
+        139:   6882      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-11 - Affinity: 0-5
+        140:      4      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3 - Affinity: 3
+
+       ** eth5 **
+            rx_queue_1_packets: 3388812
+            rx_queue_1_bytes: 13659882296
+        154:   7273      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-0 - Affinity: 0
+        155:     53 192698      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-1 - Affinity: 1
+        156:     53      0   6841      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-2 - Affinity: 2
+        157:     53      0      0   6838      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-3 - Affinity: 3
+        158:     53      0      0      0   6834      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-4 - Affinity: 4
+        159:     53      0      0      0      0   6833      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-5 - Affinity: 5
+        160:   6883      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-6 - Affinity: 0-5
+        161:   6883      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-7 - Affinity: 0-5
+        162:   6883      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-8 - Affinity: 0-5
+        163:   6883      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-9 - Affinity: 0-5
+        164:   6883      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-10 - Affinity: 0-5
+        165:   6883      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-11 - Affinity: 0-5
+        166:      0      0      4      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5 - Affinity: 3
+   
+   Here the top-half packets are sent to eth3 queue #9, associated to IRQ #137,
+   which has CPU affinity *0-5* (0x3f), being CPU #0 the only one that serves it. The
+   bottom-half packets are dispatched to eth5 queue #1, associated to IRQ #155 with
+   CPU affinity *1* (0x2). ***This is in conflict with Lima netdev_group #1
+   (eth3/eth5) CPU affinity!***, the CPU will be overloaded and packets will be
+   missed by the dispatch task.
+   
+   The conflict is solved by changing the Eiger data IP addresses in the configuration
+   file:
+   
+   ::
+   
+       (bliss) lid10eiger1:~ % grep detectorip ${EIGER_CONFIG}
+       0:detectorip 192.168.12.22
+       1:detectorip 192.168.14.23
+   
+   This changes the hardware FIFOs and thus the CPUs where their IRQs are served:
+       
+   ::
+   
+       # as root      
+       lid10eiger1:~ # for i in eth3 eth5; do \
+           echo; \
+           echo '**' ${i} '**'; \
+           ethtool -S ${i} | grep rx_queue | grep -Ev ': 0$'; \
+           (cd /sys/class/net/${i}/device/msi_irqs && ls) | \
+               while read irq; do \
+                   echo "$(grep "^ *${irq}" /proc/interrupts)" - \
+                        Affinity: $(cat /proc/irq/${irq}/smp_affinity_list); \
+               done; \
+       done
+   
+       ** eth3 **
+            rx_queue_11_packets: 26000
+            rx_queue_11_bytes: 106378400
+        128:    152      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-0 - Affinity: 0
+        129:     18    128      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-1 - Affinity: 1
+        130:     21      0    128      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-2 - Affinity: 2
+        131:     18      0      0    128      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-3 - Affinity: 3
+        132:     20      0      0      0    130      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-4 - Affinity: 4
+        133:     17      0      0      0      0    129      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-5 - Affinity: 5
+        134:    150      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-6 - Affinity: 0-5
+        135:    149      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-7 - Affinity: 0-5
+        136:    145      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-8 - Affinity: 0-5
+        137:    151      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-9 - Affinity: 0-5
+        138:    146      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-10 - Affinity: 0-5
+        139:   1125      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-11 - Affinity: 0-5
+        140:      4      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3 - Affinity: 2
+   
+       ** eth5 **
+            rx_queue_11_packets: 26000
+            rx_queue_11_bytes: 106378400
+        154:    152      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-0 - Affinity: 0
+        155:     18    128      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-1 - Affinity: 1
+        156:     21      0    128      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-2 - Affinity: 2
+        157:     18      0      0    128      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-3 - Affinity: 3
+        158:     20      0      0      0    130      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-4 - Affinity: 4
+        159:     17      0      0      0      0    129      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-5 - Affinity: 5
+        160:    150      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-6 - Affinity: 0-5
+        161:    149      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-7 - Affinity: 0-5
+        162:    145      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-8 - Affinity: 0-5
+        163:    151      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-9 - Affinity: 0-5
+        164:    146      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-10 - Affinity: 0-5
+        165:   1127      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-11 - Affinity: 0-5
+        166:      4      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5 - Affinity: 2
+   
+   In both cases top/bottom-half (eth3/eth5) packets are sent to queue #1, served by CPU #0.
+                
 Finally, configure *opid10* as the default *DSERVER_USER*, which is used
 by the *dserver_daemon*
    
