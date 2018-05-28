@@ -927,6 +927,13 @@ with Doxygen, Sphinx and Read-the-Docs:
     (bliss) lid10eiger1:~ % pip install sphinx_rtd_theme breathe
     ...
 
+Include the Python *Scapy* interface por network packet capture and decoding:
+
+::
+
+    (bliss) lid10eiger1:~ % pip install scapy
+    ...
+
 Eiger calibration development: *Seaborn* and *Spyder*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
