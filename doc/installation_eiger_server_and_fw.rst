@@ -86,7 +86,7 @@ Check that all the keys are identical:
     lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % md5sum ssh_authorized_keys_beb*
     1c183bdaa3a2f27029fca84b9cb3b857  ssh_authorized_keys_beb024
     1c183bdaa3a2f27029fca84b9cb3b857  ssh_authorized_keys_beb025
-    
+
 In case the *opid00@lisgeiger1* public key is not included (not the case before), 
 add them in order to open SSH sessions automatically on the detector modules:
 
@@ -95,7 +95,7 @@ add them in order to open SSH sessions automatically on the detector modules:
     lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % for m in ${EIGER_MODULES}; do \
         ssh -x root@${m} sh -c '"cat >> .ssh/authorized_keys"' < ~/.ssh/id_dsa.pub; \
     done
-    
+
 Also check that the SSH public host keys are identical (same Linux image):
 
 ::
@@ -167,8 +167,8 @@ Backup the current version, and transfer the new version:
     lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % for m in ${EIGER_MODULES}; do \
         ssh -x root@${m} "cp executables/$(basename ${eiger_server}) executables/eigerDetectorServer"; \
     done
-    
-    
+
+
 Check that all is as expected:
 
 ::
@@ -203,7 +203,7 @@ Check that all is as expected:
     lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1927 % md5sum md5sum_executables_eigerDetectorServer_beb*
     4168a104e53ee71f763ed5f0e0b43859  md5sum_executables_eigerDetectorServer_beb024.out
     4168a104e53ee71f763ed5f0e0b43859  md5sum_executables_eigerDetectorServer_beb025.out
-    
+
 Force a filesystem *sync* on each host to make the changes persistent,
 just before power-cycling:
 
@@ -213,7 +213,7 @@ just before power-cycling:
     lisgeiger1:~ % for m in ${EIGER_MODULES}; do \
         ssh -x root@${m} sync; \
     done
-    
+
 And finally perform a *paranoid* check after power-cycling the detector:
 
 ::
@@ -293,13 +293,13 @@ without the need of pressing the button in the rear panel. The latestversion of 
 
 Run the *eiger_flash* utility to update the FEB left/right and BEB FWs,
 as well as the kernel image:
- 
+
 ::
 
     lisgeiger1:~ % cd ~/eiger/fw_v20
     lisgeiger1:~/eiger/fw_v20 % which eiger_flash
     /users/opid00/esrf/sls_detectors/eiger/scripts/eiger_flash
-    
+
     lisgeiger1:~/eiger/fw_v20 % md5sum *
     b2b66c1acae90e3f2b4c4488e99d6b42  beb_copper.bit
     f9e6e360cfa696957cf4fd5035bed5e1  beb_fiber.bit
@@ -308,7 +308,7 @@ as well as the kernel image:
     7a988f0e39930bf86d9af9dee060ef04  feb_r_fx30t.bit
     4bf1f88d376fd9651b45c2b5b2b021eb  feb_r_fx70t.bit
     1f27879faa7082f9ed2bb2b24b84ea99  simpleImage.virtex440-eiger-beb-hwid1_local
-    
+
     lisgeiger1:~/eiger/fw_v20 % eiger_flash -m beb_fiber.bit -l feb_l_fx30t.bit -r feb_r_fx30t.bit -k simpleImage.virtex440-eiger-beb-hwid1_local ${EIGER_MODULES} 
     [beb024] Executing: nc -p 3000 -u beb024 3000
     [beb025] Executing: nc -p 3000 -u beb025 3000
@@ -367,7 +367,7 @@ as well as the kernel image:
     [beb025] Firmware flash finished OK (took 16.2 sec)
     [beb024] Firmware flash finished OK (took 17.3 sec)
     Press any key to quit ...
-    
+
 Showing in the console for the FX30T FW:
 
 ::
@@ -509,7 +509,7 @@ Console output on the FX70T FW:
     Compare
     XFlash_Lock()
     Success
-    
+
 .. note:: **To-Do** add a *ManualEthernetConnection* restart in case the modules are not 
    directly connected to the backend computer, or just not defined in the 
    *eiger_flash* utility.

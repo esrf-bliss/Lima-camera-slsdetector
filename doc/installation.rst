@@ -272,50 +272,50 @@ in */usr/local/bin*:
     #include <sys/types.h>
     #include <sys/stat.h>
     #include <fcntl.h>
-    
+
     int main(int argc, char *argv[])
     {
             char *dev, *queue, *p, fname[256], buffer[128];
             int fd, len, ret;
             long aff;
-    
+
             if (argc != 4)
                     exit(1);
             if (!strlen(argv[1]) || !strlen(argv[2]) || !strlen(argv[3]))
                     exit(2);
-    
+
             dev = argv[1];
             queue = argv[2];
-    
+
             errno = 0;
             aff = strtol(argv[3], &p, 0);
             if (errno || *p)
                     exit(3);
-    
+
             len = sizeof(fname);
             ret = snprintf(fname, len, "/sys/class/net/%s/queues/%s/rps_cpus",
                            dev, queue);
             if ((ret < 0) || (ret == len))
                     exit(4);
-    
+
             len = sizeof(buffer);
             ret = snprintf(buffer, len, "%016lx", aff);
             if ((ret < 0) || (ret == len))
                     exit(5);
-    
+
             fd = open(fname, O_WRONLY);
             if (fd < 0)
                     exit(6);
-    
+
             for (p = buffer; *p; p += ret)
                     if ((ret = write(fd, p, strlen(p))) < 0)
                             exit(7);
-    
+
             if (close(fd) < 0)
                     exit(8);
             return 0;
     }
-    
+
     lid10eiger1:~ # gcc -Wall -o /tmp/netdev_set_queue_rps_cpus /tmp/netdev_set_queue_rps_cpus.c
     lid10eiger1:~ # cp /tmp/netdev_set_queue_rps_cpus /usr/local/bin
 
@@ -379,7 +379,7 @@ variable and force the update *GRUB* configuration file:
     # /boot/grub/grub.cfg.
     # For full documentation of the options in this file, see:
     #   info -f grub -n 'Simple configuration'
-    
+
     GRUB_DEFAULT=0
     GRUB_TIMEOUT=5
     GRUB_DISTRIBUTOR=`lsb_release -i -s 2> /dev/null || echo Debian`
