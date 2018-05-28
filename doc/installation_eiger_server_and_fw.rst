@@ -38,7 +38,14 @@ is included:
     JQguFttMCNduiXmZfDYITld+86c9aWCR6g7re977ElFTbutWe+isu/ZFINXOvDEHmBUKd7++4lGDCjsM
     NOQQmG/Ftsi4jE2iWBaI91oyTQI= opid00@lisgeiger1
 
-    lisgeiger1:~ % this_dir="${HOME}/eiger/psi_eiger_500k_024_025/$(date +%Y-%m-%d-%H%M)"
+    lisgeiger1:~ % if [ $(echo ${EIGER_MODULES} | wc -w) -eq 2 ]; then \
+        det_name="500k$(echo ${EIGER_MODULES} | sed 's/ \?beb/_/g')"; \
+    else \
+        det_name="2m"; \
+    fi; \
+    base_dir="${HOME}/eiger/psi_eiger_${det_name}"
+
+    lisgeiger1:~ % this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
     lisgeiger1:~ % mkdir -p ${this_dir} && cd ${this_dir}
     lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % for m in ${EIGER_MODULES}; do \
         ssh -x root@${m} cat .ssh/authorized_keys > ssh_authorized_keys_${m}; \
@@ -139,6 +146,10 @@ Backup the current version, and transfer the new version:
 
 ::
 
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % for m in ${EIGER_MODULES}; do \
+        ssh -x root@${m} 'mv executables/eigerDetectorServer executables/eigerDetectorServer_bkp'; \
+    done
+
     lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % SLS_DETECTOR_PACKAGE=${LIMA_DIR}/camera/slsdetector/slsDetectorPackage
     lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % eiger_servers=$(cd ${SLS_DETECTOR_PACKAGE} && find -name eigerDetectorServerv\*)
     lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % (cd ${SLS_DETECTOR_PACKAGE} && md5sum ${eiger_servers})
@@ -162,9 +173,9 @@ Check that all is as expected:
 
 ::
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % cd ..
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025 % this_dir="${HOME}/eiger/psi_eiger_500k_024_025/$(date +%Y-%m-%d-%H%M)"
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025 % mkdir -p ${this_dir} && cd ${this_dir}
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % cd
+    lisgeiger1:~ % this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
+    lisgeiger1:~ % mkdir -p ${this_dir} && cd ${this_dir}
     lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1927 % for m in ${EIGER_MODULES}; do \
         ssh -x root@${m} 'ls -l executables/eigerDetectorServer*' \
             > ls_executables_eigerDetectorServer_${m}.out; \
@@ -198,8 +209,8 @@ just before power-cycling:
 
 ::
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1927 % cd ..
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025 % for m in ${EIGER_MODULES}; do \
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1927 % cd
+    lisgeiger1:~ % for m in ${EIGER_MODULES}; do \
         ssh -x root@${m} sync; \
     done
     
@@ -207,8 +218,8 @@ And finally perform a *paranoid* check after power-cycling the detector:
 
 ::
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025 % this_dir="${HOME}/eiger/psi_eiger_500k_024_025/$(date +%Y-%m-%d-%H%M)"
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025 % mkdir -p ${this_dir} && cd ${this_dir}
+    lisgeiger1:~ % this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
+    lisgeiger1:~ % mkdir -p ${this_dir} && cd ${this_dir}
     lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1934 % for m in ${EIGER_MODULES}; do \
         ssh -x root@${m} 'md5sum executables/eigerDetectorServer*' \
             > md5sum_executables_eigerDetectorServer_${m}.out; \
@@ -235,14 +246,15 @@ Firmware flash
 
 The new FWs (v18 and later) allow entering into flash mode from the Linux environment,
 without the need of pressing the button in the rear panel. The latestversion of the 
-*eiger_flash* utility exploits this and enter into flash mode automatically.
+*eiger_flash* utility exploits this and enters into flash mode automatically.
 
 .. note:: In case the FW in the detector is too old (pre v18) and does not
    support software reset into flash mode, the *eiger_flash* utility will ask to
-   manually push the internal buttons in the detector real panel with a clip:
+   manually push the internal buttons in the detector rear panel with a clip:
 
    ::
 
+       lisgeiger1:~ % cd ~/eiger/fw_v18
        lisgeiger1:~/eiger/fw_v18 % ~/esrf/sls_detectors/eiger/scripts/eiger_flash -m beb_fiber.bit -l feb_l_fx70t.bit -r feb_r_fx70t.bit -k simpleImage.virtex440-eiger-beb-hwid1_local ${EIGER_MODULES}
        [beb024] Executing: nc -p 3000 -u beb024 3000
        [beb025] Executing: nc -p 3000 -u beb025 3000
@@ -284,6 +296,7 @@ as well as the kernel image:
  
 ::
 
+    lisgeiger1:~ % cd ~/eiger/fw_v20
     lisgeiger1:~/eiger/fw_v20 % which eiger_flash
     /users/opid00/esrf/sls_detectors/eiger/scripts/eiger_flash
     
