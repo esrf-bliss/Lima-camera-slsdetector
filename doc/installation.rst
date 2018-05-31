@@ -1538,8 +1538,8 @@ Add LimaCCDs and SlsDetector class devices.
    Here the top-half packets are sent to eth3 queue #9, associated to IRQ #137,
    which has CPU affinity *0-5* (0x3f), being CPU #0 the only one that serves it. The
    bottom-half packets are dispatched to eth5 queue #1, associated to IRQ #155 with
-   CPU affinity *1* (0x2). ***This is in conflict with Lima netdev_group #1
-   (eth3/eth5) CPU affinity!***, the CPU will be overloaded and packets will be
+   CPU affinity *1* (0x2). **This is in conflict with Lima netdev_group #1
+   (eth3/eth5) CPU affinity!**, the CPU will be overloaded and packets will be
    missed by the dispatch task.
    
    The conflict is solved by changing the Eiger data IP addresses in the configuration

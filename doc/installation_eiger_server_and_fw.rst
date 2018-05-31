@@ -255,7 +255,17 @@ without the need of pressing the button in the rear panel. The latestversion of 
    ::
 
        lisgeiger1:~ % cd ~/eiger/fw_v18
-       lisgeiger1:~/eiger/fw_v18 % ~/esrf/sls_detectors/eiger/scripts/eiger_flash -m beb_fiber.bit -l feb_l_fx70t.bit -r feb_r_fx70t.bit -k simpleImage.virtex440-eiger-beb-hwid1_local ${EIGER_MODULES}
+       lisgeiger1:~/eiger/fw_v18 % eiger_flash \
+           -m beb_fiber.bit \
+           -l feb_l_fx70t.bit -r feb_r_fx70t.bit \
+           -k simpleImage.virtex440-eiger-beb-hwid1_local \
+           -o ${this_dir}/eiger_flash.log ${EIGER_MODULES}
+
+       b69de7bbcb445d281f4ade4836028d1f  beb_fiber.bit
+       da44706da1f11a39c2eebb2c63fff752  feb_l_fx70t.bit
+       d34fb69a1e4272d824bc2dea26efdd45  feb_r_fx70t.bit
+       1f27879faa7082f9ed2bb2b24b84ea99  simpleImage.virtex440-eiger-beb-hwid1_local
+       
        [beb024] Executing: nc -p 3000 -u beb024 3000
        [beb025] Executing: nc -p 3000 -u beb025 3000
        [beb024] Not in firmware flash mode ... ping'ing ...
@@ -309,7 +319,19 @@ as well as the kernel image:
     4bf1f88d376fd9651b45c2b5b2b021eb  feb_r_fx70t.bit
     1f27879faa7082f9ed2bb2b24b84ea99  simpleImage.virtex440-eiger-beb-hwid1_local
 
-    lisgeiger1:~/eiger/fw_v20 % eiger_flash -m beb_fiber.bit -l feb_l_fx30t.bit -r feb_r_fx30t.bit -k simpleImage.virtex440-eiger-beb-hwid1_local ${EIGER_MODULES} 
+    lisgeiger1:~/eiger/fw_v20 % this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
+    lisgeiger1:~/eiger/fw_v20 % mkdir -p ${this_dir}
+    lisgeiger1:~/eiger/fw_v20 % eiger_flash \
+        -m beb_fiber.bit \
+        -l feb_l_fx30t.bit -r feb_r_fx30t.bit \
+        -k simpleImage.virtex440-eiger-beb-hwid1_local \
+        -o ${this_dir}/eiger_flash.log ${EIGER_MODULES}
+
+    f9e6e360cfa696957cf4fd5035bed5e1  beb_fiber.bit
+    fe59229e8ebdb5e8d76ff315cd28cc7d  feb_l_fx30t.bit
+    7a988f0e39930bf86d9af9dee060ef04  feb_r_fx30t.bit
+    1f27879faa7082f9ed2bb2b24b84ea99  simpleImage.virtex440-eiger-beb-hwid1_local
+
     [beb024] Executing: nc -p 3000 -u beb024 3000
     [beb025] Executing: nc -p 3000 -u beb025 3000
     [beb024] Not in firmware flash mode ... ping'ing ...
