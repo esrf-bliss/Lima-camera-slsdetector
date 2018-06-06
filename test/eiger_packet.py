@@ -40,73 +40,96 @@ for d in glob.glob('/sys/class/net/*'):
     if addr != ':'.join(['00'] * 6):
         addr_map[addr] = name
 
-fname = sys.argv[1]
-capfile = rdpcap(fname)
+fnames = sys.argv[1:]
 
 ifaces = {}
-start_ts = None
-for i, x in enumerate(capfile):
-    if not x.haslayer(IP):
-        continue
-    if start_ts is None:
-        start_ts = x.time
-    if not x.haslayer(UDP):
-        continue
-    u = x.getlayer(UDP)
+for fname in fnames:
+    capfile = rdpcap(fname)
 
-    addr = x.dst
-    iface = addr_map[addr]
+    start_ts = None
+    for i, x in enumerate(capfile):
+        if not x.haslayer(IP):
+            continue
+        if start_ts is None:
+            start_ts = x.time
+        if not x.haslayer(UDP):
+            continue
+        u = x.getlayer(UDP)
 
-    if iface not in ifaces:
-        ifaces[iface] = {'ports': {}, 'start_dtime': None}
-    idata = ifaces[iface]
-    ports = idata['ports']
+        addr = x.dst
+        iface = addr_map[addr]
 
-    port = u.dport
-    if port not in ports:
-        ports[port] = {'packets': []}
+        if iface not in ifaces:
+            ifaces[iface] = {'ports': {}, 'start_dtime': None}
+        idata = ifaces[iface]
+        ports = idata['ports']
 
-    p = u.payload
-    if len(p) == HEADER_PACKET_SIZE:
-        if fw_ver >= 20:
-            f = '>' + 'L' * 10
-            d = struct.unpack(f, str(p))
-            fnum = d[5]
-        continue
-    elif len(p) != DATA_PACKET_SIZE:
-        raise ValueError('Invalid packet')
+        port = u.dport
+        if port not in ports:
+            ports[port] = {'packets': []}
 
-    if fw_ver < 20:
-        pre = str(p)[:DATA_PACKET_PRE_SIZE]
-        f = '<' + 'LL'
-        sub_fnum, not_req = struct.unpack(f, pre)
-        post = str(p)[DATA_PACKET_PRE_SIZE + DATA_PACKET_DATA_SIZE:]
-        f = '<' + 'LHH'
-        fnum_l, fnum_h, pnum = struct.unpack(f, post)
-        fnum = fnum_l + (fnum_h << 4)
-        pnum -= 1
-        explen, bunchid, dtime, modid, cx, cy, cz = [0] * 7
-        debug, rrnum, dtype, ver = [0] * 4
-    else:
-        h = str(p)[:DATA_PACKET_HEADER_SIZE]
-        f = '<' + 'QLLQQHHHHLHBB'
-        d = struct.unpack(f, h)
-        fnum, explen, pnum, bunchid, dtime, modid, cx, cy, cz = d[0:9]
-        debug, rrnum, dtype, ver = d[9:13]
+        p = u.payload
+        if len(p) == HEADER_PACKET_SIZE:
+            if fw_ver >= 20:
+                f = '>' + 'L' * 10
+                d = struct.unpack(f, str(p))
+                fnum = d[5]
+            continue
+        elif len(p) != DATA_PACKET_SIZE:
+            raise ValueError('Invalid packet')
 
-    frame_packets = max(frame_packets, pnum + 1)
-    dtime /= TSTAMP_CLOCK_FREQ
+        if fw_ver < 20:
+            pre = str(p)[:DATA_PACKET_PRE_SIZE]
+            f = '<' + 'LL'
+            sub_fnum, not_req = struct.unpack(f, pre)
+            post = str(p)[DATA_PACKET_PRE_SIZE + DATA_PACKET_DATA_SIZE:]
+            f = '<' + 'LHH'
+            fnum_l, fnum_h, pnum = struct.unpack(f, post)
+            fnum = fnum_l + (fnum_h << 4)
+            pnum -= 1
+            explen, bunchid, dtime, modid, cx, cy, cz = [0] * 7
+            debug, rrnum, dtype, ver = [0] * 4
+        else:
+            h = str(p)[:DATA_PACKET_HEADER_SIZE]
+            f = '<' + 'QLLQQHHHHLHBB'
+            d = struct.unpack(f, h)
+            fnum, explen, pnum, bunchid, dtime, modid, cx, cy, cz = d[0:9]
+            debug, rrnum, dtype, ver = d[9:13]
 
-    if idata['start_dtime'] is None:
-        idata['start_dtime'] = dtime
+        frame_packets = max(frame_packets, pnum + 1)
+        dtime /= TSTAMP_CLOCK_FREQ
 
-    t = x.time - start_ts
-    dt = dtime - idata['start_dtime']
+        if idata['start_dtime'] is None:
+            idata['start_dtime'] = dtime
 
-    ports[port]['packets'].append([fnum, pnum, t, dt])
+        t = x.time - start_ts
+        dt = dtime - idata['start_dtime']
+
+        ports[port]['packets'].append([fnum, pnum, t, dt])
 
 if (frame_packets == 0) or (frame_packets % 4 != 0):
     raise ValueError('Invalid frame_packets: %s' % frame_packets)
+
+if '.' in fnames[0]:
+    fnames = ['.'.join(n.split('.')[:-1]) for n in fnames]
+
+fname = None
+for n in fnames:
+    if fname is None:
+        fname = n
+    for i in range(len(fname), 0, -1):
+        fname = fname[:i]
+        if fname[-1] in '-_':
+            continue
+        if fname in n:
+            break
+    else:
+        raise ValueError('Could not find common base: %s' % fnames)
+
+suffix = ''
+for n in fnames:
+    suffix += n[len(fname):]
+fname += suffix
 
 for iface, idata in ifaces.items():
     for port, d in idata['ports'].items():
@@ -151,7 +174,7 @@ for iface, idata in ifaces.items():
              delay_str = ':%.5f' % x[0]
         print "packet_xfer_time[%d:%d%s]=%s" % (port, nb_xfer_times, delay_str,
                                                 d['packet_xfer_time'])
-        ofname = '.'.join(fname.split('.')[:-1]) + '_%s_%d.dat' % (iface, port)
+        ofname = fname + '_%s_%d.dat' % (iface, port)
         d['out_fname'] = ofname
         d['out_file'] = open(d['out_fname'], 'wt')
 
