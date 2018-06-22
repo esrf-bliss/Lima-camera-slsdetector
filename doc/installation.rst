@@ -97,6 +97,15 @@ software can run properly:
     ii  libc6-i386       2.13-38+deb7u10  amd64  Embedded GNU C Library: 32-bit shared libraries for AMD64
     ii  libc6-i686:i386  2.13-38+deb7u10  i386   Embedded GNU C Library: Shared libraries [i686 optimized]
 
+Copy the good *getconf* binary (64-bit):
+
+::
+
+    lid10eiger1:~ # cd /usr/bin
+    lid10eiger1:/usr/bin # mv getconf getconf.32
+    lid10eiger1:~ # scp lid01eiger1:/usr/bin/getconf .
+    ...
+
 *cpufrequtils*
 ~~~~~~~~~~~~~~
 
@@ -1168,6 +1177,14 @@ First install *flex*, which might needed to compile some *Lima* subsystems:
 
     # as root
     lid10eiger1:~ # apt-get install flex
+    ...
+
+Install *libnuma-dev*:
+
+::
+
+    # as root
+    lid10eiger1:~ # apt-get install libnuma-dev
     ...
 
 *Lima* is referenced as a submodule by the *sls_detectors* project installed before:
