@@ -331,14 +331,18 @@ string CPUAffinity::getNetDevSetterSudoDesc()
 	string dir = "/tmp";
 	string fname = dir + "/" + setter_name + ".c";
 	ofstream src_file(fname.c_str());
-	const StringList& SrcList = NetDevSetQueueRpsSrc;
-	StringList::const_iterator it, end = SrcList.end();
-	for (it = SrcList.begin(); src_file && (it != end); ++it)
-		src_file << *it << endl;
-	if (src_file)
-		src_file.close();
-	if (!src_file)
-		THROW_HW_ERROR(Error) << "Error writing to " << fname;
+	if (src_file) {
+		const StringList& SrcList = NetDevSetQueueRpsSrc;
+		StringList::const_iterator it, end = SrcList.end();
+		for (it = SrcList.begin(); src_file && (it != end); ++it)
+			src_file << *it << endl;
+		if (src_file)
+			src_file.close();
+		if (!src_file)
+			DEB_WARNING() << "Error writing to " << fname;
+	} else {
+		DEB_WARNING() << "Error creating " << fname;
+	}
 
 	ostringstream desc;
 	string aux_setter = dir + "/" + setter_name;
