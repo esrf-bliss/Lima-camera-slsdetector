@@ -57,7 +57,7 @@ target_include_directories(lima${NAME} PUBLIC
 
 target_link_libraries(lima${NAME}
 		      limacore
-		      slsDetectorShared slsReceiverShared zmq)
+		      slsDetectorShared slsReceiverShared zmq numa)
 
 limatools_set_library_soversion(lima${NAME} VERSION)
 install(TARGETS lima${NAME} LIBRARY DESTINATION lib)

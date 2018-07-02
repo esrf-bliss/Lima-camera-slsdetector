@@ -28,6 +28,7 @@
 using namespace std;
 
 typedef set<int> CPP_SeqType;
+typedef CPP_SeqType::value_type CPP_SeqValType;
 %End
 
 %ConvertToTypeCode
@@ -40,7 +41,7 @@ typedef set<int> CPP_SeqType;
 
 	*sipCppPtr = new CPP_SeqType();
 	for (int i = 0; i < PyList_Size(sipPy); ++i) {
-		int val = PyInt_AS_LONG(PyList_GET_ITEM(sipPy, i));
+		CPP_SeqValType val = PyInt_AS_LONG(PyList_GET_ITEM(sipPy, i));
 		(*sipCppPtr)->insert(val);
 	}
 	return sipGetState(sipTransferObj);
@@ -53,6 +54,44 @@ typedef set<int> CPP_SeqType;
 	CPP_SeqType::iterator it = sipCpp->begin();
 	for (int i = 0; it != sipCpp->end(); ++it, ++i)
 		PyList_SET_ITEM(sip_list, i, PyInt_FromLong(*it));
+	return sip_list;
+%End
+};
+
+%MappedType std::vector<unsigned long>
+{
+%TypeHeaderCode
+#include <vector>
+
+using namespace std;
+
+typedef vector<unsigned long> CPP_SeqType;
+typedef CPP_SeqType::value_type CPP_SeqValType;
+%End
+
+%ConvertToTypeCode
+	if (sipIsErr == NULL) {
+		bool ok = PyList_Check(sipPy);
+		for (int i = 0; ok && (i < PyList_Size(sipPy)); ++i)
+			ok = PyLong_Check(PyList_GET_ITEM(sipPy, i));
+		return ok;
+	}
+
+	*sipCppPtr = new CPP_SeqType();
+	for (int i = 0; i < PyList_Size(sipPy); ++i) {
+		CPP_SeqValType val = PyLong_AsLong(PyList_GET_ITEM(sipPy, i));
+		(*sipCppPtr)->push_back(val);
+	}
+	return sipGetState(sipTransferObj);
+%End
+
+%ConvertFromTypeCode
+	PyObject* sip_list = PyList_New(sipCpp->size());
+	if (sip_list == NULL)
+		return NULL;
+	CPP_SeqType::iterator it = sipCpp->begin();
+	for (int i = 0; it != sipCpp->end(); ++it, ++i)
+		PyList_SET_ITEM(sip_list, i, PyLong_FromLong(*it));
 	return sip_list;
 %End
 };

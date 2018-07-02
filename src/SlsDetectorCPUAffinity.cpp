@@ -33,6 +33,8 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <sys/types.h>
+#include <numa.h>
+#include <iomanip>
 
 using namespace std;
 using namespace lima;
@@ -88,7 +90,7 @@ void CPUAffinity::checkSudo(string cmd, string desc)
 			      << "See output for details";
 }
 
-int CPUAffinity::findNbCPUs()
+int CPUAffinity::findNbSystemCPUs()
 {
 	DEB_STATIC_FUNCT();
 	int nb_cpus = 0;
@@ -107,7 +109,7 @@ int CPUAffinity::findNbCPUs()
 	return nb_cpus;
 }
 
-int CPUAffinity::findMaxNbCPUs()
+int CPUAffinity::findMaxNbSystemCPUs()
 {
 	DEB_STATIC_FUNCT();
 	NumericGlob proc_glob("/proc/sys/kernel/sched_domain/cpu");
@@ -116,12 +118,12 @@ int CPUAffinity::findMaxNbCPUs()
 	return max_nb_cpus;
 }
 
-int CPUAffinity::getNbCPUs(bool max_nb)
+int CPUAffinity::getNbSystemCPUs(bool max_nb)
 {
 	static int nb_cpus = 0;
-	EXEC_ONCE(nb_cpus = findNbCPUs());
+	EXEC_ONCE(nb_cpus = findNbSystemCPUs());
 	static int max_nb_cpus = 0;
-	EXEC_ONCE(max_nb_cpus = findMaxNbCPUs());
+	EXEC_ONCE(max_nb_cpus = findMaxNbSystemCPUs());
 	int cpus = (max_nb && max_nb_cpus) ? max_nb_cpus : nb_cpus;
 	return cpus;
 }
@@ -188,9 +190,7 @@ void CPUAffinity::applyWithTaskset(pid_t task, bool incl_threads) const
 		os << "sudo -n ";
 	}
 	const char *all_tasks_opt = incl_threads ? "-a " : "";
-	os << "taskset " << all_tasks_opt
-	   << "-p " << hex << showbase << mask << " " 
-	   << dec << noshowbase << task;
+	os << "taskset " << all_tasks_opt << "-p " << *this << " " << task;
 	if (!DEB_CHECK_ANY(DebTypeTrace))
 		os << " > /dev/null 2>&1";
 	DEB_TRACE() << "executing: '" << os.str() << "'";
@@ -286,7 +286,7 @@ bool CPUAffinity::applyWithNetDevFile(const string& fname) const
 	DEB_MEMBER_FUNCT();
 
 	ostringstream os;
-	os << noshowbase << hex << m_mask;
+	os << hex << m_mask.to_ulong();
 	DEB_TRACE() << "writing " << os.str() << " to " << fname;
 	ofstream rps_file(fname.c_str());
 	if (rps_file)
@@ -313,7 +313,7 @@ bool CPUAffinity::applyWithNetDevSetter(const string& dev,
 		os << "sudo -n ";
 	}
 	os << NetDevSetQueueRpsName << " " << dev << " " << queue << " " 
-	   << showbase << hex << m_mask;
+	   << hex << "0x" << m_mask.to_ulong();
 	if (!DEB_CHECK_ANY(DebTypeTrace) && false)
 		os << " > /dev/null 2>&1";
 	DEB_TRACE() << "executing: '" << os.str() << "'";
@@ -410,6 +410,45 @@ static const char *CPUAffinityNetDevSetQueueRpsSrcCList[] = {
 };
 const StringList CPUAffinity::NetDevSetQueueRpsSrc(
 		C_LIST_ITERS(CPUAffinityNetDevSetQueueRpsSrcCList));
+
+void CPUAffinity::getNUMANodeMask(vector<unsigned long>& node_mask,
+				  int& max_node)
+{
+	DEB_MEMBER_FUNCT();
+
+	typedef vector<unsigned long> Array;
+
+	int nb_nodes = numa_max_node() + 1;
+	const int item_bits = sizeof(Array::reference) * 8;
+	int nb_items = nb_nodes / item_bits;
+	if (nb_nodes % item_bits != 0)
+		++nb_items;
+
+	DEB_PARAM() << DEB_VAR2(*this, nb_items);
+	max_node = nb_nodes + 1;
+
+	node_mask.assign(nb_items, 0);
+
+	uint64_t mask = *this;
+	for (unsigned int i = 0; i < sizeof(mask) * 8; ++i) {
+		if ((mask >> i) & 1) {
+			unsigned int n = numa_node_of_cpu(i);
+			Array::reference v = node_mask[n / item_bits];
+			v |= 1L << (n % item_bits);
+		}
+	}
+
+	if (DEB_CHECK_ANY(DebTypeAlways)) {
+		ostringstream os;
+		os << hex << "0x" << setw(nb_nodes / 4) << setfill('0');
+		bool first = true;
+		Array::reverse_iterator it, end = node_mask.rend();
+		for (it = node_mask.rbegin(); it != end; ++it, first = false)
+			os << (!first ? "," : "") << *it;
+		DEB_ALWAYS() << "node_mask=" << os.str() << ", "
+			     << DEB_VAR1(max_node);
+	}
+}
 
 SystemCPUAffinityMgr::WatchDog::WatchDog()
 {
@@ -774,6 +813,44 @@ void SystemCPUAffinityMgr::setNetDevCPUAffinity(
 	checkWatchDogStop();
 }
 
+RecvCPUAffinity::RecvCPUAffinity()
+	: listeners(1), writers(1), port_threads(1)
+{
+}
+
+CPUAffinity RecvCPUAffinity::all() const
+{
+#define AffinityAllAndList(a, l)					\
+	CPUAffinity a = l[0];						\
+	{								\
+		CPUAffinityList::const_iterator it, end = l.end();	\
+		for (it = l.begin() + 1; it != end; ++it)		\
+			a |= *it;					\
+	}
+	AffinityAllAndList(l_all, listeners);
+	AffinityAllAndList(w_all, writers);
+	AffinityAllAndList(pt_all, port_threads);
+#undef AffinityAllAndList
+	return l_all | w_all | pt_all;
+}
+
+RecvCPUAffinity& RecvCPUAffinity::operator =(CPUAffinity a)
+{
+	listeners.assign(1, a);
+	writers.assign(1, a);
+	port_threads.assign(1, a);
+	return *this;
+}
+
+CPUAffinity GlobalCPUAffinity::all() const
+{
+	CPUAffinity all = recv.all() | lima | other;
+	NetDevGroupCPUAffinityList::const_iterator it, end = netdev.end();
+	for (it = netdev.begin(); it != end; ++it)
+		all |= it->processing;
+	return all;
+}
+
 GlobalCPUAffinityMgr::
 ProcessingFinishedEvent::ProcessingFinishedEvent(GlobalCPUAffinityMgr *mgr)
 	: m_mgr(mgr), m_cb(this), m_ct(NULL)
@@ -937,11 +1014,9 @@ void GlobalCPUAffinityMgr::applyAndSet(const GlobalCPUAffinity& o)
 	if (!m_cam)
 		THROW_HW_ERROR(InvalidValue) << "apply without camera";
 
-	CPUAffinity all_system = o.recv.all() | o.lima | o.other;
-	cpu_set_t all_cpu_set;
-	all_system.initCPUSet(all_cpu_set);
-	if (CPU_COUNT(&all_cpu_set) <= CPUAffinity::getNbCPUs() / 2)
-		THROW_HW_ERROR(Error) << "Hyper-threading is activated!";
+	CPUAffinity all_system = o.all();
+	if (all_system.getNbCPUs() == CPUAffinity::getNbSystemCPUs() / 2)
+		DEB_WARNING() << "Hyper-threading seems activated!";
 
 	setLimaAffinity(o.lima);
 	setRecvAffinity(o.recv);
@@ -1117,13 +1192,26 @@ void GlobalCPUAffinityMgr::cleanUp()
 
 ostream& lima::SlsDetector::operator <<(ostream& os, const CPUAffinity& a)
 {
-	return os << hex << showbase << uint64_t(a) << dec << noshowbase;
+	return os << hex << "0x" << setw(CPUAffinity::getNbHexDigits())
+		  << setfill('0') << uint64_t(a) << dec << setw(0) 
+		  << setfill(' ');
 }
 
+ostream&
+lima::SlsDetector::operator <<(ostream& os, const CPUAffinityList& l)
+{
+	os << "<";
+	bool first = true;
+	CPUAffinityList::const_iterator it, end = l.end();
+	for (it = l.begin(); it != end; ++it, first=false)
+		os << (!first ? ", " : "") << *it;
+	return os << ">";
+}
 ostream& lima::SlsDetector::operator <<(ostream& os, const RecvCPUAffinity& a)
 {
 	os << "<";
-	os << "listeners=" << a.listeners << ", writers=" << a.writers;
+	os << "listeners=" << a.listeners << ", writers=" << a.writers << ", "
+	   << "port_threads=" << a.port_threads;
 	return os << ">";
 }
 

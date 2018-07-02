@@ -112,7 +112,7 @@ int main(int argc, char *argv[])
 	Cond cond;
 	volatile bool active = false;
 
-	int nb_cpus = CPUAffinity::getNbCPUs();
+	int nb_cpus = CPUAffinity::getNbSystemCPUs();
 	int test_cpus = mask ? mask : (1 << nb_cpus) - 1;
 	DEB_ALWAYS() << DEB_VAR1(DebHex(test_cpus));
 	typedef vector<AutoPtr<TestThread> > ThreadList;

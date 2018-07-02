@@ -38,17 +38,23 @@ class CPUAffinity
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "CPUAffinity", "SlsDetector");
  public:
- 	CPUAffinity(uint64_t m = 0) : m_mask(m) 
+	CPUAffinity(uint64_t m = 0) : m_mask(internalMask(m))
 	{}
 
 	static void setUseSudo(bool use_sudo);
 	static bool getUseSudo();
 
 	static void checkSudo(std::string cmd, std::string desc = "");
-	static int getNbCPUs(bool max_nb = false);
+	static int getNbSystemCPUs(bool max_nb = false);
+
+	static int getNbHexDigits(bool max_nb = false)
+	{ return getNbSystemCPUs(max_nb) / 4; }
 
 	static uint64_t allCPUs(bool max_nb = false)
-	{ return (uint64_t(1) << getNbCPUs(max_nb)) - 1; }
+	{ return (uint64_t(1) << getNbSystemCPUs(max_nb)) - 1; }
+
+	int getNbCPUs() const
+	{ return m_mask.any() ? m_mask.count() : getNbSystemCPUs(); }
 
 	void initCPUSet(cpu_set_t& cpu_set) const;
 	void applyToTask(pid_t task, bool incl_threads = true,
@@ -57,18 +63,23 @@ class CPUAffinity
 	void applyToNetDevGroup(StringList dev_list) const;
 
 	operator uint64_t() const
-	{ return m_mask ? m_mask : allCPUs(); }
+	{ return m_mask.any() ? m_mask.to_ulong() : allCPUs(); }
 
-	CPUAffinity& operator =(uint64_t m)
-		{ m_mask = m; return *this; }
+	CPUAffinity& operator |=(const CPUAffinity& o);
 
 	bool isDefault() const
-	{ return !m_mask || (m_mask == allCPUs()); }
+	{ return m_mask.none() || (m_mask.to_ulong() == allCPUs()); }
+
+	void getNUMANodeMask(std::vector<unsigned long>& node_mask,
+			     int& max_node);
 
 	static std::string getProcDir(bool local_threads);
 	static std::string getTaskProcDir(pid_t task, bool is_thread);
 
  private:
+	static uint64_t internalMask(uint64_t m)
+	{ return (m != allCPUs()) ? m : 0; }
+
 	void applyWithTaskset(pid_t task, bool incl_threads) const;
 	void applyWithSetAffinity(pid_t task, bool incl_threads) const;
 	bool applyWithNetDevFile(const std::string& fname) const;
@@ -76,14 +87,14 @@ class CPUAffinity
 				   const std::string& queue) const;
 
 	static bool UseSudo;
-	static int findNbCPUs();
-	static int findMaxNbCPUs();
+	static int findNbSystemCPUs();
+	static int findMaxNbSystemCPUs();
 	static std::string getNetDevSetterSudoDesc();
 
 	static const std::string NetDevSetQueueRpsName;
 	static const StringList NetDevSetQueueRpsSrc;
 
-	uint64_t m_mask;
+	std::bitset<64> m_mask;
 };
 
 inline
@@ -98,6 +109,22 @@ bool operator !=(const CPUAffinity& a, const CPUAffinity& b)
 {
 	return !(a == b);
 }
+
+inline
+CPUAffinity operator |(const CPUAffinity& a, const CPUAffinity& b)
+{
+	if (a.isDefault() || b.isDefault())
+		return CPUAffinity();
+	return CPUAffinity(uint64_t(a) | uint64_t(b));
+}
+
+inline
+CPUAffinity& CPUAffinity::operator |=(const CPUAffinity& o)
+{
+	return *this = *this | o;
+}
+
+typedef std::vector<CPUAffinity> CPUAffinityList;
 
 
 struct NetDevGroupCPUAffinity {
@@ -202,19 +229,13 @@ class SystemCPUAffinityMgr
 };
 
 struct RecvCPUAffinity {
-	CPUAffinity listeners;
-	CPUAffinity writers;
+	CPUAffinityList listeners;
+	CPUAffinityList writers;
+	CPUAffinityList port_threads;
 
-	CPUAffinity all() const
-	{
-		return listeners | writers;
-	}
-
-	RecvCPUAffinity& operator =(CPUAffinity a)
-	{
-		listeners = writers = a;
-		return *this;
-	}
+	RecvCPUAffinity();
+	CPUAffinity all() const;
+	RecvCPUAffinity& operator =(CPUAffinity a);
 };
 
 inline 
@@ -235,6 +256,7 @@ struct GlobalCPUAffinity {
 	CPUAffinity lima;
 	CPUAffinity other;
 	NetDevGroupCPUAffinityList netdev;
+	CPUAffinity all() const;
 };
 
 typedef std::map<PixelDepth, GlobalCPUAffinity> PixelDepthCPUAffinityMap;
@@ -335,6 +357,7 @@ class GlobalCPUAffinityMgr
 };
 
 std::ostream& operator <<(std::ostream& os, const CPUAffinity& a);
+std::ostream& operator <<(std::ostream& os, const CPUAffinityList& a);
 std::ostream& operator <<(std::ostream& os, const RecvCPUAffinity& a);
 std::ostream& operator <<(std::ostream& os, const GlobalCPUAffinity& a);
 std::ostream& operator <<(std::ostream& os, const PixelDepthCPUAffinityMap& m);
