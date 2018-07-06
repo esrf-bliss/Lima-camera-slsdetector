@@ -29,67 +29,24 @@
 %MappedType SlsDetector::CPUAffinityList
 {
 %TypeHeaderCode
-#include <vector>
 #include "SlsDetectorCPUAffinity.h"
 #include "sipAPIlimaslsdetector.h"
+#include "SlsDetectorSip.h"
 
-using namespace std;
-using namespace lima;
 using namespace lima::SlsDetector;
-
-typedef vector<CPUAffinity> CPP_SeqType;
-typedef CPP_SeqType::value_type CPP_SeqValType;
-#define SIP_ValueType sipType_SlsDetector_CPUAffinity
 %End
 
 %ConvertToTypeCode
-	if (sipIsErr == NULL) {
-		bool ok = PyList_Check(sipPy);
-		for (int i = 0; ok && (i < PyList_Size(sipPy)); ++i) {
-			PyObject *value = PyList_GET_ITEM(sipPy, i);
-			ok = sipCanConvertToType(value, SIP_ValueType,
-						 SIP_NOT_NONE);
-		}
-		return ok;
-	}
-
-	CPP_SeqType *cpp_seq = new CPP_SeqType();
-	for (int i = 0; i < PyList_Size(sipPy); ++i) {
-		PyObject *value = PyList_GET_ITEM(sipPy, i);
-		int state;
-		void *p = sipConvertToType(value, SIP_ValueType, NULL,
-					   SIP_NOT_NONE, &state, sipIsErr);
-		CPP_SeqValType *cpp_value = static_cast<CPP_SeqValType *>(p);
-		if (*sipIsErr) {
-			sipReleaseType(cpp_value, SIP_ValueType, state);
-			delete cpp_seq;
-			return 0;
-		}
-		cpp_seq->push_back(*cpp_value);
-		sipReleaseType(cpp_value, SIP_ValueType, state);
-	}
-	*sipCppPtr = cpp_seq;
-
-	return sipGetState(sipTransferObj);
+	typedef SipSequence<CPUAffinityList> Seq;
+	Seq seq(sipType_SlsDetector_CPUAffinity);
+	return seq.convertToTypeCode(sipPy, sipCppPtr, sipIsErr,
+				     sipTransferObj);
 %End
 
 %ConvertFromTypeCode
-	PyObject* sip_list = PyList_New(sipCpp->size());
-	if (sip_list == NULL)
-		return NULL;
-	CPP_SeqType::iterator it = sipCpp->begin();
-	for (int i = 0; it != sipCpp->end(); ++it, ++i) {
-		CPP_SeqValType *new_val = new CPP_SeqValType(*it);
-		PyObject *value = sipConvertFromNewType(new_val, SIP_ValueType,
-							NULL);
-		if (value == NULL) {
-			delete new_val;
-			Py_DECREF(sip_list);
-			return NULL;
-		}
-		PyList_SET_ITEM(sip_list, i, value);
-	}
-	return sip_list;
+	typedef SipSequence<CPUAffinityList> Seq;
+	Seq seq(sipType_SlsDetector_CPUAffinity);
+	return seq.convertFromTypeCode(sipCpp);
 %End
 };
 
@@ -103,67 +60,24 @@ typedef CPP_SeqType::value_type CPP_SeqValType;
 %MappedType SlsDetector::NetDevGroupCPUAffinityList
 {
 %TypeHeaderCode
-#include <map>
 #include "SlsDetectorCPUAffinity.h"
 #include "sipAPIlimaslsdetector.h"
+#include "SlsDetectorSip.h"
 
-using namespace std;
-using namespace lima;
 using namespace lima::SlsDetector;
-
-typedef vector<NetDevGroupCPUAffinity> CPP_SeqType;
-typedef CPP_SeqType::value_type CPP_SeqValType;
-#define SIP_ValueType sipType_SlsDetector_NetDevGroupCPUAffinity
 %End
 
 %ConvertToTypeCode
-	if (sipIsErr == NULL) {
-		bool ok = PyList_Check(sipPy);
-		for (int i = 0; ok && (i < PyList_Size(sipPy)); ++i) {
-			PyObject *value = PyList_GET_ITEM(sipPy, i);
-			ok = sipCanConvertToType(value, SIP_ValueType, 
-						 SIP_NOT_NONE);
-		}
-		return ok;
-	}
-
-	CPP_SeqType *cpp_seq = new CPP_SeqType();
-	for (int i = 0; i < PyList_Size(sipPy); ++i) {
-		PyObject *value = PyList_GET_ITEM(sipPy, i);
-		int state;
-		void *p = sipConvertToType(value, SIP_ValueType, NULL, 
-					   SIP_NOT_NONE, &state, sipIsErr);
-		CPP_SeqValType *cpp_value = static_cast<CPP_SeqValType *>(p);
-		if (*sipIsErr) {
-			sipReleaseType(cpp_value, SIP_ValueType, state);
-			delete cpp_seq;
-			return 0;
-		}
-		cpp_seq->push_back(*cpp_value);
-		sipReleaseType(cpp_value, SIP_ValueType, state);
-	}
-	*sipCppPtr = cpp_seq;
-
-	return sipGetState(sipTransferObj);
+	typedef SipSequence<NetDevGroupCPUAffinityList> Seq;
+	Seq seq(sipType_SlsDetector_NetDevGroupCPUAffinity);
+	return seq.convertToTypeCode(sipPy, sipCppPtr, sipIsErr,
+				     sipTransferObj);
 %End
 
 %ConvertFromTypeCode
-	PyObject* sip_list = PyList_New(sipCpp->size());
-	if (sip_list == NULL)
-		return NULL;
-	CPP_SeqType::iterator it = sipCpp->begin();
-	for (int i = 0; it != sipCpp->end(); ++it, ++i) {
-		CPP_SeqValType *new_val = new CPP_SeqValType(*it);
-		PyObject *value = sipConvertFromNewType(new_val, SIP_ValueType,
-							NULL);
-		if (value == NULL) {
-			delete new_val;
-			Py_DECREF(sip_list);
-			return NULL;
-		}
-		PyList_SET_ITEM(sip_list, i, value);
-	}
-	return sip_list;
+	typedef SipSequence<NetDevGroupCPUAffinityList> Seq;
+	Seq seq(sipType_SlsDetector_NetDevGroupCPUAffinity);
+	return seq.convertFromTypeCode(sipCpp);
 %End
 };
 
@@ -176,85 +90,31 @@ typedef CPP_SeqType::value_type CPP_SeqValType;
 %MappedType SlsDetector::PixelDepthCPUAffinityMap
 {
 %TypeHeaderCode
-#include <map>
 #include "SlsDetectorCPUAffinity.h"
 #include "sipAPIlimaslsdetector.h"
+#include "SlsDetectorSip.h"
 
-using namespace std;
-using namespace lima;
 using namespace lima::SlsDetector;
 
-typedef PixelDepthCPUAffinityMap CPP_MapType;
-typedef CPP_MapType::key_type CPP_MapKeyType;
-typedef CPP_MapType::mapped_type CPP_MappedType;
-#define SIP_ValueType sipType_SlsDetector_GlobalCPUAffinity
+#ifndef SIP_TYPE_INT_IMPL_PixelDepth
+SipTypeIntImpl(PixelDepth);
+#define SIP_TYPE_INT_IMPL_PixelDepth
+#endif
 %End
 
 %ConvertToTypeCode
-	if (sipIsErr == NULL) {
-		bool ok = PyDict_Check(sipPy);
-		PyObject *key, *value;
-		SIP_SSIZE_T pos = 0;
-		while (ok && PyDict_Next(sipPy, &pos, &key, &value))
-			ok = (PyInt_Check(key) && 
-			      sipCanConvertToType(value, SIP_ValueType, 
-						  SIP_NOT_NONE));
-		return ok;
-	}
-
-	CPP_MapType *cpp_map = new CPP_MapType();
-
-	PyObject *key, *value;
-	SIP_SSIZE_T pos = 0;
-	while (PyDict_Next(sipPy, &pos, &key, &value)) {
-		CPP_MapKeyType cpp_key = CPP_MapKeyType(PyInt_AS_LONG(key));
-		int state;
-		void *p = sipConvertToType(value, SIP_ValueType, NULL, 
-					   SIP_NOT_NONE, &state, sipIsErr);
-		CPP_MappedType *cpp_value = static_cast<CPP_MappedType *>(p);
-		if (*sipIsErr) {
-			sipReleaseType(cpp_value, SIP_ValueType, state);
-			delete cpp_map;
-			return 0;
-		}		   
-
-		CPP_MapType::value_type map_value(cpp_key, *cpp_value);
-		cpp_map->insert(map_value);
-		sipReleaseType(cpp_value, SIP_ValueType, state);
-	}
-	*sipCppPtr = cpp_map;
-
-	return sipGetState(sipTransferObj);
+	typedef SipMap<PixelDepthCPUAffinityMap> Map;
+	Map map(sipType_SlsDetector_PixelDepth,
+	        sipType_SlsDetector_GlobalCPUAffinity);
+	return map.convertToTypeCode(sipPy, sipCppPtr, sipIsErr,
+				     sipTransferObj);
 %End
 
 %ConvertFromTypeCode
-	PyObject* sip_map = PyDict_New();
-	if (sip_map == NULL)
-		return NULL;
-	CPP_MapType::iterator it, end = sipCpp->end();
-	for (it = sipCpp->begin(); it != end; ++it) {
-		PyObject *key = PyInt_FromLong(it->first);
-		if (key == NULL)
-			goto error;
-		CPP_MappedType *new_val = new CPP_MappedType(it->second);
-		PyObject *value = sipConvertFromNewType(new_val, SIP_ValueType,
-							NULL);
-		bool ok = (value != NULL);
-		if (!ok) {
-			delete new_val;
-			goto error_v;
-		}
-		ok = (PyDict_SetItem(sip_map, key, value) == 0);
-		Py_DECREF(value);
-error_v:
-		Py_DECREF(key);
-		if (!ok)
-			goto error;
-	}
-	return sip_map;
-error:
-	Py_DECREF(sip_map);
-	return NULL;
+	typedef SipMap<PixelDepthCPUAffinityMap> Map;
+	Map map(sipType_SlsDetector_PixelDepth,
+	        sipType_SlsDetector_GlobalCPUAffinity);
+	return map.convertFromTypeCode(sipCpp);
 %End
 };
 
