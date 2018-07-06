@@ -238,6 +238,21 @@ public:
 
 // typedef std::vector<CPUAffinity> CPUAffinityList;
 
+SlsDetector::CPUAffinity CPUAffinityList_all(
+				const SlsDetector::CPUAffinityList& l);
+
+class IrqMgr
+{
+ public:
+	IrqMgr(std::string net_dev = "");
+	~IrqMgr();
+
+	void setDev(std::string net_dev);
+
+	std::vector<int> getIrqList();
+	void updateRxQueueIrqAffinity(bool default_affinity);
+};
+
 struct NetDevRxQueueCPUAffinity {
 	SlsDetector::CPUAffinity irq;
 	SlsDetector::CPUAffinity processing;
@@ -248,14 +263,20 @@ struct NetDevRxQueueCPUAffinity {
 
 // typedef std::map<int, NetDevRxQueueCPUAffinity> NetDevRxQueueAffinityMap;
 
+bool NetDevRxQueueAffinityMap_isDefault(
+			const SlsDetector::NetDevRxQueueAffinityMap& m);
+
 class NetDevRxQueueMgr
 {
  public:
 	NetDevRxQueueMgr(std::string dev = "");
+	~NetDevRxQueueMgr();
+
 	void setDev(std::string dev);
 
 	void apply(int queue,
 		   const SlsDetector::NetDevRxQueueCPUAffinity& queue_affinity);
+	void apply(const SlsDetector::NetDevRxQueueAffinityMap& affinity_map);
 
 	std::vector<int> getRxQueueList();
 };

@@ -165,6 +165,33 @@ inline CPUAffinity CPUAffinityList_all(const CPUAffinityList& l)
 	return all;
 }
 
+class IrqMgr
+{
+	DEB_CLASS_NAMESPC(DebModCamera, "IrqMgr", "SlsDetector");
+ public:
+	IrqMgr(std::string net_dev = "");
+	~IrqMgr();
+
+	void setDev(std::string net_dev);
+
+	IntList getIrqList();
+	void updateRxQueueIrqAffinity(bool default_affinity);
+
+ private:
+	static bool isManaged(std::string net_dev);
+
+	static void stopIrqBalance();
+	static void restoreIrqBalance();
+
+	static bool getIrqBalanceActive();
+	static void setIrqBalanceActive(bool act);
+
+	std::string m_net_dev;
+
+	static bool m_irqbalance_stopped;
+	static StringList m_dev_list;
+};
+
 struct NetDevRxQueueCPUAffinity {
 	CPUAffinity irq;
 	CPUAffinity processing;
@@ -184,32 +211,63 @@ bool operator ==(const NetDevRxQueueCPUAffinity& a,
 
 typedef std::map<int, NetDevRxQueueCPUAffinity> NetDevRxQueueAffinityMap;
 
+inline
+bool NetDevRxQueueAffinityMap_isDefault(const NetDevRxQueueAffinityMap& m)
+{
+	if (m.empty())
+		return true;
+	else if (m.size() != 1)
+		return false;
+	NetDevRxQueueAffinityMap::const_iterator it = m.begin();
+	return (it->first == -1) && (it->second.isDefault());
+}
+
 class NetDevRxQueueMgr
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "NetDevRxQueueMgr", "SlsDetector");
  public:
+	typedef NetDevRxQueueCPUAffinity Affinity;
+	typedef NetDevRxQueueAffinityMap AffinityMap;
+
 	NetDevRxQueueMgr(std::string dev = "");
+	~NetDevRxQueueMgr();
+
 	void setDev(std::string dev);
 
-	void apply(int queue, const NetDevRxQueueCPUAffinity& queue_affinity);
+	void apply(int queue, const Affinity& queue_affinity);
+	void apply(const AffinityMap& affinity_map);
 
 	IntList getRxQueueList();
 
  private:
 	void checkDev();
 
-	void applyProcessing(int queue, CPUAffinity a);
-	bool applyProcessingWithFile(const std::string& fname, CPUAffinity a);
-	bool applyProcessingWithSetter(const std::string& queue, CPUAffinity a);
+	enum Task {
+		Irq, Processing, NbTasks,
+	};
 
-	void applyIrq(int queue, CPUAffinity a);
+	struct FileSetterData {
+		StringList file;
+		StringList setter;
+	};
+			
+	void apply(Task task, int queue, CPUAffinity a);
+	void getIrqFileSetterData(int queue,
+				  FileSetterData& file_setter);
+	void getProcessingFileSetterData(int queue,
+					 FileSetterData& file_setter);
+	bool applyWithFile(const std::string& fname, CPUAffinity a);
+	bool applyWithSetter(Task task, const std::string& irq_queue,
+			     CPUAffinity a);
 
 	static std::string getSetterSudoDesc();
 
 	std::string m_dev;
+	IrqMgr m_irq_mgr;
+	AffinityMap m_aff_map;
 
-	static const std::string SetRpsName;
-	static const StringList SetRpsSrc;
+	static const std::string AffinitySetterName;
+	static const StringList AffinitySetterSrc;
 };
 
 struct NetDevGroupCPUAffinity {
@@ -222,12 +280,7 @@ struct NetDevGroupCPUAffinity {
 
 inline bool NetDevGroupCPUAffinity::isDefault() const
 {
-	if (queue_affinity.empty())
-		return true;
-	else if (queue_affinity.size() != 1)
-		return false;
-	NetDevRxQueueAffinityMap::const_iterator it = queue_affinity.begin();
-	return (it->first == -1) && (it->second.isDefault());
+	return NetDevRxQueueAffinityMap_isDefault(queue_affinity);
 }
 
 inline CPUAffinity NetDevGroupCPUAffinity::all() const

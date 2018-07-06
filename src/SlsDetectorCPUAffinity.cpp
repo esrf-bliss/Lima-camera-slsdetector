@@ -360,11 +360,173 @@ void CPUAffinity::getNUMANodeMask(vector<unsigned long>& node_mask,
 	}
 }
 
+bool IrqMgr::m_irqbalance_stopped = false;
+StringList IrqMgr::m_dev_list;
+
+IrqMgr::IrqMgr(string net_dev)
+{
+	DEB_CONSTRUCTOR();
+	DEB_PARAM() << DEB_VAR1(net_dev);
+
+	if (!net_dev.empty())
+		setDev(net_dev);
+}
+
+IrqMgr::~IrqMgr()
+{
+	DEB_DESTRUCTOR();
+	DEB_PARAM() << DEB_VAR1(m_net_dev);
+
+	if (isManaged(m_net_dev))
+		updateRxQueueIrqAffinity(true);
+}
+
+void IrqMgr::setDev(string net_dev)
+{
+	DEB_CONSTRUCTOR();
+	DEB_PARAM() << DEB_VAR1(net_dev);
+
+	if (!m_net_dev.empty())
+		THROW_HW_ERROR(Error) << "device already set";
+	if (isManaged(net_dev))
+		THROW_HW_ERROR(Error) << net_dev << " already managed";
+
+	m_net_dev = net_dev;
+}
+
+bool IrqMgr::isManaged(string net_dev)
+{
+	if (net_dev.empty())
+		return false;
+	StringList::iterator it, end = m_dev_list.end();
+	it = find(m_dev_list.begin(), end, net_dev);
+	return (it != end);
+}
+
+IntList IrqMgr::getIrqList()
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(m_net_dev);
+
+	string pci_irq_dir = (string("/sys/class/net/") + m_net_dev + 
+			      "/device/msi_irqs/");
+	NumericGlob pci_irqs(pci_irq_dir);
+	typedef NumericGlob::IntStringList IntStringList;
+	IntStringList dev_irqs = pci_irqs.getIntPathList();
+
+	IntList act_irqs;
+	ifstream proc_ints("/proc/interrupts");
+	ostringstream os;
+	int nb_cpus = CPUAffinity::getNbSystemCPUs();
+	os << "[ \t]*"
+	   << "(?P<irq>[0-9]+):[ \t]+"
+	   << "(?P<counts>(([0-9]+)[ \t]+){" << nb_cpus << "})"
+	   << "(?P<type>[-A-Za-z0-9_]+)[ \t]+"
+	   << "(?P<name>[-A-Za-z0-9_]+)";
+	DEB_TRACE() << DEB_VAR1(os.str());
+	RegEx int_re(os.str());
+	while (proc_ints) {
+		char buffer[1024];
+		proc_ints.getline(buffer, sizeof(buffer));
+		DEB_TRACE() << DEB_VAR1(string(buffer));
+		RegEx::FullNameMatchType match;
+		if (!int_re.matchName(buffer, match))
+			continue;
+		int irq;
+		istringstream(match["irq"]) >> irq;
+		DEB_TRACE() << "found match: " << irq << ": " 
+			     << string(match["name"]);
+		IntStringList::iterator it, end = dev_irqs.end();
+		bool ok = false;
+		for (it = dev_irqs.begin(); !ok && (it != end); ++it)
+			ok = (it->first == irq);
+		if (ok)
+			act_irqs.push_back(irq);
+	}
+
+	DEB_RETURN() << PrettyIntList(act_irqs);
+	return act_irqs;
+}
+
+void IrqMgr::updateRxQueueIrqAffinity(bool default_affinity)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(m_net_dev, default_affinity);
+
+	if (isManaged(m_net_dev) && default_affinity) {
+		StringList::iterator it, end = m_dev_list.end();
+		it = find(m_dev_list.begin(), end, m_net_dev);
+		m_dev_list.erase(it);
+		if (m_dev_list.empty())
+			restoreIrqBalance();
+	} else if (!isManaged(m_net_dev) && !default_affinity) {
+		stopIrqBalance();
+		m_dev_list.push_back(m_net_dev);
+	}
+}
+
+void IrqMgr::stopIrqBalance()
+{
+	DEB_STATIC_FUNCT();
+	DEB_PARAM() << DEB_VAR1(m_irqbalance_stopped);
+	if (!getIrqBalanceActive()) {
+		DEB_TRACE() << "nothing to do";
+		return;
+	} else if (m_irqbalance_stopped) {
+		DEB_WARNING() << "irqbalance stopped and still running!";
+	}
+	setIrqBalanceActive(false);
+	m_irqbalance_stopped = true;
+}
+
+void IrqMgr::restoreIrqBalance()
+{
+	DEB_STATIC_FUNCT();
+	DEB_PARAM() << DEB_VAR1(m_irqbalance_stopped);
+	if (!m_irqbalance_stopped)
+		return;
+	setIrqBalanceActive(true);
+	m_irqbalance_stopped = false;
+}
+
+bool IrqMgr::getIrqBalanceActive()
+{
+	DEB_STATIC_FUNCT();
+	SystemCmd bash("bash", "", false);
+	ConstStr cmd = "ps -ef | grep -v grep | grep irqbalance";
+	bash.args() << "-c '" << cmd << "'";
+	bool act = (bash.execute() == 0);
+	DEB_RETURN() << DEB_VAR1(act);
+	return act;
+}
+
+void IrqMgr::setIrqBalanceActive(bool act)
+{
+	DEB_STATIC_FUNCT();
+	DEB_PARAM() << DEB_VAR1(act);
+	SystemCmd service("service");
+	ConstStr cmd = act ? "start" : "stop";
+	DEB_ALWAYS() << "irqbalance: executing " << cmd;
+	service.args() << "irqbalance " << cmd;
+	if (service.execute() != 0)
+		THROW_HW_ERROR(Error) << "Could not " << cmd << " "
+				      << "irqbalance service";
+	DEB_ALWAYS() << "Done!";
+}
+
+
 NetDevRxQueueMgr::NetDevRxQueueMgr(string dev)
-	: m_dev(dev)
+	: m_dev(dev), m_irq_mgr(dev)
 {
 	DEB_CONSTRUCTOR();
 	DEB_PARAM() << DEB_VAR1(m_dev);
+}
+
+NetDevRxQueueMgr::~NetDevRxQueueMgr()
+{
+	DEB_DESTRUCTOR();
+	if (!NetDevRxQueueAffinityMap_isDefault(m_aff_map))
+		apply(NetDevRxQueueAffinityMap());
 }
 
 void NetDevRxQueueMgr::setDev(string dev)
@@ -376,6 +538,7 @@ void NetDevRxQueueMgr::setDev(string dev)
 	else if (dev != m_dev)
 		THROW_HW_ERROR(InvalidValue) << "name mismatch: "
 					     << DEB_VAR2(dev, m_dev);
+	m_irq_mgr.setDev(dev);
 }
 
 void NetDevRxQueueMgr::checkDev()
@@ -384,31 +547,106 @@ void NetDevRxQueueMgr::checkDev()
 	if (m_dev.empty())
 		THROW_HW_ERROR(InvalidValue) << "no device defined yet";
 }
-void NetDevRxQueueMgr::apply(int queue,
-			     const NetDevRxQueueCPUAffinity& queue_affinity)
+
+void NetDevRxQueueMgr::apply(int queue, const Affinity& queue_affinity)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR3(m_dev, queue, queue_affinity);
 
 	checkDev();
-	applyProcessing(queue, queue_affinity.processing);
-	applyIrq(queue, queue_affinity.irq);
+	apply(Irq, queue, queue_affinity.irq);	
+	m_irq_mgr.updateRxQueueIrqAffinity(queue_affinity.irq.isDefault());
+	apply(Processing, queue, queue_affinity.processing);
+	m_aff_map[queue] = queue_affinity;
 }
 
-void NetDevRxQueueMgr::applyProcessing(int queue, CPUAffinity a)
+void NetDevRxQueueMgr::apply(const AffinityMap& affinity_map)
+{
+	m_aff_map.clear();
+	if (NetDevRxQueueAffinityMap_isDefault(affinity_map)) {
+		apply(-1, NetDevRxQueueCPUAffinity());
+	} else {
+		AffinityMap::const_iterator qit, qend = affinity_map.end();
+		for (qit = affinity_map.begin(); qit != qend; ++qit)
+			apply(qit->first, qit->second);
+	}
+}
+
+void NetDevRxQueueMgr::apply(Task task, int queue, CPUAffinity a)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR3(m_dev, queue, a);
 
+	FileSetterData file_setter;
+	if (task == Irq)
+		getIrqFileSetterData(queue, file_setter);
+	else
+		getProcessingFileSetterData(queue, file_setter);
+
+	static bool did_error_files[NbTasks] = {false, false};
+	if (!did_error_files[task]) {
+		const StringList& list = file_setter.file;
+		StringList::const_iterator it, end = list.end();
+		bool ok = true;
+		for (it = list.begin(); ok && (it != end); ++it)
+			ok = applyWithFile(*it, a);
+		if (ok)
+			return;
+		DEB_WARNING() << "Could not write to files. Will try setter...";
+		did_error_files[task] = true;
+	}
+
+	static bool did_error_setter[NbTasks] = {false, false};
+	if (!did_error_setter[task]) {
+		const StringList& list = file_setter.setter;
+		StringList::const_iterator it, end = list.end();
+		bool ok = true;
+		for (it = list.begin(); ok && (it != end); ++it)
+			ok = applyWithSetter(task, *it, a);
+		if (ok)
+			return;
+		DEB_ERROR() << "Could not use setter";
+		did_error_setter[task] = true;
+	}
+}
+
+void NetDevRxQueueMgr::getIrqFileSetterData(int queue,
+					    FileSetterData& file_setter)
+{
+	DEB_MEMBER_FUNCT();
+
+	if (queue != -1)
+		THROW_HW_ERROR(NotSupported) << "only all queues (-1) mode "
+					     << "is supported";
+
+	IntList act_irqs = m_irq_mgr.getIrqList();
+	IntList::const_iterator it, end = act_irqs.end();
+	for (it = act_irqs.begin(); it != end; ++it) {
+		ostringstream os1, os2;
+		os1 << "/proc/irq/" << *it << "/smp_affinity";
+		file_setter.file.push_back(os1.str());
+		os2 << *it;
+		file_setter.setter.push_back(os2.str());
+	}
+}
+
+void NetDevRxQueueMgr::getProcessingFileSetterData(int queue,
+						   FileSetterData& file_setter)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(m_dev);
+
+	enum {
+		File, Setter, NbLists,
+	};
+
 	string glob_str(string("/sys/class/net/" + m_dev + "/queues/rx-"));
 	NumericGlob rps_cpus_glob(glob_str, "/rps_cpus");
-	enum {
-		Full, Queue, NbLists,
-	};
+
 	typedef NumericGlob::IntStringList IntStringList;
 	IntStringList list_array[NbLists];
-	list_array[Full] = rps_cpus_glob.getIntPathList();
-	list_array[Queue] = rps_cpus_glob.getIntSubPathList(6);
+	list_array[File] = rps_cpus_glob.getIntPathList();
+	list_array[Setter] = rps_cpus_glob.getIntSubPathList(6);
 	IntList filter_list;
 	if (queue == -2)
 		filter_list = getRxQueueList();
@@ -432,68 +670,50 @@ void NetDevRxQueueMgr::applyProcessing(int queue, CPUAffinity a)
 				break;
 		}
 	}
-	if (list_array[Full].size() != list_array[Queue].size()) {
-		THROW_HW_ERROR(Error) << "Full and Queue lists differ";
-	} else if (list_array[Full].empty()) {
+	if (list_array[File].size() != list_array[Setter].size()) {
+		THROW_HW_ERROR(Error) << "File and Setter lists differ";
+	} else if (list_array[File].empty()) {
 		DEB_WARNING() << "No Rx queue (" << queue << ") for " << m_dev;
 		return;
 	}
 
-	static bool did_error_files = false;
-	static bool did_error_setter = false;
-
-	if (!did_error_files) {
-		const IntStringList& list = list_array[Full];
+	StringList *file_setter_list[NbLists] = {&file_setter.file,
+						 &file_setter.setter};
+	for (int i = 0; i < NbLists; ++i) {
+		const IntStringList& list = list_array[i];
 		IntStringList::const_iterator it, end = list.end();
-		bool ok = true;
-		for (it = list.begin(); ok && (it != end); ++it)
-			ok = applyProcessingWithFile(it->second, a);
-		if (ok)
-			return;
-		DEB_WARNING() << "Could not write to files. Will try setter...";
-		did_error_files = true;
-	}
-
-	if (!did_error_setter) {
-		const IntStringList& list = list_array[Queue];
-		IntStringList::const_iterator it, end = list.end();
-		bool ok = true;
-		for (it = list.begin(); ok && (it != end); ++it)
-			ok = applyProcessingWithSetter(it->second, a);
-		if (ok)
-			return;
-		DEB_ERROR() << "Could not use setter";
-		did_error_setter = true;
+		for (it = list.begin(); it != end; ++it)
+			file_setter_list[i]->push_back(it->second);
 	}
 }
 
-bool NetDevRxQueueMgr::applyProcessingWithFile(const string& fname,
-					       CPUAffinity a)
+bool NetDevRxQueueMgr::applyWithFile(const string& fname, CPUAffinity a)
 {
 	DEB_MEMBER_FUNCT();
 
 	ostringstream os;
 	os << hex << a.getZeroDefaultMask();
 	DEB_TRACE() << "writing " << os.str() << " to " << fname;
-	ofstream rps_file(fname.c_str());
-	if (rps_file)
-		rps_file << os.str();
-	if (rps_file)
-		rps_file.close();
-	bool file_ok = rps_file;
+	ofstream aff_file(fname.c_str());
+	if (aff_file)
+		aff_file << os.str();
+	if (aff_file)
+		aff_file.close();
+	bool file_ok = aff_file;
 	DEB_RETURN() << DEB_VAR1(file_ok);
 	return file_ok;
 }
 
-bool NetDevRxQueueMgr::applyProcessingWithSetter(const string& queue,
-						 CPUAffinity a)
+bool NetDevRxQueueMgr::applyWithSetter(Task task, const string& irq_queue,
+				       CPUAffinity a)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(m_dev, queue);
+	DEB_PARAM() << DEB_VAR2(m_dev, irq_queue);
 
 	static string desc = getSetterSudoDesc();
-	SystemCmd setter(SetRpsName, desc);
-	setter.args() << m_dev << " " << queue << " "
+	SystemCmd setter(AffinitySetterName, desc);
+	ConstStr task_opt = (task == Irq) ? "-i" : "-r";
+	setter.args() << task_opt << " " << m_dev << " " << irq_queue << " "
 		      << hex << "0x" << a.getZeroDefaultMask();
 	bool setter_ok = (setter.execute() == 0);
 	DEB_RETURN() << DEB_VAR1(setter_ok);
@@ -504,12 +724,12 @@ string NetDevRxQueueMgr::getSetterSudoDesc()
 {
 	DEB_STATIC_FUNCT();
 
-	const string& setter_name = SetRpsName;
+	const string& setter_name = AffinitySetterName;
 	string dir = "/tmp";
 	string fname = dir + "/" + setter_name + ".c";
 	ofstream src_file(fname.c_str());
 	if (src_file) {
-		const StringList& SrcList = SetRpsSrc;
+		const StringList& SrcList = AffinitySetterSrc;
 		StringList::const_iterator it, end = SrcList.end();
 		for (it = SrcList.begin(); src_file && (it != end); ++it)
 			src_file << *it << endl;
@@ -530,9 +750,10 @@ string NetDevRxQueueMgr::getSetterSudoDesc()
 	return desc.str();
 }
 
-const string NetDevRxQueueMgr::SetRpsName = "netdev_set_queue_rps_cpus";
+const string NetDevRxQueueMgr::AffinitySetterName = 
+					"netdev_set_queue_cpu_affinity";
 
-static const char *NetDevRxQueueMgrSetRpsSrcCList[] = {
+static const char *NetDevRxQueueMgrAffinitySetterSrcCList[] = {
 "#include <stdio.h>",
 "#include <stdlib.h>",
 "#include <string.h>",
@@ -544,26 +765,34 @@ static const char *NetDevRxQueueMgrSetRpsSrcCList[] = {
 "",
 "int main(int argc, char *argv[])",
 "{",
-"	char *dev, *queue, *p, fname[256], buffer[128];",
-"	int fd, len, ret;",
+"	char *dev, *irq_queue, *p, fname[256], buffer[128];",
+"	int irq, rps, fd, len, ret;",
 "	long aff;",
 "",
-"	if (argc != 4)",
+"	if (argc != 5)",
 "		exit(1);",
-"	if (!strlen(argv[1]) || !strlen(argv[2]) || !strlen(argv[3]))",
+"	irq = (strcmp(argv[1], \"-i\") == 0);",
+"	rps = (strcmp(argv[1], \"-r\") == 0);",
+"	if (!irq && !rps)",
+"		exit(2);",
+"	if (!strlen(argv[2]) || !strlen(argv[3]) || !strlen(argv[4]))",
 "		exit(2);",
 "",
-"	dev = argv[1];",
-"	queue = argv[2];",
+"	dev = argv[2];",
+"	irq_queue = argv[3];",
 "",
 "	errno = 0;",
-"	aff = strtol(argv[3], &p, 0);",
+"	aff = strtol(argv[4], &p, 0);",
 "	if (errno || *p)",
 "		exit(3);",
 "",
 "	len = sizeof(fname);",
-"	ret = snprintf(fname, len, \"/sys/class/net/%s/queues/%s/rps_cpus\",", 
-"		       dev, queue);",
+"	if (irq)",
+"		ret = snprintf(fname, len, \"/proc/irq/%s/smp_affinity\",", 
+"			       irq_queue);",
+"	else",
+"		ret = snprintf(fname, len, \"/sys/class/net/%s/queues/%s/rps_cpus\",", 
+"			       dev, irq_queue);",
 "	if ((ret < 0) || (ret == len))",
 "		exit(4);",
 "",
@@ -585,15 +814,8 @@ static const char *NetDevRxQueueMgrSetRpsSrcCList[] = {
 "	return 0;",
 "}",
 };
-const StringList NetDevRxQueueMgr::SetRpsSrc(
-		C_LIST_ITERS(NetDevRxQueueMgrSetRpsSrcCList));
-
-void NetDevRxQueueMgr::applyIrq(int queue, CPUAffinity a)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR3(m_dev, queue, a);
-
-}
+const StringList NetDevRxQueueMgr::AffinitySetterSrc(
+		C_LIST_ITERS(NetDevRxQueueMgrAffinitySetterSrcCList));
 
 IntList NetDevRxQueueMgr::getRxQueueList()
 {
@@ -903,13 +1125,7 @@ void SystemCPUAffinityMgr::WatchDog::netDevAffinitySetter(
 		const string& dev = *dit;
 		NetDevRxQueueMgr& mgr = netdev_map[dev];
 		mgr.setDev(dev);
-		if (netdev_affinity.isDefault()) {
-			mgr.apply(-1, NetDevRxQueueCPUAffinity());
-		} else {
-			AffinityMap::const_iterator qit, qend = m.end();
-			for (qit = m.begin(); qit != qend; ++qit)
-				mgr.apply(qit->first, qit->second);
-		}
+		mgr.apply(m);
 	}
 
 	DEB_ALWAYS() << "Done!";
