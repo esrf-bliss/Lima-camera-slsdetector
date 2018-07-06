@@ -184,6 +184,7 @@ Receiver::Receiver(Camera *cam, int idx, int rx_port)
 
 	m_recv->registerCallBackStartAcquisition(fileStartCallback, this);
 	m_recv->registerCallBackRawDataReady(portCallback, this);
+	m_recv->setFrameEventPolicy(slsReceiverUsers::SkipMissingFrames);
 }
 
 Receiver::~Receiver()
