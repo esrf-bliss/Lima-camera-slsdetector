@@ -34,6 +34,34 @@ namespace lima
 namespace SlsDetector
 {
 
+class SystemCmd
+{
+	DEB_CLASS_NAMESPC(DebModCamera, "SystemCmd", "SlsDetector");
+ public:
+	SystemCmd(std::string cmd, std::string desc = "",
+		  bool try_sudo = true, bool can_hide_out = true);
+	SystemCmd(const SystemCmd& o);
+
+	static void setUseSudo(bool use_sudo);
+	static bool getUseSudo();
+
+	std::ostream& args()
+	{ return m_args; }
+
+	int execute();
+
+ private:
+	void checkSudo();
+
+	static bool UseSudo;
+
+	std::string m_cmd;
+	std::string m_desc;
+	bool m_try_sudo;
+	bool m_can_hide_out;
+	std::ostringstream m_args;
+};
+
 class CPUAffinity 
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "CPUAffinity", "SlsDetector");
@@ -41,10 +69,6 @@ class CPUAffinity
 	CPUAffinity(uint64_t m = 0) : m_mask(internalMask(m))
 	{}
 
-	static void setUseSudo(bool use_sudo);
-	static bool getUseSudo();
-
-	static void checkSudo(std::string cmd, std::string desc = "");
 	static int getNbSystemCPUs(bool max_nb = false);
 
 	static int getNbHexDigits(bool max_nb = false)
@@ -86,7 +110,6 @@ class CPUAffinity
 	bool applyWithNetDevSetter(const std::string& dev, 
 				   const std::string& queue) const;
 
-	static bool UseSudo;
 	static int findNbSystemCPUs();
 	static int findMaxNbSystemCPUs();
 	static std::string getNetDevSetterSudoDesc();

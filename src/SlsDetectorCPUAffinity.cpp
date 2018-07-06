@@ -40,34 +40,46 @@ using namespace std;
 using namespace lima;
 using namespace lima::SlsDetector;
 
-bool CPUAffinity::UseSudo = true;
+bool SystemCmd::UseSudo = true;
 
-void CPUAffinity::setUseSudo(bool use_sudo)
+SystemCmd::SystemCmd(string cmd, string desc, bool try_sudo, bool can_hide_out)
+	: m_cmd(cmd), m_desc(desc), m_try_sudo(try_sudo),
+	  m_can_hide_out(can_hide_out)
+{
+	DEB_CONSTRUCTOR();
+	DEB_PARAM() << DEB_VAR4(m_cmd, m_desc, m_try_sudo, m_can_hide_out);
+}
+
+SystemCmd::SystemCmd(const SystemCmd& o)
+	: m_cmd(o.m_cmd), m_desc(o.m_desc), m_try_sudo(o.m_try_sudo),
+	  m_can_hide_out(o.m_can_hide_out)
+{
+	DEB_CONSTRUCTOR();
+	DEB_PARAM() << DEB_VAR4(m_cmd, m_desc, m_try_sudo, m_can_hide_out);
+}
+
+void SystemCmd::setUseSudo(bool use_sudo)
 {
 	UseSudo = use_sudo;
 }
 
-bool CPUAffinity::getUseSudo()
+bool SystemCmd::getUseSudo()
 {
 	return UseSudo;
 }
 
-void CPUAffinity::checkSudo(string cmd, string desc)
+void SystemCmd::checkSudo()
 {
 	DEB_STATIC_FUNCT();
 
 	typedef map<string, bool> CacheMap;
 	static CacheMap cache_map;
-	CacheMap::iterator it = cache_map.find(cmd);
+	CacheMap::iterator it = cache_map.find(m_cmd);
 	if (it == cache_map.end()) {
-		ostringstream os;
-		os << "sudo -l " << cmd;
-		if (!DEB_CHECK_ANY(DebTypeTrace))
-			os << " > /dev/null 2>&1";
-		DEB_TRACE() << "executing: '" << os.str() << "'";
-		int ret = system(os.str().c_str());
-		bool ok = (ret == 0);
-		CacheMap::value_type entry(cmd, ok);
+		SystemCmd sudo("sudo", "", false);
+		sudo.args() << "-l " << m_cmd;
+		bool ok = (sudo.execute() == 0);
+		CacheMap::value_type entry(m_cmd, ok);
 		pair<CacheMap::iterator, bool> v = cache_map.insert(entry);
 		if (!v.second)
 			THROW_HW_ERROR(Error) << "Error inserting cache entry";
@@ -80,14 +92,34 @@ void CPUAffinity::checkSudo(string cmd, string desc)
 	if (getlogin_r(user, sizeof(user)) != 0)
 		THROW_HW_ERROR(Error) << "Cannot get user login name";
 
-	DEB_ERROR() << "The command '" << cmd << "' is not allowed for " << user
-		    << " in the sudoers database. ";
+	DEB_ERROR() << "The command '" << m_cmd << "' is not allowed for "
+		    << user << " in the sudoers database. ";
 	DEB_ERROR() << "Check sudoers(5) man page and restart this process";
-	if (!desc.empty())
-		DEB_ERROR() << desc;
+	if (!m_desc.empty())
+		DEB_ERROR() << m_desc;
 
-	THROW_HW_ERROR(Error) << "Cannot execute sudo " << cmd << "! "
+	THROW_HW_ERROR(Error) << "Cannot execute sudo " << m_cmd << "! "
 			      << "See output for details";
+}
+
+int SystemCmd::execute()
+{
+	DEB_MEMBER_FUNCT();
+	string args = m_args.str();
+	DEB_PARAM() << DEB_VAR4(m_cmd, args, m_try_sudo, m_can_hide_out);
+
+	ostringstream os;
+	if (m_try_sudo && getUseSudo()) {
+		checkSudo();
+		os << "sudo -n ";
+	}
+	os << m_cmd << " " << args;
+	if (!DEB_CHECK_ANY(DebTypeTrace) && m_can_hide_out)
+		os << " > /dev/null 2>&1";
+	DEB_TRACE() << "executing: '" << os.str() << "'";
+	int ret = system(os.str().c_str());
+	DEB_RETURN() << DEB_VAR1(ret);
+	return ret;
 }
 
 int CPUAffinity::findNbSystemCPUs()
@@ -183,27 +215,18 @@ void CPUAffinity::applyWithTaskset(pid_t task, bool incl_threads) const
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR3(*this, task, incl_threads);
 
-	ostringstream os;
 	uint64_t mask = *this;
-	if (UseSudo) {
-		checkSudo("taskset");
-		os << "sudo -n ";
-	}
+	SystemCmd taskset("taskset");
 	const char *all_tasks_opt = incl_threads ? "-a " : "";
-	os << "taskset " << all_tasks_opt << "-p " << *this << " " << task;
-	if (!DEB_CHECK_ANY(DebTypeTrace))
-		os << " > /dev/null 2>&1";
-	DEB_TRACE() << "executing: '" << os.str() << "'";
-	int ret = system(os.str().c_str());
-	if (ret != 0) {
+	taskset.args() << all_tasks_opt << "-p " << *this << " " << task;
+	if (taskset.execute() != 0) {
 		const char *th = incl_threads ? "and threads " : "";
 		THROW_HW_ERROR(Error) << "Error setting task " << task 
 				      << " " << th << "CPU affinity";
 	}
 }
 
-void CPUAffinity::applyWithSetAffinity(pid_t task, bool incl_threads)
-									const
+void CPUAffinity::applyWithSetAffinity(pid_t task, bool incl_threads) const
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR3(*this, task, incl_threads);
@@ -304,21 +327,11 @@ bool CPUAffinity::applyWithNetDevSetter(const string& dev,
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR2(dev, queue);
 
-	ostringstream os;
-	if (UseSudo) {
-		static string desc;
-		if (desc.empty())
-			desc = getNetDevSetterSudoDesc();
-		checkSudo(NetDevSetQueueRpsName, desc);
-		os << "sudo -n ";
-	}
-	os << NetDevSetQueueRpsName << " " << dev << " " << queue << " " 
-	   << hex << "0x" << m_mask.to_ulong();
-	if (!DEB_CHECK_ANY(DebTypeTrace) && false)
-		os << " > /dev/null 2>&1";
-	DEB_TRACE() << "executing: '" << os.str() << "'";
-	int ret = system(os.str().c_str());
-	bool setter_ok = (ret == 0);
+	static string desc = getNetDevSetterSudoDesc();
+	SystemCmd setter(NetDevSetQueueRpsName, desc);
+	setter.args() << dev << " " << queue << " "
+		      << hex << "0x" << m_mask.to_ulong();
+	bool setter_ok = (setter.execute() == 0);
 	DEB_RETURN() << DEB_VAR1(setter_ok);
 	return setter_ok;
 }

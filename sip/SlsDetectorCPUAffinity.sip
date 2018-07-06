@@ -125,15 +125,31 @@ namespace SlsDetector
 #include "SlsDetectorCamera.h"
 %End
 
-class CPUAffinity 
+class SystemCmd
 {
 public:
-	CPUAffinity(unsigned long m = 0);
+	SystemCmd(std::string cmd, std::string desc = "",
+		  bool try_sudo = true, bool can_hide_out = true);
+	SystemCmd(const SlsDetector::SystemCmd& o);
 
 	static void setUseSudo(bool use_sudo);
 	static bool getUseSudo();
 
-	static void checkSudo(std::string cmd, std::string desc = "");
+	void addArgs(std::string args);
+%MethodCode
+	Py_BEGIN_ALLOW_THREADS
+	sipCpp->args() << *a0;
+	Py_END_ALLOW_THREADS
+%End
+
+	int execute();
+};
+
+class CPUAffinity
+{
+public:
+	CPUAffinity(unsigned long m = 0);
+
 	static int getNbSystemCPUs(bool max_nb = false);
 	static int getNbHexDigits(bool max_nb = false);
 	static unsigned long allCPUs(bool max_nb = false);
