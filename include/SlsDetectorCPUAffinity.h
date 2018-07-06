@@ -86,8 +86,14 @@ class CPUAffinity
 	void applyToNetDev(std::string dev) const;
 	void applyToNetDevGroup(StringList dev_list) const;
 
-	operator uint64_t() const
+	uint64_t getMask() const
 	{ return m_mask.any() ? m_mask.to_ulong() : allCPUs(); }
+
+	uint64_t getZeroDefaultMask() const
+	{ return m_mask.to_ulong(); }
+
+	operator uint64_t() const
+	{ return getMask(); }
 
 	CPUAffinity& operator |=(const CPUAffinity& o);
 
@@ -124,7 +130,7 @@ inline
 bool operator ==(const CPUAffinity& a, const CPUAffinity& b)
 {
 	uint64_t mask = CPUAffinity::allCPUs();
-	return (uint64_t(a) & mask) == (uint64_t(b) & mask);
+	return (a.getMask() & mask) == (b.getMask() & mask);
 }
 
 inline
@@ -138,7 +144,7 @@ CPUAffinity operator |(const CPUAffinity& a, const CPUAffinity& b)
 {
 	if (a.isDefault() || b.isDefault())
 		return CPUAffinity();
-	return CPUAffinity(uint64_t(a) | uint64_t(b));
+	return CPUAffinity(a.getMask() | b.getMask());
 }
 
 inline

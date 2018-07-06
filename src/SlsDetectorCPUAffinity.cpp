@@ -187,7 +187,7 @@ std::string CPUAffinity::getTaskProcDir(pid_t task, bool is_thread)
 void CPUAffinity::initCPUSet(cpu_set_t& cpu_set) const
 {
 	CPU_ZERO(&cpu_set);
-	uint64_t mask = *this;
+	uint64_t mask = getMask();
 	for (unsigned int i = 0; i < sizeof(mask) * 8; ++i) {
 		if ((mask >> i) & 1)
 			CPU_SET(i, &cpu_set);
@@ -215,7 +215,7 @@ void CPUAffinity::applyWithTaskset(pid_t task, bool incl_threads) const
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR3(*this, task, incl_threads);
 
-	uint64_t mask = *this;
+	uint64_t mask = getMask();
 	SystemCmd taskset("taskset");
 	const char *all_tasks_opt = incl_threads ? "-a " : "";
 	taskset.args() << all_tasks_opt << "-p " << *this << " " << task;
@@ -309,7 +309,7 @@ bool CPUAffinity::applyWithNetDevFile(const string& fname) const
 	DEB_MEMBER_FUNCT();
 
 	ostringstream os;
-	os << hex << m_mask.to_ulong();
+	os << hex << getZeroDefaultMask();
 	DEB_TRACE() << "writing " << os.str() << " to " << fname;
 	ofstream rps_file(fname.c_str());
 	if (rps_file)
@@ -330,7 +330,7 @@ bool CPUAffinity::applyWithNetDevSetter(const string& dev,
 	static string desc = getNetDevSetterSudoDesc();
 	SystemCmd setter(NetDevSetQueueRpsName, desc);
 	setter.args() << dev << " " << queue << " "
-		      << hex << "0x" << m_mask.to_ulong();
+		      << hex << "0x" << getZeroDefaultMask();
 	bool setter_ok = (setter.execute() == 0);
 	DEB_RETURN() << DEB_VAR1(setter_ok);
 	return setter_ok;
@@ -442,7 +442,7 @@ void CPUAffinity::getNUMANodeMask(vector<unsigned long>& node_mask,
 
 	node_mask.assign(nb_items, 0);
 
-	uint64_t mask = *this;
+	uint64_t mask = getMask();
 	for (unsigned int i = 0; i < sizeof(mask) * 8; ++i) {
 		if ((mask >> i) & 1) {
 			unsigned int n = numa_node_of_cpu(i);
@@ -1135,8 +1135,7 @@ void GlobalCPUAffinityMgr::recvFinished()
 		m_lima_tids = SystemCPUAffinityMgr::getThreadList(filter,
 								m_curr.lima);
 		DEB_ALWAYS() << "Lima TIDs: " << PrettyIntList(m_lima_tids);
-		CPUAffinity lima_affinity = (uint64_t(m_curr.lima) | 
-					     uint64_t(m_curr.recv.all()));
+		CPUAffinity lima_affinity = m_curr.lima | m_curr.recv.all();
 		DEB_ALWAYS() << "Allowing Lima to run on Recv CPUs: " 
 			     << lima_affinity;
 		setLimaAffinity(lima_affinity);
@@ -1206,8 +1205,7 @@ void GlobalCPUAffinityMgr::cleanUp()
 ostream& lima::SlsDetector::operator <<(ostream& os, const CPUAffinity& a)
 {
 	return os << hex << "0x" << setw(CPUAffinity::getNbHexDigits())
-		  << setfill('0') << uint64_t(a) << dec << setw(0) 
-		  << setfill(' ');
+		  << setfill('0') << a.getMask() << dec << setfill(' ');
 }
 
 ostream&

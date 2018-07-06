@@ -161,6 +161,9 @@ public:
 			 bool use_taskset = true) const;
 	void applyToNetDev(std::string dev) const;
 
+	unsigned long getMask() const;
+	unsigned long getZeroDefaultMask() const;
+
 	operator unsigned long() const;
 
 	SlsDetector::CPUAffinity& operator |=(const SlsDetector::CPUAffinity& o);
