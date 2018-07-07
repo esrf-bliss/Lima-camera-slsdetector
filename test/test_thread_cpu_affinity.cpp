@@ -93,16 +93,19 @@ int main(int argc, char *argv[])
 
 	NetDevGroupCPUAffinityList netdev_aff_list;
 	NetDevGroupCPUAffinity netdev_aff;
+	NetDevRxQueueCPUAffinity queue_aff;
 
 	const char *netdev_group_0[] = {"eth0", "eth1", "eth2", "eth4",
 					"eth6", "eth7", "eth8", "eth9"};
 	netdev_aff.name_list = StringList(C_LIST_ITERS(netdev_group_0));
-	netdev_aff.processing = CPUAffinity(0x001);
+	queue_aff.processing = CPUAffinity(0x001);
+	netdev_aff.queue_affinity[-1] = queue_aff;
 	netdev_aff_list.push_back(netdev_aff);
 
 	const char *netdev_group_1[] = {"eth3", "eth5"};
 	netdev_aff.name_list = StringList(C_LIST_ITERS(netdev_group_1));
-	netdev_aff.processing = CPUAffinity(0x002);
+	queue_aff.processing = CPUAffinity(0x002);
+	netdev_aff.queue_affinity[-1] = queue_aff;
 	netdev_aff_list.push_back(netdev_aff);
 
 	CPUAffinity this_aff = 0x001;

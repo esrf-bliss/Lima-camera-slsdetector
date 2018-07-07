@@ -53,6 +53,36 @@ using namespace lima::SlsDetector;
 
 // namespace SlsDetector
 // {
+// typedef std::vector<RecvCPUAffinity> RecvCPUAffinityList;
+// };
+
+%MappedType SlsDetector::RecvCPUAffinityList
+{
+%TypeHeaderCode
+#include "SlsDetectorCPUAffinity.h"
+#include "sipAPIlimaslsdetector.h"
+#include "SlsDetectorSip.h"
+
+using namespace lima::SlsDetector;
+%End
+
+%ConvertToTypeCode
+	typedef SipSequence<RecvCPUAffinityList> Seq;
+	Seq seq(sipType_SlsDetector_RecvCPUAffinity);
+	return seq.convertToTypeCode(sipPy, sipCppPtr, sipIsErr,
+				     sipTransferObj);
+%End
+
+%ConvertFromTypeCode
+	typedef SipSequence<RecvCPUAffinityList> Seq;
+	Seq seq(sipType_SlsDetector_RecvCPUAffinity);
+	return seq.convertFromTypeCode(sipCpp);
+%End
+};
+
+
+// namespace SlsDetector
+// {
 // typedef std::vector<SlsDetector::NetDevGroupCPUAffinity>
 //					 NetDevGroupCPUAffinityList;
 // };
@@ -78,6 +108,36 @@ using namespace lima::SlsDetector;
 	typedef SipSequence<NetDevGroupCPUAffinityList> Seq;
 	Seq seq(sipType_SlsDetector_NetDevGroupCPUAffinity);
 	return seq.convertFromTypeCode(sipCpp);
+%End
+};
+
+
+// namespace SlsDetector
+// {
+// typedef std::map<int, NetDevRxQueueCPUAffinity> NetDevRxQueueAffinityMap;
+// };
+
+%MappedType SlsDetector::NetDevRxQueueAffinityMap
+{
+%TypeHeaderCode
+#include "SlsDetectorCPUAffinity.h"
+#include "sipAPIlimaslsdetector.h"
+#include "SlsDetectorSip.h"
+
+using namespace lima::SlsDetector;
+%End
+
+%ConvertToTypeCode
+	typedef SipMap<NetDevRxQueueAffinityMap> Map;
+	Map map(NULL, sipType_SlsDetector_NetDevRxQueueCPUAffinity);
+	return map.convertToTypeCode(sipPy, sipCppPtr, sipIsErr,
+				     sipTransferObj);
+%End
+
+%ConvertFromTypeCode
+	typedef SipMap<NetDevRxQueueAffinityMap> Map;
+	Map map(NULL, sipType_SlsDetector_NetDevRxQueueCPUAffinity);
+	return map.convertFromTypeCode(sipCpp);
 %End
 };
 
@@ -118,6 +178,7 @@ SipTypeIntImpl(PixelDepth);
 %End
 };
 
+
 namespace SlsDetector
 {
 
@@ -128,8 +189,7 @@ namespace SlsDetector
 class SystemCmd
 {
 public:
-	SystemCmd(std::string cmd, std::string desc = "",
-		  bool try_sudo = true, bool can_hide_out = true);
+	SystemCmd(std::string cmd, std::string desc = "", bool try_sudo = true);
 	SystemCmd(const SlsDetector::SystemCmd& o);
 
 	static void setUseSudo(bool use_sudo);
@@ -159,7 +219,6 @@ public:
 	//void initCPUSet(cpu_set_t& cpu_set) const;
 	void applyToTask(int task, bool incl_threads = true,
 			 bool use_taskset = true) const;
-	void applyToNetDev(std::string dev) const;
 
 	unsigned long getMask() const;
 	unsigned long getZeroDefaultMask() const;
@@ -179,9 +238,34 @@ public:
 
 // typedef std::vector<CPUAffinity> CPUAffinityList;
 
+struct NetDevRxQueueCPUAffinity {
+	SlsDetector::CPUAffinity irq;
+	SlsDetector::CPUAffinity processing;
+
+	bool isDefault() const;
+	SlsDetector::CPUAffinity all() const;
+};
+
+// typedef std::map<int, NetDevRxQueueCPUAffinity> NetDevRxQueueAffinityMap;
+
+class NetDevRxQueueMgr
+{
+ public:
+	NetDevRxQueueMgr(std::string dev = "");
+	void setDev(std::string dev);
+
+	void apply(int queue,
+		   const SlsDetector::NetDevRxQueueCPUAffinity& queue_affinity);
+
+	std::vector<int> getRxQueueList();
+};
+
 struct NetDevGroupCPUAffinity {
 	std::vector<std::string> name_list;
-	SlsDetector::CPUAffinity processing;
+	SlsDetector::NetDevRxQueueAffinityMap queue_affinity;
+
+	bool isDefault() const;
+	SlsDetector::CPUAffinity all() const;
 };
 
 // typedef std::vector<SlsDetector::NetDevGroupCPUAffinity> 
@@ -222,11 +306,14 @@ struct RecvCPUAffinity {
 	// RecvCPUAffinity& operator =(CPUAffinity a);
 };
 
+// typedef std::vector<RecvCPUAffinity> RecvCPUAffinityList;
+
 struct GlobalCPUAffinity {
-	SlsDetector::RecvCPUAffinity recv;
+	SlsDetector::RecvCPUAffinityList recv;
 	SlsDetector::CPUAffinity lima;
 	SlsDetector::CPUAffinity other;
 	SlsDetector::NetDevGroupCPUAffinityList netdev;
+	SlsDetector::CPUAffinity all() const;
 };
 
 // typedef std::map<SlsDetector::PixelDepth, SlsDetector::GlobalCPUAffinity> 

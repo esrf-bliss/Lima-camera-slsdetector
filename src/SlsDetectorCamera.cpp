@@ -619,69 +619,21 @@ void Camera::updateCPUAffinity(bool recv_restarted)
 	m_global_cpu_affinity_mgr.applyAndSet(global_affinity);
 }
 
-void Camera::setRecvCPUAffinity(const RecvCPUAffinity& recv_affinity)
+void Camera::setRecvCPUAffinity(const RecvCPUAffinityList& recv_affinity_list)
 {
 	DEB_MEMBER_FUNCT();
+	unsigned int nb_recv = m_recv_list.size();
+	unsigned int nb_aff = recv_affinity_list.size();
+	DEB_PARAM() << DEB_VAR2(nb_recv, nb_aff);
+	if (nb_aff != nb_recv)
+		THROW_HW_ERROR(InvalidValue) << "invalid affinity list size: "
+					     <<  DEB_VAR2(nb_recv, nb_aff);
 
-	CPUAffinityList::const_iterator lit = recv_affinity.listeners.begin();
-	CPUAffinityList::const_iterator wit = recv_affinity.writers.begin();
+	RecvCPUAffinityList::const_iterator ait = recv_affinity_list.begin();
 	RecvList::iterator it, end = m_recv_list.end();
-	for (it = m_recv_list.begin(); it != end; ++it) {
+	for (it = m_recv_list.begin(); it != end; ++it, ++ait) {
 		Receiver *recv = *it;
-		slsReceiverUsers::CPUMaskList list_cpu_mask;
-		slsReceiverUsers::CPUMaskList writ_cpu_mask;
-		slsReceiverUsers::NodeMaskList fifo_node_mask;
-		int max_node;
-		string deb_head;
-		if (DEB_CHECK_ANY(DebTypeTrace) ||
-		    DEB_CHECK_ANY(DebTypeWarning)) {
-			ostringstream os;
-			os << "setting recv " << recv->m_idx << " ";
-			deb_head = os.str();
-		}
-		for (int i = 0; i < m_recv_nb_ports; ++i, ++lit, ++wit) {
-			cpu_set_t cpu_set;
-			const CPUAffinity& listener = *lit;
-			DEB_TRACE() << deb_head << "listener " << i << " "
-				    << "CPU mask to " << listener;
-			listener.initCPUSet(cpu_set);
-			list_cpu_mask.push_back(cpu_set);
-
-			const CPUAffinity& writer = *wit;
-			DEB_TRACE() << deb_head << "writer " << i  << " "
-				    << "CPU mask to " << writer;
-			writer.initCPUSet(cpu_set);
-			writ_cpu_mask.push_back(cpu_set);
-
-			CPUAffinity both = listener | writer;
-			vector<unsigned long> mlist;
-			both.getNUMANodeMask(mlist, max_node);
-			if (mlist.size() != 1)
-				THROW_HW_ERROR(Error) << DEB_VAR1(mlist.size());
-			unsigned long& nmask = mlist[0];
-			DEB_TRACE() << deb_head << "Fifo " << i  << " "
-				    << "NUMA node mask mask to "
-				    << DEB_HEX(nmask);
-			int c = bitset<64>(nmask).count();
-			if (c != 1)
-				DEB_WARNING() << deb_head << "Fifo " << i << " "
-					      << "NUMA node mask has "
-					      << c << " nodes";
-			fifo_node_mask.push_back(nmask);
-		}
-		slsReceiverUsers *recv_users = recv->m_recv;
-		recv_users->setThreadCPUAffinity(list_cpu_mask, writ_cpu_mask);
-
-		recv_users->setFifoNodeAffinity(fifo_node_mask, max_node);
-	}
-
-	CPUAffinityList::const_iterator tit;
-	tit = recv_affinity.port_threads.begin();
-	RecvPortList port_list = getRecvPortList();
-	RecvPortList::iterator pit, pend = port_list.end();
-	for (pit = port_list.begin(); pit != pend; ++pit, ++tit) {
-		pid_t tid = (*pit)->getThreadID();
-		(*tit).applyToTask(tid, false);
+		recv->setCPUAffinity(*ait);
 	}
 }
 

@@ -214,6 +214,166 @@ void Receiver::setNbPorts(int nb_ports)
 	}
 }
 
+void Receiver::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
+{
+	DEB_MEMBER_FUNCT();
+
+	enum ThreadType {
+		Listener, Writer, PortThread, NbThreadTypes,
+	};
+
+	class AffinityListHelper
+	{
+	public:
+		AffinityListHelper(const CPUAffinityList& aff_list,
+				   int nb_ports, ThreadType type,
+				   int recv_idx, DebObj *deb_ptr)
+			: m_aff_list(aff_list), m_nb_ports(nb_ports),
+			  m_type(type), m_recv_idx(recv_idx), m_deb_ptr(deb_ptr)
+		{
+			DEB_FROM_PTR(m_deb_ptr);
+			unsigned int nb_aff = m_aff_list.size();
+			if (!defaultAffinity() && !singleAffinity() &&
+			    (nb_aff != m_nb_ports))
+				THROW_HW_ERROR(InvalidValue) <<
+					DEB_VAR2(nb_aff, m_nb_ports);
+		}
+
+		bool defaultAffinity() const
+		{ return m_aff_list.empty(); }
+		bool singleAffinity() const
+		{ return (m_aff_list.size() == 1); }
+
+		ConstStr typeDesc() const
+		{
+			switch (m_type) {
+			case Listener: return "listener";
+			case Writer: return "writer";
+			case PortThread: return "port-thread";
+			}
+		}
+
+		string getDebHead() const
+		{
+			DEB_FROM_PTR(m_deb_ptr);
+			string deb_head;
+			if (DEB_CHECK_ANY(DebTypeTrace)) {
+				ostringstream os;
+				os << "setting recv " << m_recv_idx << " "
+				   << typeDesc() << " ";
+				deb_head = os.str();
+			}
+			return deb_head;
+		}
+
+		CPUAffinityList getThreadAffinityList() const
+		{
+			DEB_FROM_PTR(m_deb_ptr);
+			CPUAffinityList list;
+			if (defaultAffinity())
+				list = CPUAffinityList(m_nb_ports);
+			else if (singleAffinity() && (m_nb_ports > 1))
+				list = CPUAffinityList(m_nb_ports, 
+						       m_aff_list[0]);
+			else
+				list = m_aff_list;
+
+			string deb_head = getDebHead();
+			CPUAffinityList::const_iterator it = list.begin();
+			for (int i = 0; i < m_nb_ports; ++i, ++it)
+				DEB_TRACE() << deb_head << i << " "
+					    << "CPU mask to " << *it;
+
+			return list;
+		}
+
+		slsReceiverUsers::CPUMaskList getCPUMaskList() const
+		{
+			CPUAffinityList list = getThreadAffinityList();
+			slsReceiverUsers::CPUMaskList cpu_mask_list;
+			CPUAffinityList::const_iterator it = list.begin();
+			for (int i = 0; i < m_nb_ports; ++i, ++it) {
+				cpu_set_t cpu_set;
+				it->initCPUSet(cpu_set);
+				cpu_mask_list.push_back(cpu_set);
+			}
+			return cpu_mask_list;
+		}
+
+	private:
+		const CPUAffinityList& m_aff_list;
+		int m_nb_ports;
+		ThreadType m_type;
+		int m_recv_idx;
+		DebObj *m_deb_ptr;
+	};
+
+	int nb_ports = m_port_list.size();
+
+#define CreateHelper(n, a, t) \
+	AffinityListHelper n(a, nb_ports, t, m_idx, DEB_PTR());
+
+	CreateHelper(lh, recv_affinity.listeners, Listener);
+	CreateHelper(wh, recv_affinity.writers, Writer);
+	CreateHelper(pth, recv_affinity.port_threads, PortThread);
+
+#undef CreateHelper
+
+	slsReceiverUsers::CPUMaskList list_cpu_mask = lh.getCPUMaskList();
+	slsReceiverUsers::CPUMaskList writ_cpu_mask = wh.getCPUMaskList();
+	m_recv->setThreadCPUAffinity(list_cpu_mask, writ_cpu_mask);
+
+	slsReceiverUsers::NodeMaskList fifo_node_mask;
+	int max_node;
+	getNodeMaskList(recv_affinity.listeners, recv_affinity.writers,
+			fifo_node_mask, max_node);
+	m_recv->setFifoNodeAffinity(fifo_node_mask, max_node);
+
+	CPUAffinityList port_thread_aff_list = pth.getThreadAffinityList();
+	CPUAffinityList::const_iterator tit = port_thread_aff_list.begin();
+	PortList::iterator pit, pend = m_port_list.end();
+	for (pit = m_port_list.begin(); pit != pend; ++pit, ++tit) {
+		pid_t tid = (*pit)->getThreadID();
+		(*tit).applyToTask(tid, false);
+	}
+}
+
+void Receiver::getNodeMaskList(const CPUAffinityList& listener,
+			       const CPUAffinityList& writer,
+			       slsReceiverUsers::NodeMaskList& fifo_node_mask,
+			       int& max_node)
+{
+	DEB_MEMBER_FUNCT();
+
+	fifo_node_mask.clear();
+
+	string deb_head;
+	if (DEB_CHECK_ANY(DebTypeTrace) || DEB_CHECK_ANY(DebTypeWarning)) {
+		ostringstream os;
+		os << "setting recv " << m_idx << " ";
+		deb_head = os.str();
+	}
+
+	CPUAffinityList::const_iterator lit = listener.begin();
+	CPUAffinityList::const_iterator wit = writer.begin();
+	int nb_ports = m_port_list.size();
+	for (int i = 0; i < nb_ports; ++i, ++lit, ++wit) {
+		CPUAffinity both = *lit | *wit;
+		vector<unsigned long> mlist;
+		both.getNUMANodeMask(mlist, max_node);
+		if (mlist.size() != 1)
+			THROW_HW_ERROR(Error) << DEB_VAR1(mlist.size());
+		unsigned long& nmask = mlist[0];
+		DEB_TRACE() << deb_head << "Fifo " << i << " "
+			    << "NUMA node mask mask to " << DEB_HEX(nmask);
+		int c = bitset<64>(nmask).count();
+		if (c != 1)
+			DEB_WARNING() << deb_head << "Fifo " << i << " "
+				      << "NUMA node mask has " << c << " nodes";
+		fifo_node_mask.push_back(nmask);
+	}
+}
+
 void Receiver::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();

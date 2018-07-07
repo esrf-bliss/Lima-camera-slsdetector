@@ -228,7 +228,7 @@ private:
 	void updateImageSize();
 	void updateTimeRanges();
 	void updateCPUAffinity(bool recv_restarted);
-	void setRecvCPUAffinity(const RecvCPUAffinity& recv_affinity);
+	void setRecvCPUAffinity(const RecvCPUAffinityList& recv_affinity_list);
 
 	static int64_t NSec(double x)
 	{ return int64_t(x * 1e9); }

@@ -38,8 +38,7 @@ class SystemCmd
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "SystemCmd", "SlsDetector");
  public:
-	SystemCmd(std::string cmd, std::string desc = "",
-		  bool try_sudo = true, bool can_hide_out = true);
+	SystemCmd(std::string cmd, std::string desc = "", bool try_sudo = true);
 	SystemCmd(const SystemCmd& o);
 
 	static void setUseSudo(bool use_sudo);
@@ -48,18 +47,27 @@ class SystemCmd
 	std::ostream& args()
 	{ return m_args; }
 
+	void setPipes(Pipe *stdin, Pipe *stdout, Pipe *stderr);
+
 	int execute();
 
  private:
 	void checkSudo();
+
+	void preparePipes();
+	void restorePipes();
+	bool sameOutErr()
+	{ return (m_stderr == m_stdout); }
 
 	static bool UseSudo;
 
 	std::string m_cmd;
 	std::string m_desc;
 	bool m_try_sudo;
-	bool m_can_hide_out;
 	std::ostringstream m_args;
+	Pipe *m_stdin;
+	Pipe *m_stdout;
+	Pipe *m_stderr;
 };
 
 class CPUAffinity 
@@ -83,8 +91,6 @@ class CPUAffinity
 	void initCPUSet(cpu_set_t& cpu_set) const;
 	void applyToTask(pid_t task, bool incl_threads = true,
 			 bool use_taskset = true) const;
-	void applyToNetDev(std::string dev) const;
-	void applyToNetDevGroup(StringList dev_list) const;
 
 	uint64_t getMask() const
 	{ return m_mask.any() ? m_mask.to_ulong() : allCPUs(); }
@@ -112,16 +118,9 @@ class CPUAffinity
 
 	void applyWithTaskset(pid_t task, bool incl_threads) const;
 	void applyWithSetAffinity(pid_t task, bool incl_threads) const;
-	bool applyWithNetDevFile(const std::string& fname) const;
-	bool applyWithNetDevSetter(const std::string& dev, 
-				   const std::string& queue) const;
 
 	static int findNbSystemCPUs();
 	static int findMaxNbSystemCPUs();
-	static std::string getNetDevSetterSudoDesc();
-
-	static const std::string NetDevSetQueueRpsName;
-	static const StringList NetDevSetQueueRpsSrc;
 
 	std::bitset<64> m_mask;
 };
@@ -155,21 +154,103 @@ CPUAffinity& CPUAffinity::operator |=(const CPUAffinity& o)
 
 typedef std::vector<CPUAffinity> CPUAffinityList;
 
+inline CPUAffinity CPUAffinityList_all(const CPUAffinityList& l)
+{
+	CPUAffinity all;
+	if (l.size() > 0) {
+		CPUAffinityList::const_iterator it, end = l.end();
+		for (all = *(it = l.begin())++; it != end; ++it)
+			all |= *it;
+	}
+	return all;
+}
+
+struct NetDevRxQueueCPUAffinity {
+	CPUAffinity irq;
+	CPUAffinity processing;
+
+	bool isDefault() const
+	{ return irq.isDefault() && processing.isDefault(); }
+	CPUAffinity all() const
+	{ return irq | processing; }
+};
+
+inline
+bool operator ==(const NetDevRxQueueCPUAffinity& a,
+		 const NetDevRxQueueCPUAffinity& b)
+{
+	return ((a.irq == b.irq) && (a.processing == b.processing));
+}
+
+typedef std::map<int, NetDevRxQueueCPUAffinity> NetDevRxQueueAffinityMap;
+
+class NetDevRxQueueMgr
+{
+	DEB_CLASS_NAMESPC(DebModCamera, "NetDevRxQueueMgr", "SlsDetector");
+ public:
+	NetDevRxQueueMgr(std::string dev = "");
+	void setDev(std::string dev);
+
+	void apply(int queue, const NetDevRxQueueCPUAffinity& queue_affinity);
+
+	IntList getRxQueueList();
+
+ private:
+	void checkDev();
+
+	void applyProcessing(int queue, CPUAffinity a);
+	bool applyProcessingWithFile(const std::string& fname, CPUAffinity a);
+	bool applyProcessingWithSetter(const std::string& queue, CPUAffinity a);
+
+	void applyIrq(int queue, CPUAffinity a);
+
+	static std::string getSetterSudoDesc();
+
+	std::string m_dev;
+
+	static const std::string SetRpsName;
+	static const StringList SetRpsSrc;
+};
 
 struct NetDevGroupCPUAffinity {
 	StringList name_list;
-	CPUAffinity processing;
+	NetDevRxQueueAffinityMap queue_affinity;
+
+	bool isDefault() const;
+	CPUAffinity all() const;
 };
 
-inline 
-bool operator ==(const NetDevGroupCPUAffinity& a, 
-		 const NetDevGroupCPUAffinity& b)
+inline bool NetDevGroupCPUAffinity::isDefault() const
 {
-	return ((a.name_list == b.name_list) && (a.processing == b.processing));
+	if (queue_affinity.empty())
+		return true;
+	else if (queue_affinity.size() != 1)
+		return false;
+	NetDevRxQueueAffinityMap::const_iterator it = queue_affinity.begin();
+	return (it->first == -1) && (it->second.isDefault());
+}
+
+inline CPUAffinity NetDevGroupCPUAffinity::all() const
+{
+	if (isDefault())
+		return CPUAffinity();
+	CPUAffinityList all_queues;
+	NetDevRxQueueAffinityMap::const_iterator it, end = queue_affinity.end();
+	for (it = queue_affinity.begin(); it != end; ++it)
+		all_queues.push_back(it->second.all());
+	return CPUAffinityList_all(all_queues);
 }
 
 inline 
-bool operator !=(const NetDevGroupCPUAffinity& a, 
+bool operator ==(const NetDevGroupCPUAffinity& a,
+		 const NetDevGroupCPUAffinity& b)
+{
+	return ((a.name_list == b.name_list) &&
+		(a.queue_affinity == b.queue_affinity));
+}
+
+inline 
+bool operator !=(const NetDevGroupCPUAffinity& a,
 		 const NetDevGroupCPUAffinity& b)
 {
 	return !(a == b);
@@ -216,28 +297,53 @@ class SystemCPUAffinityMgr
 			Init, SetProcAffinity, SetNetDevAffinity, CleanUp, Ok,
 		};
 
+		enum {
+			StringLen=128,
+			AffinityMapLen=128,
+		};
 		typedef uint64_t Arg;
+		typedef char String[StringLen];
 
 		struct Packet {
-			typedef char String[128];
-
 			Cmd cmd;
-			Arg arg;
-			String str;
+			union Union {
+				uint64_t proc_affinity;
+				struct NetDevAffinity {
+					String name_list;
+					unsigned int queue_affinity_len;
+					struct QueueAffinity {
+						int queue;
+						uint64_t irq;
+						uint64_t processing;
+					} queue_affinity[AffinityMapLen];
+				} netdev_affinity;
+			} u;
+
+			Packet(Cmd c=Init) : cmd(c)
+			{ memset(&u, 0, sizeof(u)); }
 		};
-			
+		typedef NetDevRxQueueAffinityMap NetDevAffinityMap;
+		typedef Packet::Union::NetDevAffinity PacketNetDevAffinity;
+		typedef PacketNetDevAffinity::QueueAffinity
+						PacketNetDevQueueAffinity;
+
+		typedef std::map<std::string, NetDevRxQueueMgr> NetDevMgrMap;
+
 		static void sigTermHandler(int signo);
 		static std::string concatStringList(StringList list);
 		static StringList splitStringList(std::string str);
 
 		void childFunction();
 		void procAffinitySetter(CPUAffinity cpu_affinity);
+
+		NetDevGroupCPUAffinity netDevAffinityEncode(
+							const Packet& packet);
 		void netDevAffinitySetter(
-				  NetDevGroupCPUAffinity netdev_affinity);
+				const NetDevGroupCPUAffinity& netdev_affinity);
 
 		ProcList getOtherProcList(CPUAffinity cpu_affinity);
 
-		void sendChildCmd(Cmd cmd, Arg arg = 0, std::string str = "");
+		void sendChildCmd(const Packet& packet);
 		Packet readParentCmd();
 		void ackParentCmd();
 
@@ -246,7 +352,7 @@ class SystemCPUAffinityMgr
 		pid_t m_lima_pid;
 		pid_t m_child_pid;
 		CPUAffinity m_other;
-		StringList m_netdev_list;
+		NetDevMgrMap m_netdev_mgr_map;
 	};
 
 	void checkWatchDogStart();
@@ -267,6 +373,13 @@ struct RecvCPUAffinity {
 	RecvCPUAffinity& operator =(CPUAffinity a);
 };
 
+inline CPUAffinity RecvCPUAffinity::all() const
+{
+	return (CPUAffinityList_all(listeners) | CPUAffinityList_all(writers) |
+		CPUAffinityList_all(port_threads));
+}
+
+
 inline 
 bool operator ==(const RecvCPUAffinity& a, const RecvCPUAffinity& b)
 {
@@ -279,13 +392,16 @@ bool operator !=(const RecvCPUAffinity& a, const RecvCPUAffinity& b)
 	return !(a == b);
 }
 
+typedef std::vector<RecvCPUAffinity> RecvCPUAffinityList;
 
 struct GlobalCPUAffinity {
-	RecvCPUAffinity recv;
+	RecvCPUAffinityList recv;
 	CPUAffinity lima;
 	CPUAffinity other;
 	NetDevGroupCPUAffinityList netdev;
+
 	CPUAffinity all() const;
+	void updateRecvAffinity(CPUAffinity a);
 };
 
 typedef std::map<PixelDepth, GlobalCPUAffinity> PixelDepthCPUAffinityMap;
@@ -369,7 +485,7 @@ class GlobalCPUAffinityMgr
 	};
 
 	void setLimaAffinity(CPUAffinity lima_affinity);
-	void setRecvAffinity(const RecvCPUAffinity& recv_affinity);
+	void setRecvAffinity(const RecvCPUAffinityList& recv_affinity_list);
 
 	AutoMutex lock()
 	{ return AutoMutex(m_cond.mutex()); }
@@ -386,8 +502,11 @@ class GlobalCPUAffinityMgr
 };
 
 std::ostream& operator <<(std::ostream& os, const CPUAffinity& a);
-std::ostream& operator <<(std::ostream& os, const CPUAffinityList& a);
+std::ostream& operator <<(std::ostream& os, const CPUAffinityList& l);
+std::ostream& operator <<(std::ostream& os, const NetDevRxQueueCPUAffinity& a);
+std::ostream& operator <<(std::ostream& os, const NetDevGroupCPUAffinity& a);
 std::ostream& operator <<(std::ostream& os, const RecvCPUAffinity& a);
+std::ostream& operator <<(std::ostream& os, const RecvCPUAffinityList& l);
 std::ostream& operator <<(std::ostream& os, const GlobalCPUAffinity& a);
 std::ostream& operator <<(std::ostream& os, const PixelDepthCPUAffinityMap& m);
 
