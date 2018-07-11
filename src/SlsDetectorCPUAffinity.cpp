@@ -33,6 +33,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <sys/types.h>
+#include <pwd.h>
 #include <numa.h>
 #include <iomanip>
 
@@ -89,9 +90,18 @@ void SystemCmd::checkSudo()
 	if (it->second)
 		return;
 
-	char user[128];
-	if (getlogin_r(user, sizeof(user)) != 0)
-		THROW_HW_ERROR(Error) << "Cannot get user login name";
+	const char *user = "Unknown";
+	uid_t uid = getuid();
+	DEB_TRACE() << DEB_VAR1(uid);
+	struct passwd pw, *res;
+	char buffer[4 * 1024];
+	int ret = getpwuid_r(uid, &pw, buffer, sizeof(buffer), &res);
+	if (ret != 0)
+		DEB_WARNING() << "getpwuid_r failed: " << strerror(errno);
+	else if (res == NULL)
+		DEB_WARNING() << "could not get passwd entry for uid=" << uid;
+	else
+		user = pw.pw_name;
 
 	DEB_ERROR() << "The command '" << m_cmd << "' is not allowed for "
 		    << user << " in the sudoers database. ";
