@@ -533,12 +533,13 @@ void NetDevRxQueueMgr::setDev(string dev)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(dev);
-	if (m_dev.empty())
+	if (m_dev.empty()) {
 		m_dev = dev;
-	else if (dev != m_dev)
+		m_irq_mgr.setDev(dev);
+	} else if (dev != m_dev) {
 		THROW_HW_ERROR(InvalidValue) << "name mismatch: "
 					     << DEB_VAR2(dev, m_dev);
-	m_irq_mgr.setDev(dev);
+	}
 }
 
 void NetDevRxQueueMgr::checkDev()
