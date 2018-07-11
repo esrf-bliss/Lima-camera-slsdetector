@@ -15,7 +15,7 @@ Disable CPU power management
 In the 'Advanced -> CPU Configuration' menu
 
 +-----------------+---------+
-| Hyper-Threading | Disable |
+| Hyper-Threading | Enable  |
 +-----------------+---------+
 
 In the 'Advanced -> CPU Configuration -> CPU Power Management
@@ -368,36 +368,6 @@ Tune the OS network buffer sizes:
 
     # Size of per-device buffer (in packets) before Linux kernel dispatching
     net.core.netdev_max_backlog = 262144
-
-Linux *maxcpus* option
-~~~~~~~~~~~~~~~~~~~~~~
-
-The *Supermicro* BIOS does not always acknowledge the *Disable Hyper-Threading* option,
-so after some reboot conditions the Hyper-Threading is activated and Linux sees twice the
-number of CPUs. The only way to control this is to limit the number of CPUs used by 
-Linux in the kernel command line.
-
-Edit the */etc/default/grub* file and add *maxcpus=12* to the *GRUB_CMDLINE_LINUX_DEFAULT*
-variable and force the update *GRUB* configuration file:
-
-::
-
-    # as root
-    lid10eiger1:~ # cat /etc/default/grub
-    # If you change this file, run 'update-grub' afterwards to update
-    # /boot/grub/grub.cfg.
-    # For full documentation of the options in this file, see:
-    #   info -f grub -n 'Simple configuration'
-
-    GRUB_DEFAULT=0
-    GRUB_TIMEOUT=5
-    GRUB_DISTRIBUTOR=`lsb_release -i -s 2> /dev/null || echo Debian`
-    GRUB_CMDLINE_LINUX_DEFAULT="ipv6.disable=1 quiet maxcpus=12"
-    GRUB_CMDLINE_LINUX=""
-    ...    
-
-    lid10eiger1:~ # update-grub
-    ...
 
 *cmake*
 ~~~~~~~
@@ -1440,7 +1410,9 @@ Add LimaCCDs and SlsDetector class devices.
 +----------------------------------------------------------+-------------------------------------------+
 | id10/limaccds/eiger500k->LimaCameraType                  | SlsDetector                               |
 +----------------------------------------------------------+-------------------------------------------+
-| id10/limaccds/eiger500k->NbProcessingThread              | 11                                        |
+| id10/limaccds/eiger500k->NbProcessingThread              | 23                                        |
++----------------------------------------------------------+-------------------------------------------+
+| id10/limaccds/eiger500k->BufferMaxMemory                 | 40                                        |
 +----------------------------------------------------------+-------------------------------------------+
 | LimaCCDs/eiger500k/DEVICE/SlsDetector                    | id10/slsdetector/eiger500k                |
 +----------------------------------------------------------+-------------------------------------------+
@@ -1448,12 +1420,17 @@ Add LimaCCDs and SlsDetector class devices.
 |                                                          | beb-021-020-direct-FO-10g.config          |
 +----------------------------------------------------------+-------------------------------------------+
 | id10/slsdetector/eiger500k->netdev_groups                | | eth0,eth1,eth2,eth4,eth6,eth7,eth8,eth9 |
-|                                                          | | eth3,eth5                               |
+|                                                          | | eth3                                    |
+|                                                          | | eth5                                    |
 +----------------------------------------------------------+-------------------------------------------+
-| id10/slsdetector/eiger500k->pixel_depth_cpu_affinity_map | | 4,0xf00,0xfc,0x2,0x1,0x1,0x2            |
-|                                                          | | 8,0xf00,0xfc,0x2,0x1,0x1,0x2            |
-|                                                          | | 16,0xfff,0xfff,0xfff,0xfff,0xfff,0xfff  |
-|                                                          | | 32,0xfff,0xfff,0xfff,0xfff,0xfff,0xfff  |
+| id10/slsdetector/eiger500k->pixel_depth_cpu_affinity_map | |  4,0x0006c0,0x6c0000,0x03f03e,0x000001, |
+|                                                          |      0x000001,0x100100,0x800800           |
+|                                                          | |  8,0x0006c0,0x6c0000,0x03f03e,0x000001, |
+|                                                          |      0x000001,0x100100,0x800800           |
+|                                                          | | 16,0xffffff,0xffffff,0xffffff,0xffffff, |
+|                                                          |      0xffffff,0xffffff,0xffffff           |
+|                                                          | | 32,0xffffff,0xffffff,0xffffff,0xffffff, |
+|                                                          |      0xffffff,0xffffff,0xffffff           |
 +----------------------------------------------------------+-------------------------------------------+
 
 .. note:: in order to perform high frame rate acquisitions, the CPU affinity must be fixed for 
@@ -1467,158 +1444,36 @@ Add LimaCCDs and SlsDetector class devices.
    * Net-dev group #1 packet dispatching
    * ...
 
-   The previous example is based on a dual 6-core CPUs backend (12 cores). After the data acquisition finishes
-   the Lima processing threads will run also on the CPUs assigned to listeners and writers (0xffe), that is
-   11 cores in total, which is used for setting the NbProcessingThreads. Please note that there are two network
-   groups and four pixel_depth->cpu_affinity settings (4-, 8-, 16- and 32-bit), each one represented by a line
-   in a multi-line string array.
+   The previous example is based on a dual 6-core CPUs backend with *Hyper-Threading Technology* (12 cores, 
+   24 threads). After the data acquisition finishes the Lima processing threads will run also on the CPUs
+   assigned to listeners and writers (0xfffffe), that is 23 cores in total, which is used for setting the
+   NbProcessingThreads. Please note that there are three network groups and four pixel_depth->cpu_affinity
+   settings (4-, 8-, 16- and 32-bit), each one represented by a line in a multi-line string array.
 
-.. important:: The Intel 10 Gigabit Ethernet Server Adapter has multiple hardware FIFOs per port, called
+.. note:: The Intel 10 Gigabit Ethernet Server Adapter has multiple hardware FIFOs per port, called
    queues in the OS terminology. The hardware uses a hash algorithm to dispatch packets into the active
-   queues, which includes the source IP address. Each FIFO has an associated IRQ, so the Intel ixgbe
-   driver activates the Receive-Side Scaling (RSS) mechanism by distributing the queues IRQ Service 
+   queues, which includes the source IP address. Each FIFO has an associated IRQ, so the *irqbalance* service
+   activates the Receive-Side Scaling (RSS) mechanism by distributing the queues IRQ Service 
    Routine (ISR) CPU affinity on different cores.
    
    The destination FIFO in the Intel adapter depends on the Eiger 10 Gigabit Ethernet data interface IP,
-   and thus the CPU where the corresponding ISR will run. The above configuration of the Lima plugin sets the
+   and thus the CPU where the corresponding ISR will run. ISRs have higher priority than packet dispatch
+   tasks. If the queue IRQs are serviced by the same CPU that does the packet dispatching, the latter is
+   affected when the frame rate is important. Care must be taken to avoid this kind of CPU conflict by 
+   having a deterministic CPU task distribution. With this aim, the Lima plugin sets not only the
    (network stack dispatching) Receive Packet Steering (RPS) CPU Affinity for both data interfaces eth3/eth5
-   (netdev_group CPU affinity). ISRs have higher priority than packet dispatch tasks. If the queue IRQs are
-   serviced by the same CPU that does the packet dispatching, the latter is affected when the frame rate is
-   important. So care must be taken to avoid this kind of CPU conflict.
+   but also their effective hardware FIFO ISR CPU Affinity (netdev_group CPU affinity).
    
-   The *ethtool -S* command shows the statistics of a network device, including the bytes/packets received
-   per FIFO. The files:
+   Lima uses the *ethtool -S* command, which shows the statistics of a network device, including the
+   bytes/packets received per FIFO, in order to determine the active FIFOs. Then it uses the files:
    
    * */proc/interrupts*
    * */sys/class/net/<netdev>/device/msi_irqs/<irq>*
    * */proc/irq/<irq>/smp_affinity_list*
    
-   can be used to find out the CPU affinity of the network FIFO IRQs. Let's see the following Eiger
-   configuration file example:
-   
-   ::
-   
-       (bliss) lid10eiger1:~ % grep detectorip ${EIGER_CONFIG}
-       0:detectorip 192.168.12.20
-       1:detectorip 192.168.14.21
-       
-   The Intel FIFOs and their IRQ affinities can be inspected:
-   
-   ::
-   
-       # as root      
-       lid10eiger1:~ # for i in eth3 eth5; do \
-           echo; \
-           echo '**' ${i} '**'; \
-           ethtool -S ${i} | grep rx_queue | grep -Ev ': 0$'; \
-           (cd /sys/class/net/${i}/device/msi_irqs && ls) | \
-               while read irq; do \
-                   echo "$(grep "^ *${irq}" /proc/interrupts)" - \
-                        Affinity: $(cat /proc/irq/${irq}/smp_affinity_list); \
-               done; \
-       done
-   
-       ** eth3 **
-            rx_queue_9_packets: 3388477
-            rx_queue_9_bytes: 13658530162
-        128:   7272      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-0 - Affinity: 0
-        129:     53   6832      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-1 - Affinity: 1
-        130:     53      0   6840      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-2 - Affinity: 2
-        131:     53      0      0   6837      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-3 - Affinity: 3
-        132:     53      0      0      0   6833      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-4 - Affinity: 4
-        133:     53      0      0      0      0   6832      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-5 - Affinity: 5
-        134:   6882      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-6 - Affinity: 0-5
-        135:   6882      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-7 - Affinity: 0-5
-        136:   6882      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-8 - Affinity: 0-5
-        137: 192718      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-9 - Affinity: 0-5
-        138:   6882      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-10 - Affinity: 0-5
-        139:   6882      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-11 - Affinity: 0-5
-        140:      4      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3 - Affinity: 3
-
-       ** eth5 **
-            rx_queue_1_packets: 3388812
-            rx_queue_1_bytes: 13659882296
-        154:   7273      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-0 - Affinity: 0
-        155:     53 192698      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-1 - Affinity: 1
-        156:     53      0   6841      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-2 - Affinity: 2
-        157:     53      0      0   6838      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-3 - Affinity: 3
-        158:     53      0      0      0   6834      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-4 - Affinity: 4
-        159:     53      0      0      0      0   6833      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-5 - Affinity: 5
-        160:   6883      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-6 - Affinity: 0-5
-        161:   6883      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-7 - Affinity: 0-5
-        162:   6883      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-8 - Affinity: 0-5
-        163:   6883      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-9 - Affinity: 0-5
-        164:   6883      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-10 - Affinity: 0-5
-        165:   6883      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-11 - Affinity: 0-5
-        166:      0      0      4      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5 - Affinity: 3
-   
-   Here the top-half packets are sent to eth3 queue #9, associated to IRQ #137,
-   which has CPU affinity *0-5* (0x3f), being CPU #0 the only one that serves it. The
-   bottom-half packets are dispatched to eth5 queue #1, associated to IRQ #155 with
-   CPU affinity *1* (0x2). **This is in conflict with Lima netdev_group #1
-   (eth3/eth5) CPU affinity!**, the CPU will be overloaded and packets will be
-   missed by the dispatch task.
-   
-   The conflict is solved by changing the Eiger data IP addresses in the configuration
-   file:
-   
-   ::
-   
-       (bliss) lid10eiger1:~ % grep detectorip ${EIGER_CONFIG}
-       0:detectorip 192.168.12.22
-       1:detectorip 192.168.14.23
-   
-   This changes the hardware FIFOs and thus the CPUs where their IRQs are served:
-       
-   ::
-   
-       # as root      
-       lid10eiger1:~ # for i in eth3 eth5; do \
-           echo; \
-           echo '**' ${i} '**'; \
-           ethtool -S ${i} | grep rx_queue | grep -Ev ': 0$'; \
-           (cd /sys/class/net/${i}/device/msi_irqs && ls) | \
-               while read irq; do \
-                   echo "$(grep "^ *${irq}" /proc/interrupts)" - \
-                        Affinity: $(cat /proc/irq/${irq}/smp_affinity_list); \
-               done; \
-       done
-   
-       ** eth3 **
-            rx_queue_11_packets: 26000
-            rx_queue_11_bytes: 106378400
-        128:    152      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-0 - Affinity: 0
-        129:     18    128      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-1 - Affinity: 1
-        130:     21      0    128      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-2 - Affinity: 2
-        131:     18      0      0    128      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-3 - Affinity: 3
-        132:     20      0      0      0    130      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-4 - Affinity: 4
-        133:     17      0      0      0      0    129      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-5 - Affinity: 5
-        134:    150      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-6 - Affinity: 0-5
-        135:    149      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-7 - Affinity: 0-5
-        136:    145      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-8 - Affinity: 0-5
-        137:    151      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-9 - Affinity: 0-5
-        138:    146      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-10 - Affinity: 0-5
-        139:   1125      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3-TxRx-11 - Affinity: 0-5
-        140:      4      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth3 - Affinity: 2
-   
-       ** eth5 **
-            rx_queue_11_packets: 26000
-            rx_queue_11_bytes: 106378400
-        154:    152      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-0 - Affinity: 0
-        155:     18    128      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-1 - Affinity: 1
-        156:     21      0    128      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-2 - Affinity: 2
-        157:     18      0      0    128      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-3 - Affinity: 3
-        158:     20      0      0      0    130      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-4 - Affinity: 4
-        159:     17      0      0      0      0    129      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-5 - Affinity: 5
-        160:    150      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-6 - Affinity: 0-5
-        161:    149      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-7 - Affinity: 0-5
-        162:    145      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-8 - Affinity: 0-5
-        163:    151      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-9 - Affinity: 0-5
-        164:    146      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-10 - Affinity: 0-5
-        165:   1127      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5-TxRx-11 - Affinity: 0-5
-        166:      4      0      0      0      0      0      0      0      0      0      0      0  IR-PCI-MSI-edge  eth5 - Affinity: 2
-   
-   In both cases top/bottom-half (eth3/eth5) packets are sent to queue #1, served by CPU #0.
+   to find out the active device IRQs and to set their corresponding CPU affinities. If running,
+   the *irqbalance* service is stopped before setting the IRQ affinity and restored during application
+   cleanup.
                 
 Finally, configure *opid10* as the default *DSERVER_USER*, which is used
 by the *dserver_daemon*
