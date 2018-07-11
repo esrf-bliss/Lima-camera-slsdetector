@@ -348,14 +348,14 @@ void CPUAffinity::getNUMANodeMask(vector<unsigned long>& node_mask,
 		}
 	}
 
-	if (DEB_CHECK_ANY(DebTypeAlways)) {
+	if (DEB_CHECK_ANY(DebTypeReturn)) {
 		ostringstream os;
 		os << hex << "0x" << setw(nb_nodes / 4) << setfill('0');
 		bool first = true;
 		Array::reverse_iterator it, end = node_mask.rend();
 		for (it = node_mask.rbegin(); it != end; ++it, first = false)
 			os << (!first ? "," : "") << *it;
-		DEB_ALWAYS() << "node_mask=" << os.str() << ", "
+		DEB_RETURN() << "node_mask=" << os.str() << ", "
 			     << DEB_VAR1(max_node);
 	}
 }
@@ -1045,11 +1045,8 @@ SystemCPUAffinityMgr::WatchDog::getOtherProcList(CPUAffinity cpu_affinity)
 string SystemCPUAffinityMgr::WatchDog::concatStringList(StringList list)
 {
 	ostringstream os;
-	const char *sep = "";
-	StringList::const_iterator it, end = list.end();
-	for (it = list.begin(); it != end; ++it, sep = ",")
-		os << sep << *it;
-	return os.str();
+	os << list;
+	return os.str().substr(1, os.str().size() - 2);
 }
 
 StringList SystemCPUAffinityMgr::WatchDog::splitStringList(string str)
@@ -1091,6 +1088,7 @@ void SystemCPUAffinityMgr::WatchDog::netDevAffinitySetter(
 				const NetDevGroupCPUAffinity& netdev_affinity)
 {
 	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(netdev_affinity);
 
 	NetDevMgrMap& netdev_map = m_netdev_mgr_map;
 
@@ -1103,30 +1101,14 @@ void SystemCPUAffinityMgr::WatchDog::netDevAffinitySetter(
 			nl.push_back(it->first);
 	}
 
-	typedef NetDevRxQueueAffinityMap AffinityMap;
-
-	const AffinityMap& m = netdev_affinity.queue_affinity;
-	if (DEB_CHECK_ANY(DebTypeAlways)) {
-		ostringstream os;
-		os << "<";
-		AffinityMap::const_iterator it, end = m.end();
-		bool first = true;
-		for (it = m.begin(); it != end; ++it, first = false)
-			os << (first ? "" : ", ")
-			   << it->first << ": irq=" << it->second.irq
-			   << ", processing=" << it->second.processing;
-		os << ">";
-
-		DEB_ALWAYS() << "setting [" << concatStringList(nl) << "] "
-			     << "network devices CPU affinity to " << os.str();
-	}
+	DEB_ALWAYS() << "setting " << DEB_VAR1(netdev_affinity);
 
 	StringList::const_iterator dit, dend = nl.end();
 	for (dit = nl.begin(); dit != dend; ++dit) {
 		const string& dev = *dit;
 		NetDevRxQueueMgr& mgr = netdev_map[dev];
 		mgr.setDev(dev);
-		mgr.apply(m);
+		mgr.apply(netdev_affinity.queue_affinity);
 	}
 
 	DEB_ALWAYS() << "Done!";
@@ -1701,9 +1683,14 @@ lima::SlsDetector::operator <<(ostream& os, const NetDevGroupCPUAffinity& a)
 	os << "<" << a.name_list << ", [";
 	bool first = true;
 	const NetDevRxQueueAffinityMap& m = a.queue_affinity;
-	NetDevRxQueueAffinityMap::const_iterator it, end = m.end();
-	for (it = m.begin(); it != end; ++it, first = false)
-		os << (first ? "" : ", ") << it->first << ": " << it->second;
+	if (a.isDefault()) {
+		os << "default";
+	} else {
+		NetDevRxQueueAffinityMap::const_iterator it, end = m.end();
+		for (it = m.begin(); it != end; ++it, first = false)
+			os << (first ? "" : ", ") << it->first << ": " 
+			   << it->second;
+	}
 	return os << "]>";
 }
 
