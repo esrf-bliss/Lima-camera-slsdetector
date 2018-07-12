@@ -69,6 +69,8 @@ class Eiger : public SlsDetector::Model
 	void setParallelMode(SlsDetector::Eiger::ParallelMode  mode);
 	void getParallelMode(SlsDetector::Eiger::ParallelMode& mode);
 
+	void setFixedClockDiv(bool  fixed_clock_div);
+	void getFixedClockDiv(bool& fixed_clock_div);
 	void setClockDiv(SlsDetector::Defs::ClockDiv  clock_div);
 	void getClockDiv(SlsDetector::Defs::ClockDiv& clock_div /Out/);
 

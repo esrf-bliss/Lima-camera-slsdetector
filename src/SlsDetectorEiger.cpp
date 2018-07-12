@@ -300,7 +300,7 @@ void Eiger::RecvPortGeometry::expandPixelDepth4(FrameType frame, char *ptr)
 }
 
 Eiger::Eiger(Camera *cam)
-	: Model(cam, EigerDet)
+	: Model(cam, EigerDet), m_fixed_clock_div(false)
 {
 	DEB_CONSTRUCTOR();
 
@@ -315,6 +315,8 @@ Eiger::Eiger(Camera *cam)
 	}
 
 	updateCameraModel();
+
+	getClockDiv(m_clock_div);
 }
 
 Eiger::~Eiger()
@@ -545,6 +547,24 @@ void Eiger::updateImageSize()
 
 	if (getNbEigerModules() > 1)
 		createInterModGapCorr();
+
+	if (m_fixed_clock_div) {
+		ClockDiv curr_clock_div;
+		getClockDiv(curr_clock_div);
+		if (curr_clock_div != m_clock_div) {
+			try {
+				DEB_ALWAYS() << "Restoring " 
+					     << DEB_VAR1(m_clock_div);
+				setClockDiv(m_clock_div);
+			} catch (...) {
+				DEB_WARNING() << "Could not set " 
+					      << DEB_VAR1(m_clock_div) << " "
+					      << "keeping " 
+					      << DEB_VAR1(curr_clock_div);
+				m_clock_div = curr_clock_div;
+			}
+		}
+	}
 }
 
 bool Eiger::checkSettings(Settings settings)
@@ -578,11 +598,26 @@ void Eiger::getParallelMode(ParallelMode& mode)
 	DEB_RETURN() << DEB_VAR1(mode);
 }
 
+void Eiger::setFixedClockDiv(bool fixed_clock_div)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(fixed_clock_div);
+	m_fixed_clock_div = fixed_clock_div;
+}
+
+void Eiger::getFixedClockDiv(bool& fixed_clock_div)
+{
+	DEB_MEMBER_FUNCT();
+	fixed_clock_div = m_fixed_clock_div;
+	DEB_RETURN() << DEB_VAR1(fixed_clock_div);
+}
+
 void Eiger::setClockDiv(ClockDiv clock_div)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(clock_div);
 	m_det->setClockDivider(clock_div);
+	m_clock_div = clock_div;
 	updateTimeRanges();
 }
 

@@ -85,6 +85,8 @@ class Eiger : public Model
 	void setParallelMode(ParallelMode  mode);
 	void getParallelMode(ParallelMode& mode);
 
+	void setFixedClockDiv(bool  fixed_clock_div);
+	void getFixedClockDiv(bool& fixed_clock_div);
 	void setClockDiv(ClockDiv  clock_div);
 	void getClockDiv(ClockDiv& clock_div);
 
@@ -361,6 +363,8 @@ class Eiger : public Model
 	FrameDim m_recv_frame_dim;
 	CorrList m_corr_list;
 	PortGeometryList m_port_geom_list;
+	bool m_fixed_clock_div;
+	ClockDiv m_clock_div;
 };
 
 std::ostream& operator <<(std::ostream& os, Eiger::ParallelMode mode);
