@@ -1574,9 +1574,9 @@ void GlobalCPUAffinityMgr::recvFinished()
 
 	CPUAffinity recv_all;
 	RecvCPUAffinityList::const_iterator it, end = m_curr.recv.end();
-	it = m_curr.recv.begin();
-	for (recv_all = (*it++).all(); it != end; ++it)
-		recv_all |= it->all();
+	if ((it = m_curr.recv.begin()) != end)
+		for (recv_all = (*it++).all(); it != end; ++it)
+			recv_all |= it->all();
 
 	if (m_curr.lima != recv_all) {
 		m_state = Changing;
