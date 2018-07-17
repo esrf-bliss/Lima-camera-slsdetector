@@ -896,6 +896,31 @@ Install *PyTango*, needed by *Lima*:
     Installing package PyTango-debian7-9.5-1.src.rpm
     ...
 
+Apply a patch fixing Unicode string management in attribute names
+(Python 3 compatible *SIP*):
+
+::
+
+    # as blissadm
+    lid01eiger1:~ % cat /tmp/PyTango.patch 
+    --- a/attr_data.py      2017-01-09 17:10:46.000000000 +0100
+    +++ b/attr_data.py      2018-04-04 09:44:13.551026750 +0200
+    @@ -62,6 +62,7 @@
+         def from_dict(cls, attr_dict):
+             attr_dict = dict(attr_dict)
+             name = attr_dict.pop('name', None)
+    +        name = name if isinstance(name, bytes) else name.encode()
+             class_name = attr_dict.pop('class_name', None)
+             self = cls(name, class_name)
+             self.build_from_dict(attr_dict)
+
+    lid01eiger1:~ % (
+        cd ~/python/bliss_modules/debian7/tango && \
+            cp -p attr_data.py attr_data.py-pack && \
+            patch -p1 < /tmp/PyTango.patch
+    )
+    patching file attr_data.py
+
 Install the Python modules needed for building the HTML documentation
 with Doxygen, Sphinx and Read-the-Docs:
 
