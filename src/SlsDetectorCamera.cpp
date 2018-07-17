@@ -278,13 +278,15 @@ bool Camera::AcqThread::newFrameReady(FrameType frame)
 	HwFrameInfoType frame_info;
 	frame_info.acq_frame_nb = frame;
 	bool cont_acq = m_cam->m_buffer_cb_mgr->newFrameReady(frame_info);
-	return cont_acq && (frame < m_cam->m_nb_frames - 1);
+	return cont_acq && (frame < m_cam->m_lima_nb_frames - 1);
 }
 
 Camera::Camera(string config_fname) 
 	: m_model(NULL),
 	  m_recv_fifo_depth(1000),
-	  m_nb_frames(1),
+	  m_lima_nb_frames(1),
+	  m_det_nb_frames(1),
+	  m_skip_frame_freq(0),
 	  m_lat_time(0),
 	  m_recv_nb_ports(0),
 	  m_pixel_depth(PixelDepth16), 
@@ -482,7 +484,7 @@ void Camera::setTrigMode(TrigMode trig_mode)
 	ExtComMode mode = static_cast<ExtComMode>(trig_mode);
 	m_det->setTimingMode(mode);
 	m_trig_mode = trig_mode;
-	setNbFrames(m_nb_frames);
+	setNbFrames(m_lima_nb_frames);
 }
 
 void Camera::getTrigMode(TrigMode& trig_mode)
@@ -504,19 +506,38 @@ void Camera::setNbFrames(FrameType nb_frames)
 					     <<	DEB_VAR2(nb_frames, MaxFrames);
 
 	waitState(Idle);
+	FrameType det_nb_frames = nb_frames;
+	if (m_skip_frame_freq)
+		det_nb_frames += nb_frames / m_skip_frame_freq;
 	bool trig_exp = (m_trig_mode == Defs::TriggerExposure);
-	int cam_frames = trig_exp ? 1 : nb_frames;
-	int cam_triggers = trig_exp ? nb_frames : 1;
+	int cam_frames = trig_exp ? 1 : det_nb_frames;
+	int cam_triggers = trig_exp ? det_nb_frames : 1;
 	m_det->setNumberOfFrames(cam_frames);
 	m_det->setNumberOfCycles(cam_triggers);
-	m_nb_frames = nb_frames;
+	m_lima_nb_frames = nb_frames;
+	m_det_nb_frames = det_nb_frames;
 }
 
 void Camera::getNbFrames(FrameType& nb_frames)
 {
 	DEB_MEMBER_FUNCT();
-	nb_frames = m_nb_frames;
+	nb_frames = m_lima_nb_frames;
 	DEB_RETURN() << DEB_VAR1(nb_frames);
+}
+
+void Camera::setSkipFrameFreq(FrameType skip_frame_freq)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(skip_frame_freq);
+	m_skip_frame_freq = skip_frame_freq;
+	setNbFrames(m_lima_nb_frames);
+}
+
+void Camera::getSkipFrameFreq(FrameType& skip_frame_freq)
+{
+	DEB_MEMBER_FUNCT();
+	skip_frame_freq = m_skip_frame_freq;
+	DEB_RETURN() << DEB_VAR1(skip_frame_freq);
 }
 
 void Camera::setExpTime(double exp_time)
@@ -745,7 +766,7 @@ void Camera::prepareAcq()
 	if (getState() != Idle)
 		THROW_HW_ERROR(Error) << "Camera is not idle";
 
-	bool need_period = !m_nb_frames || (m_nb_frames > 1);
+	bool need_period = !m_lima_nb_frames || (m_lima_nb_frames > 1);
 	need_period &= ((m_trig_mode == Defs::Auto) || 
 			(m_trig_mode == Defs::BurstTrigger));
 	if (need_period && (m_lat_time > 0))

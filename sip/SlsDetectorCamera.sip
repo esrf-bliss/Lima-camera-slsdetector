@@ -74,6 +74,9 @@ public:
 	void setFramePeriod(double  frame_period);
 	void getFramePeriod(double& frame_period /Out/);
 
+	void setSkipFrameFreq(unsigned long  skip_frame_freq);
+	void getSkipFrameFreq(unsigned long& skip_frame_freq /Out/);
+
 	// setDAC: sub_mod_idx: 0-N=module, -1=all
 	void setDAC(int sub_mod_idx, SlsDetector::Defs::DACIndex dac_idx,
 		    int  val,       bool milli_volt = false);

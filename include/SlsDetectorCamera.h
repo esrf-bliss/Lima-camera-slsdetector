@@ -119,6 +119,9 @@ public:
 	void setFramePeriod(double  frame_period);
 	void getFramePeriod(double& frame_period);
 
+	void setSkipFrameFreq(FrameType  skip_frame_freq);
+	void getSkipFrameFreq(FrameType& skip_frame_freq);
+
 	// setDAC: sub_mod_idx: 0-N=sub_module, -1=all
 	void setDAC(int sub_mod_idx, DACIndex dac_idx, int  val, 
 		    bool milli_volt = false);
@@ -279,7 +282,9 @@ private:
 	RecvList m_recv_list;
 	int m_recv_fifo_depth;
 	TrigMode m_trig_mode;
-	FrameType m_nb_frames;
+	FrameType m_lima_nb_frames;
+	FrameType m_det_nb_frames;
+	FrameType m_skip_frame_freq;
 	double m_exp_time;
 	double m_lat_time;
 	double m_frame_period;

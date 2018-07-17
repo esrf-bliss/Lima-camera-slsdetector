@@ -424,7 +424,7 @@ int Receiver::fileStartCallback(char *fpath, char *fname, uint64_t fidx,
 	return 0;
 }
 
-void Receiver::portCallback(FrameType frame, int port, char *dptr,
+void Receiver::portCallback(FrameType det_frame, int port, char *dptr,
 			    uint32_t dsize)
 {
 	DEB_MEMBER_FUNCT();
@@ -444,14 +444,25 @@ void Receiver::portCallback(FrameType frame, int port, char *dptr,
 	port_stats.last_t0 = t0;
 
 	try {
-		if (frame >= m_cam->m_nb_frames)
+		if (det_frame >= m_cam->m_det_nb_frames)
 			THROW_HW_ERROR(Error) << "Invalid " 
-					      << DEB_VAR2(frame, DebHex(frame));
-		recv_port.processFrame(frame, dptr, dsize);
+					      << DEB_VAR2(det_frame,
+							  DebHex(det_frame));
+		FrameType skip_freq = m_cam->m_skip_frame_freq;
+		bool skip_frame = false;
+		FrameType lima_frame = det_frame;
+		if (skip_freq) {
+			skip_frame = ((det_frame + 1) % (skip_freq + 1) == 0);
+			lima_frame -= det_frame / (skip_freq + 1);
+			DEB_TRACE() << DEB_VAR3(det_frame, skip_frame,
+						lima_frame);
+		}
+		if (!skip_frame)
+			recv_port.processFrame(lima_frame, dptr, dsize);
 	} catch (Exception& e) {
 		ostringstream err_msg;
 		err_msg << "Receiver::portCallback: " << e << ": "
-			<< DEB_VAR3(m_idx, frame, port);
+			<< DEB_VAR3(m_idx, det_frame, port);
 		Event::Code err_code = Event::CamOverrun;
 		Event *event = new Event(Hardware, Event::Error, Event::Camera, 
 					 err_code, err_msg.str());
