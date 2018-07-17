@@ -28,7 +28,22 @@ is included:
 
 ::
 
-    lisgeiger1:~ % cat ~/.ssh/id_dsa.pub
+    lisgeiger1:~ % \
+        EIGER_MODULE_TOP=$(echo ${EIGER_MODULES} | cut -f1 -d" ")
+        cat ~/.ssh/id_dsa.pub
+        echo
+        if [ $(echo ${EIGER_MODULES} | wc -w) -eq 2 ]; then
+            det_name="500k$(echo ${EIGER_MODULES} | sed 's/ \?beb/_/g')"
+        else
+            det_name="2m"
+        fi;
+        base_dir="${HOME}/eiger/psi_eiger_${det_name}"
+        this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
+        mkdir -p ${this_dir} && cd ${this_dir}
+        for m in ${EIGER_MODULES}; do
+            ssh -x root@${m} cat .ssh/authorized_keys > ssh_authorized_keys_${m}
+        done
+        cat ssh_authorized_keys_${EIGER_MODULE_TOP} 
     ssh-dss AAAAB3NzaC1kc3MAAACBALGVR0qC2i/HgaJl4fuiwmOVrq46Bz3bs+o3/jdw/dqMaPjx35Ha
     shyC4zS+2wHyZVSjwTMIbVT8LPsNMGxL40ZxqWaAUyzn0XnjJMe3XT7h+yyx+iLUXvyCK489PAwT0srE
     iWbGNeQTgEYiwX+jqezQTiwss2sgypOrrwIrGrZBAAAAFQDjOUdgHjbCc1UMW37Zu+7b/AV1cQAAAIAu
@@ -38,20 +53,6 @@ is included:
     JQguFttMCNduiXmZfDYITld+86c9aWCR6g7re977ElFTbutWe+isu/ZFINXOvDEHmBUKd7++4lGDCjsM
     NOQQmG/Ftsi4jE2iWBaI91oyTQI= opid00@lisgeiger1
 
-    lisgeiger1:~ % if [ $(echo ${EIGER_MODULES} | wc -w) -eq 2 ]; then \
-        det_name="500k$(echo ${EIGER_MODULES} | sed 's/ \?beb/_/g')"; \
-    else \
-        det_name="2m"; \
-    fi; \
-    base_dir="${HOME}/eiger/psi_eiger_${det_name}"
-
-    lisgeiger1:~ % this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
-    lisgeiger1:~ % mkdir -p ${this_dir} && cd ${this_dir}
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % for m in ${EIGER_MODULES}; do \
-        ssh -x root@${m} cat .ssh/authorized_keys > ssh_authorized_keys_${m}; \
-    done
-
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % cat ssh_authorized_keys_beb024 
     ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAxHKsWjHzIsIt0Pt1lkZA9Px5x0v6e2ZzCh+AEiQz1nk0
     l7kU6K0IzKvYbAj6HnQB3/epYHz6SBRrpsMQcFPHgtQIKlTzeKHNqS6pHBKxKR77jGGq70i7SWZsSBXP
     1/8QxUhV9CNbFJKAkEmvXa5ZO1fKgtiXYXR26X72foOKwZzOtPzOqz2IQ6icxqTMELK1H4R+s0Rvuurl
@@ -83,7 +84,8 @@ Check that all the keys are identical:
 
 ::
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % md5sum ssh_authorized_keys_beb*
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
+        md5sum ssh_authorized_keys_beb*
     1c183bdaa3a2f27029fca84b9cb3b857  ssh_authorized_keys_beb024
     1c183bdaa3a2f27029fca84b9cb3b857  ssh_authorized_keys_beb025
 
@@ -92,17 +94,19 @@ add them in order to open SSH sessions automatically on the detector modules:
 
 ::
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % for m in ${EIGER_MODULES}; do \
-        ssh -x root@${m} sh -c '"cat >> .ssh/authorized_keys"' < ~/.ssh/id_dsa.pub; \
-    done
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
+        for m in ${EIGER_MODULES}; do
+            ssh -x root@${m} sh -c '"cat >> .ssh/authorized_keys"' < ~/.ssh/id_dsa.pub
+        done
 
 Also check that the SSH public host keys are identical (same Linux image):
 
 ::
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % for m in ${EIGER_MODULES}; do \
-        ssh-keygen -f ~/.ssh/known_hosts -F ${m} -l; \
-    done
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
+        for m in ${EIGER_MODULES}; do
+            ssh-keygen -f ~/.ssh/known_hosts -F ${m} -l
+        done
     # Host beb024 found: line 82 type RSA
     1040 21:78:5d:39:d5:cc:92:7a:42:f8:4d:69:38:3b:40:40 |1|m9PYbOqjp0h4qI8tq9u9H8x7pKQ=|wXZou5Y2oMKiULF5ZOuBjV0U7oo= (RSA)
     # Host beb025 found: line 84 type RSA
@@ -116,29 +120,30 @@ the current versions stored on the modules:
 
 ::
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % for m in ${EIGER_MODULES}; do \
-        ssh -x root@${m} 'ls -l executables/eigerDetectorServer*' \
-            > ls_executables_eigerDetectorServer_${m}.out; \
-    done
-
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % cat ls_executables_eigerDetectorServer_beb024.out 
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
+        for m in ${EIGER_MODULES}; do
+            ssh -x root@${m} 'ls -l executables/eigerDetectorServer*' \
+                > ls_executables_eigerDetectorServer_${m}.out
+        done
+        cat ls_executables_eigerDetectorServer_${EIGER_MODULE_TOP}.out
+        echo
+        for m in ${EIGER_MODULES}; do 
+            ssh -x root@${m} 'md5sum executables/eigerDetectorServer*' \
+                > md5sum_executables_eigerDetectorServer_${m}.out
+        done
+        cat md5sum_executables_eigerDetectorServer_${EIGER_MODULE_TOP}.out
+        echo
+        md5sum md5sum_executables_eigerDetectorServer_beb*
     -rwxr-xr-x    1 root     root        280601 Jan  1 01:15 executables/eigerDetectorServer
     -rwxr-xr-x    1 root     root        277442 Aug 26  2016 executables/eigerDetectorServer_bkp
     -rwxr-xr-x    1 root     root        277442 Aug 26  2016 executables/eigerDetectorServerv2.0.5.14.3
     -rwxr-xr-x    1 root     root        280601 Jan  1 01:14 executables/eigerDetectorServerv2.3.0.16.2
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 %  for m in ${EIGER_MODULES}; do 
-        ssh -x root@${m} 'md5sum executables/eigerDetectorServer*' \
-            > md5sum_executables_eigerDetectorServer_${m}.out; \
-    done
-
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 %  cat md5sum_executables_eigerDetectorServer_beb024.out 
     4fca193db64ed991da785043e7769082  executables/eigerDetectorServer
     e8a39956bbcb4aac62f109188e8ddbb2  executables/eigerDetectorServer_bkp
     e8a39956bbcb4aac62f109188e8ddbb2  executables/eigerDetectorServerv2.0.5.14.3
     4fca193db64ed991da785043e7769082  executables/eigerDetectorServerv2.3.0.16.2
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % md5sum md5sum_executables_eigerDetectorServer_beb*
     754a871d0608c28aa7544230ca728f86  md5sum_executables_eigerDetectorServer_beb024.out
     754a871d0608c28aa7544230ca728f86  md5sum_executables_eigerDetectorServer_beb025.out
 
@@ -146,61 +151,60 @@ Backup the current version, and transfer the new version:
 
 ::
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % for m in ${EIGER_MODULES}; do \
-        ssh -x root@${m} 'mv executables/eigerDetectorServer executables/eigerDetectorServer_bkp'; \
-    done
-
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % SLS_DETECTOR_PACKAGE=${LIMA_DIR}/camera/slsdetector/slsDetectorPackage
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % eiger_servers=$(cd ${SLS_DETECTOR_PACKAGE} && find -name eigerDetectorServerv\*)
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % (cd ${SLS_DETECTOR_PACKAGE} && md5sum ${eiger_servers})
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
+        for m in ${EIGER_MODULES}; do
+            ssh -x root@${m} 'mv executables/eigerDetectorServer executables/eigerDetectorServer_bkp'
+        done
+        SLS_DETECTOR_PACKAGE=${LIMA_DIR}/camera/slsdetector/slsDetectorPackage
+        eiger_servers=$(cd ${SLS_DETECTOR_PACKAGE} && find -name eigerDetectorServerv\*)
+        (cd ${SLS_DETECTOR_PACKAGE} && md5sum ${eiger_servers})
+        echo
+        eiger_server=${SLS_DETECTOR_PACKAGE}/$(echo "${eiger_servers}" | head -n 1)
+        for m in ${EIGER_MODULES}; do
+            scp ${eiger_server} root@${m}:executables
+        done
+        for m in ${EIGER_MODULES}; do
+            ssh -x root@${m} "cp executables/$(basename ${eiger_server}) executables/eigerDetectorServer"
+        done
     50ef053f1ddd0b49314479a558c9c330  ./slsDetectorSoftware/eigerDetectorServer/bin/eigerDetectorServerv3.1.1.16.0
     50ef053f1ddd0b49314479a558c9c330  ./serverBin/eigerDetectorServerv3.1.1.16.0
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % eiger_server=${SLS_DETECTOR_PACKAGE}/$(echo "${eiger_servers}" | head -n 1)
-
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % for m in ${EIGER_MODULES}; do \
-        scp ${eiger_server} root@${m}:executables; \
-    done
     eigerDetectorServerv3.1.1.16.0               100%  286KB 286.2KB/s   00:00    
     eigerDetectorServerv3.1.1.16.0               100%  286KB 286.2KB/s   00:00    
-
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % for m in ${EIGER_MODULES}; do \
-        ssh -x root@${m} "cp executables/$(basename ${eiger_server}) executables/eigerDetectorServer"; \
-    done
-
 
 Check that all is as expected:
 
 ::
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % cd
-    lisgeiger1:~ % this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
-    lisgeiger1:~ % mkdir -p ${this_dir} && cd ${this_dir}
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1927 % for m in ${EIGER_MODULES}; do \
-        ssh -x root@${m} 'ls -l executables/eigerDetectorServer*' \
-            > ls_executables_eigerDetectorServer_${m}.out; \
-    done
-
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1927 % cat ls_executables_eigerDetectorServer_beb024.out 
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
+        cd
+        this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
+        mkdir -p ${this_dir} && cd ${this_dir}
+        for m in ${EIGER_MODULES}; do
+            ssh -x root@${m} 'ls -l executables/eigerDetectorServer*' \
+                > ls_executables_eigerDetectorServer_${m}.out
+        done
+        cat ls_executables_eigerDetectorServer_${EIGER_MODULE_TOP}.out
+        echo
+        for m in ${EIGER_MODULES}; do
+            ssh -x root@${m} 'md5sum executables/eigerDetectorServer*' \
+                > md5sum_executables_eigerDetectorServer_${m}.out
+        done
+        cat md5sum_executables_eigerDetectorServer_${EIGER_MODULE_TOP}.out
+        echo
+        md5sum md5sum_executables_eigerDetectorServer_beb*
     -rwxr-xr-x    1 root     root        293085 Jan 10 02:35 executables/eigerDetectorServer
     -rwxr-xr-x    1 root     root        280601 Jan  1 01:15 executables/eigerDetectorServer_bkp
     -rwxr-xr-x    1 root     root        277442 Aug 26  2016 executables/eigerDetectorServerv2.0.5.14.3
     -rwxr-xr-x    1 root     root        280601 Jan  1 01:14 executables/eigerDetectorServerv2.3.0.16.2
     -rwxr-xr-x    1 root     root        293085 Jan 10 02:34 executables/eigerDetectorServerv3.1.1.16.0
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1927 % for m in ${EIGER_MODULES}; do \
-        ssh -x root@${m} 'md5sum executables/eigerDetectorServer*' \
-            > md5sum_executables_eigerDetectorServer_${m}.out; \
-    done
-
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1927 % cat md5sum_executables_eigerDetectorServer_beb024.out 
     50ef053f1ddd0b49314479a558c9c330  executables/eigerDetectorServer
     4fca193db64ed991da785043e7769082  executables/eigerDetectorServer_bkp
     e8a39956bbcb4aac62f109188e8ddbb2  executables/eigerDetectorServerv2.0.5.14.3
     4fca193db64ed991da785043e7769082  executables/eigerDetectorServerv2.3.0.16.2
     50ef053f1ddd0b49314479a558c9c330  executables/eigerDetectorServerv3.1.1.16.0
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1927 % md5sum md5sum_executables_eigerDetectorServer_beb*
     4168a104e53ee71f763ed5f0e0b43859  md5sum_executables_eigerDetectorServer_beb024.out
     4168a104e53ee71f763ed5f0e0b43859  md5sum_executables_eigerDetectorServer_beb025.out
 
@@ -209,27 +213,29 @@ just before power-cycling:
 
 ::
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1927 % cd
-    lisgeiger1:~ % for m in ${EIGER_MODULES}; do \
-        ssh -x root@${m} sync; \
-    done
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1927 % \
+        cd
+        for m in ${EIGER_MODULES}; do
+            ssh -x root@${m} sync
+        done
 
 And finally perform a *paranoid* check after power-cycling the detector:
 
 ::
 
-    lisgeiger1:~ % this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
-    lisgeiger1:~ % mkdir -p ${this_dir} && cd ${this_dir}
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1934 % for m in ${EIGER_MODULES}; do \
-        ssh -x root@${m} 'md5sum executables/eigerDetectorServer*' \
-            > md5sum_executables_eigerDetectorServer_${m}.out; \
-    done
-
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1934 % cd ..
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025 % for m in ${EIGER_MODULES}; do \
-        diff 2018-04-01-1927/md5sum_executables_eigerDetectorServer_${m}.out 2018-04-01-1934 && \
-            echo "${m} OK" || echo "${m} changed"; \
-    done
+    lisgeiger1:~ % \
+        prev_dir=${this_dir}
+        this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
+        mkdir -p ${this_dir} && cd ${this_dir}
+        for m in ${EIGER_MODULES}; do
+            ssh -x root@${m} 'md5sum executables/eigerDetectorServer*' \
+                > md5sum_executables_eigerDetectorServer_${m}.out
+        done
+        cd ..
+        for m in ${EIGER_MODULES}; do
+            (diff ${prev_dir}/md5sum_executables_eigerDetectorServer_${m}.out ${this_dir} &&
+                echo "${m} OK" || echo "${m} changed")
+        done
     beb024 OK
     beb025 OK
 
@@ -319,14 +325,14 @@ as well as the kernel image:
     4bf1f88d376fd9651b45c2b5b2b021eb  feb_r_fx70t.bit
     1f27879faa7082f9ed2bb2b24b84ea99  simpleImage.virtex440-eiger-beb-hwid1_local
 
-    lisgeiger1:~/eiger/fw_v20 % this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
-    lisgeiger1:~/eiger/fw_v20 % mkdir -p ${this_dir}
-    lisgeiger1:~/eiger/fw_v20 % eiger_flash \
-        -m beb_fiber.bit \
-        -l feb_l_fx30t.bit -r feb_r_fx30t.bit \
-        -k simpleImage.virtex440-eiger-beb-hwid1_local \
-        -o ${this_dir}/eiger_flash.log ${EIGER_MODULES}
-
+    lisgeiger1:~/eiger/fw_v20 % \
+        this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
+        mkdir -p ${this_dir}
+        eiger_flash -m beb_fiber.bit \
+                    -l feb_l_fx30t.bit -r feb_r_fx30t.bit \
+                    -k simpleImage.virtex440-eiger-beb-hwid1_local \
+                    -o ${this_dir}/eiger_flash.log ${EIGER_MODULES}
+    Eiger flash - Sun Apr 1 20:28:31 2018
     f9e6e360cfa696957cf4fd5035bed5e1  beb_fiber.bit
     fe59229e8ebdb5e8d76ff315cd28cc7d  feb_l_fx30t.bit
     7a988f0e39930bf86d9af9dee060ef04  feb_r_fx30t.bit
