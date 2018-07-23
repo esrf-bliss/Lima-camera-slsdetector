@@ -195,6 +195,8 @@ private:
 		virtual void threadFunction();
 
 	private:
+		typedef std::pair<bool, bool> Status;
+
 		class ExceptionCleanUp : Thread::ExceptionCleanUp
 		{
 			DEB_CLASS_NAMESPC(DebModCamera, 
@@ -205,7 +207,7 @@ private:
 			virtual ~ExceptionCleanUp();
 		};
 
-		bool newFrameReady(FrameType frame);
+		Status newFrameReady(FrameType frame);
 		void startAcq();
 		void stopAcq();
 		void cleanUp();
@@ -244,6 +246,9 @@ private:
 
 	bool checkLostPackets();
 	FrameType getLastReceivedFrame();
+
+	void waitLastSkippedFrame();
+	void processLastSkippedFrame(int port_idx);
 
 	void getSortedBadFrameList(IntList first_idx, IntList last_idx,
 				   IntList& bad_frame_list );
@@ -285,6 +290,7 @@ private:
 	FrameType m_lima_nb_frames;
 	FrameType m_det_nb_frames;
 	FrameType m_skip_frame_freq;
+	SortedIntList m_missing_last_skipped_frame;
 	double m_exp_time;
 	double m_lat_time;
 	double m_frame_period;

@@ -162,7 +162,7 @@ private:
 
 	int fileStartCallback(char *fpath, char *fname, uint64_t fidx, 
 			      uint32_t dsize);
-	void portCallback(FrameType frame, int port, char *dptr, 
+	void portCallback(FrameType det_frame, int port, char *dptr, 
 			  uint32_t dsize);
 
 	void getNodeMaskList(const CPUAffinityList& listener,

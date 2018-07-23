@@ -150,6 +150,7 @@ void Camera::AcqThread::threadFunction()
 	SeqFilter seq_filter;
 	bool had_frames = false;
 	bool cont_acq = true;
+	bool acq_end = false;
 	do {
 		while ((m_state != StopReq) && m_frame_queue.empty()) {
 			if (!m_cond.wait(m_cam->m_new_frame_timeout)) {
@@ -168,7 +169,9 @@ void Camera::AcqThread::threadFunction()
 				int f = frames.first;
 				do {
 					DEB_TRACE() << DEB_VAR1(f);
-					cont_acq = newFrameReady(f);
+					Status status = newFrameReady(f);
+					cont_acq = status.first;
+					acq_end = status.second;
 					had_frames = true;
 				} while ((++f != frames.end()) && cont_acq);
 			}
@@ -176,6 +179,11 @@ void Camera::AcqThread::threadFunction()
 	} while ((m_state != StopReq) && cont_acq);
 	State prev_state = m_state;
 
+	if (acq_end && m_cam->m_skip_frame_freq) {
+		AutoMutexUnlock u(l);
+		m_cam->waitLastSkippedFrame();
+	}
+		
 	m_state = Stopping;
 	DEB_TRACE() << DEB_VAR2(prev_state, m_state);
 	{
@@ -272,13 +280,15 @@ void Camera::AcqThread::stopAcq()
 	det->stopReceiver();
 }
 
-bool Camera::AcqThread::newFrameReady(FrameType frame)
+Camera::AcqThread::Status Camera::AcqThread::newFrameReady(FrameType frame)
 {
 	DEB_MEMBER_FUNCT();
 	HwFrameInfoType frame_info;
 	frame_info.acq_frame_nb = frame;
 	bool cont_acq = m_cam->m_buffer_cb_mgr->newFrameReady(frame_info);
-	return cont_acq && (frame < m_cam->m_lima_nb_frames - 1);
+	bool acq_end = (frame == m_cam->m_lima_nb_frames - 1);
+	cont_acq &= !acq_end;
+	return Status(cont_acq, acq_end);
 }
 
 Camera::Camera(string config_fname) 
@@ -783,6 +793,11 @@ void Camera::prepareAcq()
 		RecvList::iterator it, end = m_recv_list.end();
 		for (it = m_recv_list.begin(); it != end; ++it)
 			(*it)->prepareAcq();
+
+		m_missing_last_skipped_frame.clear();
+		if (m_skip_frame_freq)
+			for (int i = 0; i < getTotNbPorts(); ++i)
+				m_missing_last_skipped_frame.insert(i);
 	}
 
 	m_model->prepareAcq();
@@ -880,6 +895,25 @@ FrameType Camera::getLastReceivedFrame()
 	FrameType last_frame = m_frame_map.getLastItemFrame();
 	DEB_RETURN() << DEB_VAR1(last_frame);
 	return last_frame;
+}
+
+void Camera::waitLastSkippedFrame()
+{
+	DEB_MEMBER_FUNCT();
+	AutoMutex l = lock();
+	while (!m_missing_last_skipped_frame.empty())
+		m_cond.wait();
+}
+
+void Camera::processLastSkippedFrame(int port_idx)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(port_idx);
+	AutoMutex l = lock();
+	if (m_missing_last_skipped_frame.erase(port_idx) != 1)
+		DEB_ERROR() << "port " << port_idx << " already processed";
+	else
+		m_cond.broadcast();
 }
 
 int Camera::getFramesCaught()

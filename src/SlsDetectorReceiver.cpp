@@ -409,9 +409,9 @@ void Receiver::portCallback(FrameType frame,
 	DEB_STATIC_FUNCT();
 	Receiver *recv = static_cast<Receiver *>(priv);
 	int port = (x % 2);
-	FrameType lima_frame = frame - 1;
-	DEB_PARAM() << DEB_VAR2(frame, lima_frame);
-	recv->portCallback(lima_frame, port, dptr, dsize);
+	FrameType det_frame = frame - 1;
+	DEB_PARAM() << DEB_VAR2(frame, det_frame);
+	recv->portCallback(det_frame, port, dptr, dsize);
 }
 
 int Receiver::fileStartCallback(char *fpath, char *fname, uint64_t fidx,
@@ -451,14 +451,19 @@ void Receiver::portCallback(FrameType det_frame, int port, char *dptr,
 		FrameType skip_freq = m_cam->m_skip_frame_freq;
 		bool skip_frame = false;
 		FrameType lima_frame = det_frame;
+		int port_idx = recv_port.m_port_idx;
 		if (skip_freq) {
 			skip_frame = ((det_frame + 1) % (skip_freq + 1) == 0);
 			lima_frame -= det_frame / (skip_freq + 1);
-			DEB_TRACE() << DEB_VAR3(det_frame, skip_frame,
-						lima_frame);
+			DEB_TRACE() << DEB_VAR4(port_idx, det_frame,
+						skip_frame, lima_frame);
 		}
-		if (!skip_frame)
+		if (skip_frame) {
+			if (det_frame == m_cam->m_det_nb_frames - 1)
+				m_cam->processLastSkippedFrame(port_idx);
+		} else {
 			recv_port.processFrame(lima_frame, dptr, dsize);
+		}
 	} catch (Exception& e) {
 		ostringstream err_msg;
 		err_msg << "Receiver::portCallback: " << e << ": "
