@@ -297,6 +297,7 @@ Camera::Camera(string config_fname)
 	  m_lima_nb_frames(1),
 	  m_det_nb_frames(1),
 	  m_skip_frame_freq(0),
+	  m_last_skipped_frame_timeout(0.5),
 	  m_lat_time(0),
 	  m_recv_nb_ports(0),
 	  m_pixel_depth(PixelDepth16), 
@@ -901,8 +902,29 @@ void Camera::waitLastSkippedFrame()
 {
 	DEB_MEMBER_FUNCT();
 	AutoMutex l = lock();
-	while (!m_missing_last_skipped_frame.empty())
-		m_cond.wait();
+	bool stopping = false;
+	Timestamp t0;
+	SortedIntList& port_list = m_missing_last_skipped_frame;
+	while (!port_list.empty()) {
+		double timeout = -1;
+		if (!stopping && (m_state == StopReq)) {
+			DEB_TRACE() << "stop requested";
+			stopping = true;
+			t0 = Timestamp::now();
+		} 
+		if (stopping) {
+			double elapsed = Timestamp::now() - t0;
+			timeout = m_last_skipped_frame_timeout - elapsed;
+			if (timeout <= 0) {
+				DEB_WARNING() << "Missing last skipped frame "
+					      << elapsed << " sec after stop: "
+					      << "remaining port_list="
+					      << PrettySortedList(port_list);
+				break;
+			}
+		}
+		m_cond.wait(timeout);
+	}
 }
 
 void Camera::processLastSkippedFrame(int port_idx)
@@ -912,8 +934,7 @@ void Camera::processLastSkippedFrame(int port_idx)
 	AutoMutex l = lock();
 	if (m_missing_last_skipped_frame.erase(port_idx) != 1)
 		DEB_ERROR() << "port " << port_idx << " already processed";
-	else
-		m_cond.broadcast();
+	m_cond.broadcast();
 }
 
 int Camera::getFramesCaught()

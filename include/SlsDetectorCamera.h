@@ -291,6 +291,7 @@ private:
 	FrameType m_det_nb_frames;
 	FrameType m_skip_frame_freq;
 	SortedIntList m_missing_last_skipped_frame;
+	double m_last_skipped_frame_timeout;
 	double m_exp_time;
 	double m_lat_time;
 	double m_frame_period;
