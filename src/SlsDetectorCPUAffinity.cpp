@@ -1446,7 +1446,7 @@ ProcessingFinishedEvent::imageStatusChanged(
 
 GlobalCPUAffinityMgr::GlobalCPUAffinityMgr(Camera *cam)
 	: m_cam(cam), m_proc_finished(NULL), 
-	  m_lima_finished_timeout(3)
+	  m_lima_finished_timeout(0.5)
 {
 	DEB_CONSTRUCTOR();
 
@@ -1632,7 +1632,7 @@ void GlobalCPUAffinityMgr::waitLimaFinished()
 
 	AutoMutex l = lock();
 	while (m_state != Ready) {
-		if (m_cond.wait(1))
+		if (m_cond.wait(0.1))
 			continue;
 
 		AutoMutexUnlock u(l);
