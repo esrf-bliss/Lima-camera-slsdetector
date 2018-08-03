@@ -694,7 +694,7 @@ void Eiger::setThresholdEnergy(int thres)
 void Eiger::getThresholdEnergy(int& thres)
 {
 	DEB_MEMBER_FUNCT();
-	thres = m_det->setThresholdEnergy(-1);
+	thres = m_det->getThresholdEnergy();
 	DEB_RETURN() << DEB_VAR1(thres);
 }
 
