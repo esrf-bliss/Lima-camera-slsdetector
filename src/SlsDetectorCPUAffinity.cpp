@@ -275,7 +275,6 @@ void CPUAffinity::applyWithTaskset(pid_t task, bool incl_threads) const
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR3(*this, task, incl_threads);
 
-	uint64_t mask = getMask();
 	SystemCmd taskset("taskset");
 	const char *all_tasks_opt = incl_threads ? "-a " : "";
 	taskset.args() << all_tasks_opt << "-p " << *this << " " << task;
@@ -428,9 +427,10 @@ IntList IrqMgr::getIrqList()
 	while (proc_ints) {
 		char buffer[1024];
 		proc_ints.getline(buffer, sizeof(buffer));
-		DEB_TRACE() << DEB_VAR1(string(buffer));
+		string s = buffer;
+		DEB_TRACE() << DEB_VAR1(s);
 		RegEx::FullNameMatchType match;
-		if (!int_re.matchName(buffer, match))
+		if (!int_re.matchName(s, match))
 			continue;
 		int irq;
 		istringstream(match["irq"]) >> irq;
@@ -700,7 +700,7 @@ bool NetDevRxQueueMgr::applyWithFile(const string& fname, CPUAffinity a)
 		aff_file << os.str();
 	if (aff_file)
 		aff_file.close();
-	bool file_ok = aff_file;
+	bool file_ok(aff_file);
 	DEB_RETURN() << DEB_VAR1(file_ok);
 	return file_ok;
 }

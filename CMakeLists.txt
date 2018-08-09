@@ -23,13 +23,15 @@
 ############################################################################
 set(NAME slsdetector)
 
+find_package(Numa REQUIRED)
+
 set(SLS_DETECTOR_DIR slsDetectorPackage)
 set(SLS_DETECTOR_SW ${SLS_DETECTOR_DIR}/slsDetectorSoftware)
 set(SLS_DETECTOR_RECV ${SLS_DETECTOR_DIR}/slsReceiverSoftware)
 
 option (USE_TEXTCLIENT "Text Client" ON)
 option (USE_RECEIVER "Receiver" ON)
-option (USE_GUI "GUI" ON)
+option (USE_GUI "GUI" OFF)
 
 add_subdirectory(${SLS_DETECTOR_DIR})
 
@@ -53,11 +55,15 @@ target_include_directories(lima${NAME} PUBLIC
 			   ${SLS_DETECTOR_SW}/slsDetectorServer
 			   ${SLS_DETECTOR_SW}/slsDetectorAnalysis
 			   ${SLS_DETECTOR_SW}/slsReceiverInterface
-			   ${SLS_DETECTOR_RECV}/include)
+			   ${SLS_DETECTOR_RECV}/include
+			   ${NUMA_INCLUDE_DIR})
+
+message("NUMA_LIBRARY=" ${NUMA_LIBRARY})
 
 target_link_libraries(lima${NAME}
 		      limacore
-		      slsDetectorShared slsReceiverShared zmq numa)
+		      slsDetectorShared slsReceiverShared zmq
+		      ${NUMA_LIBRARY})
 
 limatools_set_library_soversion(lima${NAME} VERSION)
 install(TARGETS lima${NAME} LIBRARY DESTINATION lib)
