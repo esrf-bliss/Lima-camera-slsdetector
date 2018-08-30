@@ -844,7 +844,6 @@ IntList NetDevRxQueueMgr::getRxQueueList()
 			 "(?P<packets>[0-9]+)\n$");
 		while (true) {
 			string s = child_out.readLine(1024, "\n");
-			DEB_TRACE() << DEB_VAR1(s);
 			if (s.empty())
 				break;
 
@@ -874,6 +873,7 @@ IntList NetDevRxQueueMgr::getRxQueueList()
 }
 
 SystemCPUAffinityMgr::WatchDog::WatchDog()
+	: m_cmd_pipe(0, true), m_res_pipe(0, true)
 {
 	DEB_CONSTRUCTOR();
 
