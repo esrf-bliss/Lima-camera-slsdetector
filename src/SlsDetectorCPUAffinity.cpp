@@ -152,7 +152,7 @@ void SystemCmd::preparePipes()
 	DEB_PARAM() << DEB_VAR3(m_stdin, m_stdout, m_stderr);
 	if (m_stdin) {
 		DEB_TRACE() << "Duplicating PIPE into STDIN";
-		m_stdout->dupInto(Pipe::ReadFd, 0);
+		m_stdin->dupInto(Pipe::ReadFd, 0);
 	}
 	if (m_stderr && !sameOutErr()) {
 		DEB_TRACE() << "Duplicating PIPE into STDERR";
@@ -180,6 +180,72 @@ void SystemCmd::restorePipes()
 		DEB_TRACE() << "Restored STDIN";
 		m_stdin->restoreDup(Pipe::ReadFd);
 	}
+}
+
+SystemCmdPipe::SystemCmdPipe(string cmd, string desc, bool try_sudo)
+	: m_pipe_list(NbPipes), m_child_pid(-1), m_cmd(cmd, desc, try_sudo)
+{
+	DEB_CONSTRUCTOR();
+}
+
+SystemCmdPipe::~SystemCmdPipe()
+{
+	DEB_DESTRUCTOR();
+
+	if (m_child_pid >= 0)
+		wait();
+}
+
+void SystemCmdPipe::start()
+{
+	DEB_MEMBER_FUNCT();
+
+	if (m_child_pid >= 0)
+		THROW_HW_ERROR(Error) << "cmd already running";
+
+	m_cmd.setPipes(m_pipe_list[StdIn].ptr,
+		       m_pipe_list[StdOut].ptr,
+		       m_pipe_list[StdErr].ptr);
+
+	m_child_pid = fork();
+	if (m_child_pid == 0) {
+		m_pipe_list[StdIn].close(Pipe::WriteFd);
+		m_pipe_list[StdOut].close(Pipe::ReadFd);
+		m_pipe_list[StdErr].close(Pipe::ReadFd);
+
+		int ret = m_cmd.execute();
+		DEB_RETURN() << DEB_VAR1(ret);
+		_exit(ret);
+	} else {
+		m_pipe_list[StdIn].close(Pipe::ReadFd);
+		m_pipe_list[StdOut].close(Pipe::WriteFd);
+		m_pipe_list[StdErr].close(Pipe::WriteFd);
+	}
+}
+
+void SystemCmdPipe::wait()
+{
+	DEB_MEMBER_FUNCT();
+	if (m_child_pid < 0)
+		THROW_HW_ERROR(Error) << "cmd not running";
+	int child_ret;
+	waitpid(m_child_pid, &child_ret, 0);
+	DEB_TRACE() << DEB_VAR1(child_ret);
+	m_child_pid = -1;
+}
+
+void SystemCmdPipe::setPipe(PipeIdx idx, PipeType type)
+{
+	DEB_MEMBER_FUNCT();
+	m_pipe_list[idx] = PipeData(type);
+}
+
+Pipe& SystemCmdPipe::getPipe(PipeIdx idx)
+{
+	DEB_MEMBER_FUNCT();
+	if (!m_pipe_list[idx])
+		THROW_HW_ERROR(InvalidValue) << "null pipe " << DEB_VAR1(idx);
+	return *m_pipe_list[idx].ptr;
 }
 
 int CPUAffinity::findNbSystemCPUs()
@@ -826,45 +892,33 @@ IntList NetDevRxQueueMgr::getRxQueueList()
 
 	IntList queue_list;
 
-	Pipe child_out;
+	SystemCmdPipe ethtool("ethtool");
+	ethtool.args() << "-S " << m_dev;
+	ethtool.setPipe(SystemCmdPipe::StdOut, SystemCmdPipe::DoPipe);
+	ethtool.start();
+	Pipe& child_out = ethtool.getPipe(SystemCmdPipe::StdOut);
 
-	pid_t child_pid = fork();
-	if (child_pid == 0) {
-		child_out.close(Pipe::ReadFd);
-		SystemCmd ethtool("ethtool");
-		ethtool.args() << "-S " << m_dev;
-		ethtool.setPipes(NULL, &child_out, NULL);
-		int ret = ethtool.execute();
-		DEB_RETURN() << DEB_VAR1(ret);
-		_exit(ret);
-	} else {
-		child_out.close(Pipe::WriteFd);
+	RegEx re("^[ \t]*rx_queue_(?P<queue>[0-9]+)_packets:[ \t]+"
+		 "(?P<packets>[0-9]+)\n$");
+	while (true) {
+		string s = child_out.readLine(1024, "\n");
+		if (s.empty())
+			break;
 
-		RegEx re("^[ \t]*rx_queue_(?P<queue>[0-9]+)_packets:[ \t]+"
-			 "(?P<packets>[0-9]+)\n$");
-		while (true) {
-			string s = child_out.readLine(1024, "\n");
-			if (s.empty())
-				break;
+		RegEx::FullNameMatchType match;
+		if (!re.matchName(s, match))
+			continue;
 
-			RegEx::FullNameMatchType match;
-			if (!re.matchName(s, match))
-				continue;
-
-			int queue;
-			istringstream(match["queue"]) >> queue;
-			unsigned long packets;
-			istringstream(match["packets"]) >> packets;
-			if (packets != 0) {
-				DEB_TRACE() << m_dev << " RxQueue " << queue
-					    << ": " << packets << " packets";
-				queue_list.push_back(queue);
-			}
+		int queue;
+		istringstream(match["queue"]) >> queue;
+		unsigned long packets;
+		istringstream(match["packets"]) >> packets;
+		if (packets != 0) {
+			DEB_TRACE() << m_dev << " RxQueue " << queue << ": "
+				    << packets << " packets";
+			queue_list.push_back(queue);
 		}
-
-		waitpid(child_pid, NULL, 0);
 	}
-
 	if (queue_list.empty())
 		DEB_WARNING() << "No queue found for " << m_dev;
 

@@ -70,6 +70,63 @@ class SystemCmd
 	Pipe *m_stderr;
 };
 
+class SystemCmdPipe
+{
+	DEB_CLASS_NAMESPC(DebModCamera, "SystemCmdPipe", "SlsDetector");
+ public:
+	enum PipeIdx {
+		StdIn, StdOut, StdErr,
+	};
+
+	enum PipeType {
+		None, DoPipe,
+	};
+
+	SystemCmdPipe(std::string cmd, std::string desc = "",
+		      bool try_sudo = true);
+	~SystemCmdPipe();
+
+	std::ostream& args()
+	{ return m_cmd.args(); }
+
+	void start();
+	void wait();
+
+	void setPipe(PipeIdx idx, PipeType type);
+	Pipe& getPipe(PipeIdx idx);
+ 
+ private:
+	enum {
+		NbPipes = StdErr + 1,
+	};
+
+	struct PipeData {
+		PipeType type;
+		AutoPtr<Pipe> ptr;
+
+		PipeData(PipeType t = None) : type(t)
+		{
+			if (*this)
+				ptr = new Pipe();
+		}
+
+		operator bool() const
+		{ return (type != None); }
+
+		void close(Pipe::EndFd end)
+		{
+			if (*this)
+				ptr->close(end);
+		}
+	};
+			
+	typedef std::vector<PipeData> PipeList;
+
+	PipeList m_pipe_list;
+	pid_t m_child_pid;
+	SystemCmd m_cmd;
+};
+
 class CPUAffinity 
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "CPUAffinity", "SlsDetector");
