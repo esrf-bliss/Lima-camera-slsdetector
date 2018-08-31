@@ -62,6 +62,43 @@ and leave only the Intel X540-AT2 ports:
 Debian 7
 --------
 
+*Linux kernel*
+~~~~~~~~~~~~~~
+
+Update the *Linux kernel* from Debian repository in order to improve system reliability:
+
+::
+
+    # as root
+    lid10eiger1:~ # linux_ver=$(dpkg --list linux-image-3.2\* | grep '^ii' | awk '{print $3}')
+    lid10eiger1:~ # echo ${linux_ver}
+    3.2.82-1
+
+    lid10eiger1:~ # linux_pkgs=$(dpkg --list linux\* | grep ${linux_ver} | awk '{print $2}')
+    lid10eiger1:~ # echo "${linux_pkgs}"
+    linux-doc-3.2
+    linux-headers-3.2.0-4-all-amd64
+    linux-headers-3.2.0-4-amd64
+    linux-headers-3.2.0-4-common
+    linux-headers-3.2.0-4-common-rt
+    linux-headers-3.2.0-4-rt-amd64
+    linux-image-3.2.0-4-amd64
+    linux-libc-dev:amd64
+    linux-manual-3.2
+
+    lid10eiger1:~ # apt-get install ${linux_pkgs}
+    ...
+    Get:1 http://lin-repo-master.esrf.fr/debian/stable/debian-security/ wheezy/updates/main linux-image-3.2.0-4-amd64 amd64 3.2.96-2 [23.5 MB]
+    Get:2 http://lin-repo-master.esrf.fr/debian/stable/debian-security/ wheezy/updates/main linux-doc-3.2 all 3.2.102-1 [6,501 kB]
+    Get:3 http://lin-repo-master.esrf.fr/debian/stable/debian-security/ wheezy/updates/main linux-headers-3.2.0-4-all-amd64 amd64 3.2.96-2 [270 kB]
+    Get:4 http://lin-repo-master.esrf.fr/debian/stable/debian-security/ wheezy/updates/main linux-headers-3.2.0-4-amd64 amd64 3.2.96-2 [671 kB]
+    Get:5 http://lin-repo-master.esrf.fr/debian/stable/debian-security/ wheezy/updates/main linux-headers-3.2.0-4-common amd64 3.2.96-2 [3,641 kB]
+    Get:6 http://lin-repo-master.esrf.fr/debian/stable/debian-security/ wheezy/updates/main linux-headers-3.2.0-4-rt-amd64 amd64 3.2.96-2 [671 kB]
+    Get:7 http://lin-repo-master.esrf.fr/debian/stable/debian-security/ wheezy/updates/main linux-headers-3.2.0-4-common-rt amd64 3.2.96-2 [3,646 kB]
+    Get:8 http://lin-repo-master.esrf.fr/debian/stable/debian-security/ wheezy/updates/main linux-libc-dev amd64 3.2.102-1 [890 kB]
+    Get:9 http://lin-repo-master.esrf.fr/debian/stable/debian-security/ wheezy/updates/main linux-manual-3.2 all 3.2.102-1 [3,051 kB]
+    ...
+    
 *libc*
 ~~~~~~
 
