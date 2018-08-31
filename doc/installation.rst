@@ -154,10 +154,11 @@ future, force the 'performance' governor in *cpufrequtils* INIT service:
 ::
 
     # as root
-    lid10eiger1:~ # cat /etc/default/cpufrequtils
+    lid10eiger1:~ # cat > /etc/default/cpufrequtils <<'EOF'
     # valid values: userspace conservative powersave ondemand performance
     # get them from cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors
     GOVERNOR="performance"
+    EOF
 
 *irqbalance*
 ~~~~~~~~~~~~
@@ -349,16 +350,20 @@ the highest priority:
 
 ::
 
-    lid10eiger1:~ # cat /etc/security/limits.d/net-performance.conf
+    lid10eiger1:~ # cat > /etc/security/limits.d/net-performance.conf <<'EOF'
     @netperf         -       rtprio 99
+    EOF
 
-Compile the *netdev_set_queue_rps_cpus* util, used by the *SlsDetector* plugin
+Compile the *netdev_set_queue_cpu_affinity* util, used by the *SlsDetector* plugin
 to change the network packet dispatching tasks' CPU affinity, and install it 
 in */usr/local/bin*:
 
 ::
 
-    lid10eiger1:~ # cat /tmp/netdev_set_queue_rps_cpus.c
+    lid10eiger1:~ # (
+        cd /tmp
+        prog_name="netdev_set_queue_cpu_affinity"
+        cat > ${prog_name}.c <<'EOF'
     #include <stdio.h>
     #include <stdlib.h>
     #include <string.h>
@@ -367,69 +372,82 @@ in */usr/local/bin*:
     #include <sys/types.h>
     #include <sys/stat.h>
     #include <fcntl.h>
-
+    
     int main(int argc, char *argv[])
     {
-            char *dev, *queue, *p, fname[256], buffer[128];
-            int fd, len, ret;
+            char *dev, *irq_queue, *p, fname[256], buffer[128];
+            int irq, rps, fd, len, ret;
             long aff;
-
-            if (argc != 4)
+    
+            if (argc != 5)
                     exit(1);
-            if (!strlen(argv[1]) || !strlen(argv[2]) || !strlen(argv[3]))
+            irq = (strcmp(argv[1], "-i") == 0);
+            rps = (strcmp(argv[1], "-r") == 0);
+            if (!irq && !rps)
                     exit(2);
-
-            dev = argv[1];
-            queue = argv[2];
-
+            if (!strlen(argv[2]) || !strlen(argv[3]) || !strlen(argv[4]))
+                    exit(2);
+    
+            dev = argv[2];
+            irq_queue = argv[3];
+    
             errno = 0;
-            aff = strtol(argv[3], &p, 0);
+            aff = strtol(argv[4], &p, 0);
             if (errno || *p)
                     exit(3);
-
+    
             len = sizeof(fname);
-            ret = snprintf(fname, len, "/sys/class/net/%s/queues/%s/rps_cpus",
-                           dev, queue);
+            if (irq)
+                    ret = snprintf(fname, len, "/proc/irq/%s/smp_affinity",
+                                   irq_queue);
+            else
+                    ret = snprintf(fname, len, "/sys/class/net/%s/queues/%s/rps_cpus",
+                                   dev, irq_queue);
             if ((ret < 0) || (ret == len))
                     exit(4);
-
+    
             len = sizeof(buffer);
             ret = snprintf(buffer, len, "%016lx", aff);
             if ((ret < 0) || (ret == len))
                     exit(5);
-
+    
             fd = open(fname, O_WRONLY);
             if (fd < 0)
                     exit(6);
-
+    
             for (p = buffer; *p; p += ret)
                     if ((ret = write(fd, p, strlen(p))) < 0)
                             exit(7);
-
+    
             if (close(fd) < 0)
                     exit(8);
             return 0;
     }
+    EOF
 
-    lid10eiger1:~ # gcc -Wall -o /tmp/netdev_set_queue_rps_cpus /tmp/netdev_set_queue_rps_cpus.c
-    lid10eiger1:~ # cp /tmp/netdev_set_queue_rps_cpus /usr/local/bin
+        gcc -Wall -o ${prog_name} ${prog_name}.c
+        rm -f ${prog_name}.c
+        mv ${prog_name} /usr/local/bin
+    )
 
 Allow *netperf* users to execute *sudo* in order to change other tasks' CPU affinity
-(*taskset* and *netdev_set_queue_rps_cpus*) and to configure the network devices (*ethtool* and
-*ifconfig*):
+(*taskset* and *netdev_set_queue_cpu_affinity*), to configure the network devices (*ethtool* and
+*ifconfig*) and start/stop system services like *irqbalance* (*service*):
 
 ::
 
-    lid10eiger1:~ # cat /etc/sudoers.d/netperf
+    lid10eiger1:~ # cat > /etc/sudoers.d/netperf <<'EOF'
     %netperf        ALL=(root) NOPASSWD: /usr/bin/taskset, /sbin/ethtool, \
                                          /sbin/ifconfig, \
-                                         /usr/local/bin/netdev_set_queue_rps_cpus
+                                         /usr/local/bin/netdev_set_queue_cpu_affinity, \
+                                         /usr/sbin/service
+    EOF
 
 Tune the OS network buffer sizes:
 
 ::
 
-    lid10eiger1:~ # cat /etc/sysctl.d/net-performance.conf
+    lid10eiger1:~ # cat > /etc/sysctl.d/net-performance.conf <<'EOF'
     # Tune network buffers for UDP RX performance
 
     # Original values: sysctl -a | grep net
@@ -454,6 +472,7 @@ Tune the OS network buffer sizes:
 
     # Size of per-device buffer (in packets) before Linux kernel dispatching
     net.core.netdev_max_backlog = 262144
+    EOF
 
 *cmake*
 ~~~~~~~
@@ -975,7 +994,7 @@ and create the *slsdetector* environment:
 
     # as blissadm
     lid10eiger1:~ % (
-      cat > ${HOME}/conda/miniconda/.condarc <<EOF
+      cat > ${HOME}/conda/miniconda/.condarc <<'EOF'
     channels:
       - http://bcu-ci.esrf.fr/stable
       - defaults
@@ -1194,7 +1213,7 @@ Apply a patch fixing Unicode string management in attribute names
              self = cls(name, class_name)
              self.build_from_dict(attr_dict)
     EOF
-      cat > /tmp/find_pytango_attr_data.py <<EOF
+      cat > /tmp/find_pytango_attr_data.py <<'EOF'
     from PyTango import AttrData
     import sys
     fname = sys.modules[AttrData.__module__].__file__
@@ -1263,21 +1282,23 @@ the beginning it just contains the BLISS environment:
 ::
 
     # as opid00
-    lid10eiger1:~ % cat eiger_setup.sh
+    lid10eiger1:~ % cat > eiger_setup.sh <<'EOF'
     # Setup the Eiger data acquisition environment
 
     # include the BLISS environment
     . blissrc
+    EOF
 
 and include it in the *.bash_profile* so it is executed at every login
 shell:
 
 ::
 
-    lid10eiger1:~ % tail -n 3 .bash_profile
+    lid10eiger1:~ % cat >> .bash_profile <<'EOF'
 
     # include the PSI/Eiger environment
     . ${EIGER_HOME}/eiger_setup.sh
+    EOF
 
 *git-sig* Bash helper
 ^^^^^^^^^^^^^^^^^^^^^
@@ -1286,7 +1307,7 @@ Add the *git-sig* Bash helper for authoring future commits:
 
 ::
 
-    lid10eiger1:~ % tail -n 22 .bashrc
+    lid10eiger1:~ % cat >> .bashrc <<'EOF'
 
     # Signature: from dev-gitlab dot_bashrc
 
@@ -1309,6 +1330,7 @@ Add the *git-sig* Bash helper for authoring future commits:
         export GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL
         echo "Now git will use \"$GIT_AUTHOR_NAME\" to commits until SHELL ends"
     }
+    EOF
 
 Logout from *opid00* and re-login so changes are taken into account for
 next steps.
@@ -1392,7 +1414,7 @@ Add the configuration file to *eiger_setup.sh* and decode the
 
 ::
 
-    (slsdetector) lid10eiger1:~ % tail -n 8 eiger_setup.sh
+    (slsdetector) lid10eiger1:~ % cat >> eiger_setup.sh <<'EOF'
 
     EIGER_DIR=${EIGER_HOME}/eiger/eiger_v3.1.1
     EIGER_CONFIG=${EIGER_DIR}/config/beb-021-020-direct-FO-10g.config
@@ -1401,6 +1423,7 @@ Add the configuration file to *eiger_setup.sh* and decode the
 
     SLS_DETECTOR_SETTINGS=$(grep ^settings ${EIGER_CONFIG} | awk '{print $2}')/standard
     export SLS_DETECTOR_SETTINGS
+    EOF
 
 Logout from *opid00* and login again in order to apply the previous
 changes.
@@ -1423,12 +1446,13 @@ Add the *ESRF scripts* to *eiger_setup.sh*:
 
 ::
 
-    (slsdetector) lid10eiger1:~ % tail -n 5 eiger_setup.sh
+    (slsdetector) lid10eiger1:~ % cat >> eiger_setup.sh <<'EOF'
 
     SLS_DETECTORS=${EIGER_HOME}/esrf/sls_detectors
     export SLS_DETECTORS
     PATH=${SLS_DETECTORS}/eiger/scripts:${PATH}
     export PATH
+    EOF
 
 Logout and re-login as *opid00* to have the previous environment set.
 
@@ -1547,13 +1571,14 @@ Add *Lima* to the *PATH*, *LD_LIBRARY_PATH* and *PYTHONPATH* environment variabl
 
 ::
 
-    (slsdetector) lid10eiger1:~ % tail -n 6 eiger_setup.sh
+    (slsdetector) lid10eiger1:~ % cat >> eiger_setup.sh <<'EOF'
 
     LIMA_DIR=${SLS_DETECTORS}/Lima
     PATH=${LIMA_DIR}/install/bin:${PATH}
     LD_LIBRARY_PATH=${LIMA_DIR}/install/lib:${LD_LIBRARY_PATH}
     PYTHONPATH=${LIMA_DIR}/install/python:${PYTHONPATH}
     export LIMA_DIR PATH LD_LIBRARY_PATH PYTHONPATH
+    EOF
 
 *eigerDetectorServer* and detector firmwares
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1602,11 +1627,11 @@ Include the Eiger environment at login:
 ::
 
     # as opid10
-    lid10eiger1:~ % tail -n 3 .bash_profile
+    lid10eiger1:~ % cat >> .bash_profile <<'EOF'
 
     # include the PSI/Eiger environment
     . ${EIGER_HOME}/eiger_setup.sh
-
+    EOF
 
 Install Lima Python Tango software in *blissadm*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
