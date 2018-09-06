@@ -985,7 +985,8 @@ Download and install *conda*:
         chmod a+x Miniconda2-latest-Linux-x86_64.sh 
         ./Miniconda2-latest-Linux-x86_64.sh
         # installation directory: /users/blissadm/conda/miniconda
-    )
+    ) && . ${HOME}/.bash_profile
+
 
 Configure the *conda* BCU ESRF channel, update the software
 and create the *slsdetector* environment:
@@ -1001,7 +1002,7 @@ and create the *slsdetector* environment:
       - conda-forge
     EOF
       ${HOME}/conda/miniconda/bin/conda update -n base conda
-      ${HOME}/conda/miniconda/bin/conda create -n slsdetector
+      ${HOME}/conda/miniconda/bin/conda create -n slsdetector python=2.7
     )
 
 Patch *blissrc* to use *conda* environments:
@@ -1269,9 +1270,10 @@ Add the *eiger.sh* entry in the system-wide Bash login setup scripts:
 ::
 
     # as root
-    lid10eiger1:~ # cat /etc/profile.d/eiger.sh
+    lid10eiger1:~ # cat > /etc/profile.d/eiger.sh <<'EOF'
     EIGER_HOME=~opid00
     export EIGER_HOME
+    EOF
 
 Eiger environment setup
 ^^^^^^^^^^^^^^^^^^^^^^^
@@ -1556,7 +1558,8 @@ Compile *Lima*, including *slsDetectorPackage* using *CMake*:
         --find-root-path=${CONDA_SYSROOT} \
         --install-prefix=${LIMA_DIR}/install \
         --install-python-prefix=${LIMA_DIR}/install/python \
-        slsdetector edfgz python pytango-server tests 2>&1 | cat
+        gsl-root-dir=${CONDA_PREFIX} \
+        slsdetector edfgz python pytango-server tests 2>&1
     ...
 
 Build the documentation:
