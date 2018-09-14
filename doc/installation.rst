@@ -495,6 +495,29 @@ if present, or the manually installed *cmake-3.8.0*:
         fi
     ...
 
+*Xsession*
+~~~~~~~~~~
+
+*Xsession* executes *ssh-agent*, which has the *setgid* bit set. This forces
+*Linux* to clear its *LD_LIBRARY_PATH*, and hence that of its descendant processes -
+the full *X11* session. The following patch propagates the *LD_LIBRARY_PATH*
+configured at login (*.bash_profile*) to the *X11* session:
+
+::
+
+    # as root
+    lid10eiger1:~ # (
+        Xsession_patch="/etc/X11/Xsession.d/80ld_library_path"
+        [ -f ${Xsession_patch} ] || cat > ${Xsession_patch} <<'EOF'
+    # This file is sourced by Xsession(5), not executed.
+    
+    # ensure LD_LIBRARY_PATH is propagated after ssh-agent is executed
+    STARTUP="${LD_LIBRARY_PATH:+env LD_LIBRARY_PATH=$LD_LIBRARY_PATH} $STARTUP"
+    
+    # vim:set ai et sts=2 sw=2 tw=80:
+    EOF
+    )
+
 Network configuration
 ---------------------
 
