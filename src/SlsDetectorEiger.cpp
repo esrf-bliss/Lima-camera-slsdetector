@@ -546,8 +546,10 @@ void Eiger::updateImageSize()
 	if (isPixelDepth4())
 		createPixelDepth4Corr();
 
+	Camera *cam = getCamera();
+
 	bool raw;
-	getCamera()->getRawMode(raw);
+	cam->getRawMode(raw);
 	if (raw)
 		return;
 
@@ -557,7 +559,11 @@ void Eiger::updateImageSize()
 	if (getNbEigerModules() > 1)
 		createInterModGapCorr();
 
-	if (m_fixed_clock_div) {
+	PixelDepth pixel_depth;
+	cam->getPixelDepth(pixel_depth);
+	if (pixel_depth == PixelDepth32) {
+		setClockDiv(QuarterSpeed);
+	} else if (m_fixed_clock_div) {
 		ClockDiv curr_clock_div;
 		getClockDiv(curr_clock_div);
 		if (curr_clock_div != m_clock_div) {
@@ -626,6 +632,14 @@ void Eiger::setClockDiv(ClockDiv clock_div)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(clock_div);
+	if (clock_div == SuperSlowSpeed)
+		THROW_HW_ERROR(NotSupported) << "SuperSlowSpeed not tested yet";
+	PixelDepth pixel_depth;
+	Camera* cam = getCamera();
+	cam->getPixelDepth(pixel_depth);
+	if ((pixel_depth == PixelDepth32) && (clock_div != QuarterSpeed))
+		THROW_HW_ERROR(InvalidValue) << "32-bit works only on "
+					     << "QuarterSpeed";
 	m_det->setClockDivider(clock_div);
 	m_clock_div = clock_div;
 	updateTimeRanges();

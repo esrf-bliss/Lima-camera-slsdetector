@@ -150,7 +150,7 @@ enum ClockDiv {
 	FullSpeed,
 	HalfSpeed,
 	QuarterSpeed,
-	SuperSlowSpeed, 
+	SuperSlowSpeed,
 };
 
 enum DetStatus {
