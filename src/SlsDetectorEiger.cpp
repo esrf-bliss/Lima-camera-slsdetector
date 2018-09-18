@@ -655,6 +655,22 @@ void Eiger::getClockDiv(ClockDiv& clock_div)
 	DEB_RETURN() << DEB_VAR1(clock_div);
 }
 
+void Eiger::setSubExpTime(double sub_exp_time)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(sub_exp_time);
+	if (sub_exp_time != 0)
+		THROW_HW_ERROR(NotSupported) << "SubExpTime not supported";
+	updateTimeRanges();
+}
+
+void Eiger::getSubExpTime(double& sub_exp_time)
+{
+	DEB_MEMBER_FUNCT();
+	sub_exp_time = 0;
+	DEB_RETURN() << DEB_VAR1(sub_exp_time);
+}
+
 void Eiger::setAllTrimBits(int sub_mod_idx, int val)
 {
 	DEB_MEMBER_FUNCT();

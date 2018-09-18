@@ -89,6 +89,8 @@ class Eiger : public Model
 	void getFixedClockDiv(bool& fixed_clock_div);
 	void setClockDiv(ClockDiv  clock_div);
 	void getClockDiv(ClockDiv& clock_div);
+	void setSubExpTime(double  sub_exp_time);
+	void getSubExpTime(double& sub_exp_time);
 
 	void setAllTrimBits(int sub_mod_idx, int  val);
 	void getAllTrimBits(int sub_mod_idx, int& val);

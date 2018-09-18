@@ -73,6 +73,8 @@ class Eiger : public SlsDetector::Model
 	void getFixedClockDiv(bool& fixed_clock_div);
 	void setClockDiv(SlsDetector::Defs::ClockDiv  clock_div);
 	void getClockDiv(SlsDetector::Defs::ClockDiv& clock_div /Out/);
+	void setSubExpTime(double  sub_exp_time);
+	void getSubExpTime(double& sub_exp_time /Out/);
 
 	void setAllTrimBits(int sub_mod_idx, int  val);
 	void getAllTrimBits(int sub_mod_idx, int& val /Out/);
