@@ -119,7 +119,6 @@ class SlsDetectorAcq:
         self.m_ct_saving     = self.m_ct.saving()
         self.m_ct_image      = self.m_ct.image()
         self.m_ct_buffer     = self.m_ct.buffer()
-        self.m_ct_display    = self.m_ct.display()
 
         self.m_use_events    = use_events
         self.m_print_time    = print_time
@@ -134,9 +133,6 @@ class SlsDetectorAcq:
             self.m_img_status_cb = cb
             self.m_ct.registerImageStatusCallback(self.m_img_status_cb)
 
-        self.m_ct_display.setNames('_ccd_ds_', 'slsdetector_live')
-        self.m_ct_display.setActive(True)
-        
 
     @Core.DEB_MEMBER_FUNCT
     def __del__(self):
