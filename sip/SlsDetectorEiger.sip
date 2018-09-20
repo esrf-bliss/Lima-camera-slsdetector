@@ -65,6 +65,10 @@ class Eiger : public SlsDetector::Model
 				std::vector<double>& min_val_list /Out/);
 
 	virtual void getTimeRanges(SlsDetector::TimeRanges& time_ranges /Out/);
+	static void calcTimeRanges(SlsDetector::PixelDepth pixel_depth,
+				   SlsDetector::Defs::ClockDiv clock_div,
+				   SlsDetector::Eiger::ParallelMode parallel_mode,
+				   SlsDetector::TimeRanges& time_ranges /Out/);
 
 	void setParallelMode(SlsDetector::Eiger::ParallelMode  mode);
 	void getParallelMode(SlsDetector::Eiger::ParallelMode& mode);

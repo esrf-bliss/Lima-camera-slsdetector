@@ -471,14 +471,23 @@ void Eiger::getTimeRanges(TimeRanges& time_ranges)
 {
 	DEB_MEMBER_FUNCT();
 
-	ParallelMode parallel_mode;
-	getParallelMode(parallel_mode);
-	bool parallel = (parallel_mode == Parallel);
-	ClockDiv clock_div;
-	getClockDiv(clock_div);
 	PixelDepth pixel_depth;
 	Camera* cam = getCamera();
 	cam->getPixelDepth(pixel_depth);
+	ClockDiv clock_div;
+	getClockDiv(clock_div);
+	ParallelMode parallel_mode;
+	getParallelMode(parallel_mode);
+
+	calcTimeRanges(pixel_depth, clock_div, parallel_mode, time_ranges);
+}
+
+void Eiger::calcTimeRanges(PixelDepth pixel_depth, ClockDiv clock_div,
+			   ParallelMode parallel_mode,
+			   TimeRanges& time_ranges)
+{
+	DEB_STATIC_FUNCT();
+	DEB_PARAM() << DEB_VAR3(pixel_depth, clock_div, parallel_mode);
 
 	// times are in usec, freq in MHz
 	int period_factor = 1 << int(clock_div);
@@ -515,10 +524,14 @@ void Eiger::getTimeRanges(TimeRanges& time_ranges)
 		DEB_TRACE() << "limiting chip readout freq: "
 			    << DEB_VAR2(min_chip_readout, chip_readout);
 	}
+	double full_readout = xfer_2_buff + chip_readout;
+	DEB_TRACE() << DEB_VAR1(full_readout);
+
+	bool parallel = (parallel_mode == Parallel);
 
 	double min_exp = 10;
-	double min_period = xfer_2_buff + chip_readout;
-	double min_lat = parallel ? xfer_2_buff : min_period;
+	double min_period = (parallel ? 0 : min_exp) + full_readout;
+	double min_lat = parallel ? xfer_2_buff : full_readout;
 
 	time_ranges.min_exp_time = min_exp * 1e-6;
 	time_ranges.max_exp_time = 1e3;

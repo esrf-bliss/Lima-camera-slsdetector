@@ -78,6 +78,10 @@ class Eiger : public Model
 				FloatList& min_val_list);
 
 	virtual void getTimeRanges(TimeRanges& time_ranges);
+	static void calcTimeRanges(PixelDepth pixel_depth,
+				   ClockDiv clock_div,
+				   ParallelMode parallel_mode, 
+				   TimeRanges& time_ranges);
 
 	// the returned object must be deleted by the caller
 	Correction *createCorrectionTask();
