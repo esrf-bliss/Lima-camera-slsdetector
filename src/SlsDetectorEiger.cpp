@@ -533,6 +533,13 @@ void Eiger::calcTimeRanges(PixelDepth pixel_depth, ClockDiv clock_div,
 	double min_period = (parallel ? 0 : min_exp) + full_readout;
 	double min_lat = parallel ? xfer_2_buff : full_readout;
 
+	// Timing hardware uses 32-bit, base-10 floating-point registers:
+	//   29 bits: mantissa
+	//    3 bits: exponent
+	// Time unit: 10 nsec 
+	// Max value: 2^29 * 10^(2^3 - 1) * 10 nsec = 1.7 years
+	// Using 1000 sec as a reasonable upper limit
+
 	time_ranges.min_exp_time = min_exp * 1e-6;
 	time_ranges.max_exp_time = 1e3;
 	time_ranges.min_lat_time = min_lat * 1e-6;
