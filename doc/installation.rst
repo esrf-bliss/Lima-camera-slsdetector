@@ -474,8 +474,8 @@ Tune the OS network buffer sizes:
     net.core.netdev_max_backlog = 262144
     EOF
 
-*cmake*
-~~~~~~~
+*cmake* & *libnuma-dev*
+~~~~~~~~~~~~~~~~~~~~~~~
 
 *Conda* includes *cmake*, needed to compile Lima. De-install the Debian 7 package,
 if present, or the manually installed *cmake-3.8.0*:
@@ -490,9 +490,18 @@ if present, or the manually installed *cmake-3.8.0*:
     lid10eiger1:~ # \
         curr_cmake=$(which cmake)
         if [ -n "${curr_cmake}" ] && [ $(dirname ${curr_cmake}) == "/usr/local/bin" ]; then
-            cmake_src=$(find ~ -type d -name cmake-3.8.0)
+            cmake_src=$(find ~ ~opid00 -type d -name cmake-3.8.0)
             [ -n "${cmake_src}" ] && cd ${cmake_src} && su -c "make uninstall"
         fi
+    ...
+
+The same applies to *libnuma-dev*:
+
+::
+
+    # as root
+    lid10eiger1:~ # p=$(dpkg --list libnuma-dev | grep '^ii' | awk '{print $2}'); \
+        [ -n "${p}" ] && dpkg --purge ${p}
     ...
 
 *Xsession*
