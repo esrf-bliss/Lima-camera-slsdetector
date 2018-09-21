@@ -145,6 +145,9 @@ class Interface : HwInterface
 			break;
 		}
 %End
+
+ private:
+	Interface(const SlsDetector::Interface& o);
 };
 
 

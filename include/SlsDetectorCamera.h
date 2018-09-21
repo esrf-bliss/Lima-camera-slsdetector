@@ -54,6 +54,7 @@ public:
 	typedef Defs::NetworkParameter NetworkParameter;
 
 	Camera(std::string config_fname);
+	Camera(const Camera& o) = delete;
 	virtual ~Camera();
 
 	Type getType();
