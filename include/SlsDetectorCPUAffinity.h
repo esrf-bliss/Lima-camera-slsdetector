@@ -28,6 +28,8 @@
 #include "lima/CtControl.h"
 #include "lima/SimplePipe.h"
 
+#include <numeric>
+
 namespace lima 
 {
 
@@ -214,11 +216,9 @@ typedef std::vector<CPUAffinity> CPUAffinityList;
 inline CPUAffinity CPUAffinityList_all(const CPUAffinityList& l)
 {
 	CPUAffinity all;
-	if (l.size() > 0) {
-		CPUAffinityList::const_iterator it, end = l.end();
-		for (all = *(it = l.begin())++; it != end; ++it)
-			all |= *it;
-	}
+	if (!l.empty())
+		all = std::accumulate(std::next(l.begin()), l.end(), l.front(),
+				      std::bit_or<CPUAffinity>());
 	return all;
 }
 
@@ -368,6 +368,15 @@ bool operator !=(const NetDevGroupCPUAffinity& a,
 
 typedef std::vector<NetDevGroupCPUAffinity> NetDevGroupCPUAffinityList;
 
+inline CPUAffinity NetDevGroupCPUAffinityList_all(
+					const NetDevGroupCPUAffinityList& l)
+{
+	CPUAffinityList netdev_aff_list;
+	NetDevGroupCPUAffinityList::const_iterator it, end = l.end();
+	for (it = l.begin(); it != end; ++it)
+		netdev_aff_list.push_back(it->all());
+	return CPUAffinityList_all(netdev_aff_list);
+}
 
 class SystemCPUAffinityMgr
 {
@@ -503,6 +512,15 @@ bool operator !=(const RecvCPUAffinity& a, const RecvCPUAffinity& b)
 }
 
 typedef std::vector<RecvCPUAffinity> RecvCPUAffinityList;
+
+inline CPUAffinity RecvCPUAffinityList_all(const RecvCPUAffinityList& l)
+{
+	CPUAffinityList recv_aff_list;
+	RecvCPUAffinityList::const_iterator it, end = l.end();
+	for (it = l.begin(); it != end; ++it)
+		recv_aff_list.push_back(it->all());
+	return CPUAffinityList_all(recv_aff_list);
+}
 
 struct GlobalCPUAffinity {
 	RecvCPUAffinityList recv;

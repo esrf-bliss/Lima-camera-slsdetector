@@ -1345,14 +1345,8 @@ RecvCPUAffinity& RecvCPUAffinity::operator =(CPUAffinity a)
 
 CPUAffinity GlobalCPUAffinity::all() const
 {
-	CPUAffinity all = lima | other;
-	RecvCPUAffinityList::const_iterator rit, rend = recv.end();
-	for (rit = recv.begin(); rit != rend; ++rit)
-		all |= rit->all();
-	NetDevGroupCPUAffinityList::const_iterator nit, nend = netdev.end();
-	for (nit = netdev.begin(); nit != nend; ++nit)
-		all |= nit->all();
-	return all;
+	return (RecvCPUAffinityList_all(recv) |
+		NetDevGroupCPUAffinityList_all(netdev) | lima | other);
 }
 
 void GlobalCPUAffinity::updateRecvAffinity(CPUAffinity a)
@@ -1626,12 +1620,8 @@ void GlobalCPUAffinityMgr::recvFinished()
 	if (m_state == Ready) 
 		return;
 
-	CPUAffinity recv_all;
-	RecvCPUAffinityList::const_iterator it, end = m_curr.recv.end();
-	if ((it = m_curr.recv.begin()) != end)
-		for (recv_all = (*it++).all(); it != end; ++it)
-			recv_all |= it->all();
-
+	CPUAffinity recv_all = RecvCPUAffinityList_all(m_curr.recv);
+	DEB_TRACE() << DEB_VAR2(m_curr.lima, recv_all);
 	if (m_curr.lima != recv_all) {
 		m_state = Changing;
 		AutoMutexUnlock u(l);

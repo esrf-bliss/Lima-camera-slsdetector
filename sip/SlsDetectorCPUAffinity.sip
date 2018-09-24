@@ -292,6 +292,9 @@ struct NetDevGroupCPUAffinity {
 // typedef std::vector<SlsDetector::NetDevGroupCPUAffinity> 
 //					NetDevGroupCPUAffinityList;
 
+SlsDetector::CPUAffinity NetDevGroupCPUAffinityList_all(
+			const SlsDetector::NetDevGroupCPUAffinityList& l);
+
 class SystemCPUAffinityMgr
 {
 public:
@@ -328,6 +331,9 @@ struct RecvCPUAffinity {
 };
 
 // typedef std::vector<RecvCPUAffinity> RecvCPUAffinityList;
+
+SlsDetector::CPUAffinity RecvCPUAffinityList_all(
+				const SlsDetector::RecvCPUAffinityList& l);
 
 struct GlobalCPUAffinity {
 	SlsDetector::RecvCPUAffinityList recv;
