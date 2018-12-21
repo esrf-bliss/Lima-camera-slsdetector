@@ -123,7 +123,7 @@ generate_export_header(slsdetector)
 # Set version and output name
 set_target_properties(slsdetector PROPERTIES
   OUTPUT_NAME "lima${PROJECT_NAME_LOWER}"
-  VERSION "${VERSION}"
+  VERSION "${PROJECT_VERSION}"
   SOVERSION "${PACKAGE_VERSION_MAJOR}.${PACKAGE_VERSION_MINOR}")
 
 # Add dependencies
