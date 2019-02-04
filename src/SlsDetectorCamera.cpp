@@ -285,7 +285,8 @@ Camera::AcqThread::Status Camera::AcqThread::newFrameReady(FrameType frame)
 	DEB_MEMBER_FUNCT();
 	HwFrameInfoType frame_info;
 	frame_info.acq_frame_nb = frame;
-	bool cont_acq = m_cam->m_buffer_cb_mgr->newFrameReady(frame_info);
+	StdBufferCbMgr *cb_mgr = m_cam->getBufferCbMgr();
+	bool cont_acq = cb_mgr->newFrameReady(frame_info);
 	bool acq_end = (frame == m_cam->m_lima_nb_frames - 1);
 	cont_acq &= !acq_end;
 	return Status(cont_acq, acq_end);
@@ -430,7 +431,7 @@ char *Camera::getFrameBufferPtr(FrameType frame_nb)
 {
 	DEB_MEMBER_FUNCT();
 
-	StdBufferCbMgr *cb_mgr = m_buffer_cb_mgr;
+	StdBufferCbMgr *cb_mgr = getBufferCbMgr();
 	if (!cb_mgr)
 		THROW_HW_ERROR(InvalidValue) << "No BufferCbMgr defined";
 	void *ptr = cb_mgr->getFrameBufferPtr(frame_nb);
@@ -768,7 +769,8 @@ void Camera::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
 
-	if (!m_buffer_cb_mgr)
+	StdBufferCbMgr *cb_mgr = getBufferCbMgr();
+	if (!cb_mgr)
 		THROW_HW_ERROR(Error) << "No BufferCbMgr defined";
 	if (!m_model)
 		THROW_HW_ERROR(Error) << "No BufferCbMgr defined";
@@ -784,7 +786,7 @@ void Camera::prepareAcq()
 		setFramePeriod(m_exp_time + m_lat_time);
 
 	int nb_buffers;
-	m_buffer_cb_mgr->getNbBuffers(nb_buffers);
+	cb_mgr->getNbBuffers(nb_buffers);
 
 	{
 		AutoMutex l = lock();
@@ -816,7 +818,8 @@ void Camera::startAcq()
 	if (m_acq_thread)
 		THROW_HW_ERROR(Error) << "Must call prepareAcq first";
 
-	m_buffer_cb_mgr->setStartTimestamp(Timestamp::now());
+	StdBufferCbMgr *cb_mgr = getBufferCbMgr();
+	cb_mgr->setStartTimestamp(Timestamp::now());
 
 	m_acq_thread = new AcqThread(this);
 	m_acq_thread->start();

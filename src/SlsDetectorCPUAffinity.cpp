@@ -1554,6 +1554,7 @@ void GlobalCPUAffinityMgr::setLimaAffinity(CPUAffinity lima_affinity)
 		lima_affinity.applyToTask(pid, true);
 		m_curr.updateRecvAffinity(lima_affinity);
 	}
+	m_cam->m_buffer_ctrl_obj->setCPUAffinityMask(lima_affinity);
 	m_curr.lima = lima_affinity;
 }
 

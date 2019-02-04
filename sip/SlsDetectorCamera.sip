@@ -41,7 +41,7 @@ public:
 	int getTotNbPorts();
 	int getPortIndex(int recv_idx, int port);
 
-	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr);
+	void setBufferCtrlObj(SoftBufferCtrlObj *buffer_ctrl_obj);
 
 	void setPixelDepth(SlsDetector::PixelDepth  pixel_depth);
 	void getPixelDepth(SlsDetector::PixelDepth& pixel_depth /Out/);

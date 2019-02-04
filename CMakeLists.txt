@@ -33,6 +33,12 @@ include(GNUInstallDirs)
 include(GenerateExportHeader)
 
 # If conda build, always set lib dir to 'lib'
+if(NOT LIMA_ENABLE_NUMA)
+  message(FATAL_ERROR
+          "slsdetector requires NUMA control in Lima: set LIMA_ENABLE_NUMA ON")
+endif()
+
+# If conda build, always set lib dir to 'lib'
 if($ENV{CONDA_BUILD})
   set(CMAKE_INSTALL_LIBDIR "lib")
 endif()
