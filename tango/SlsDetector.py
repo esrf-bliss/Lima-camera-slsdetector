@@ -44,12 +44,14 @@ import numpy as np
 import PyTango
 from collections import OrderedDict
 from functools import partial
+from itertools import chain
+from multiprocessing import Process
 
 from Lima import Core
 from Lima import SlsDetector as SlsDetectorHw
 from Lima.Server.AttrHelper import get_attr_4u, get_attr_string_value_list
 
-def ConstListAttr(nl, vl=None, Defs=SlsDetectorHw.Defs):
+def ConstListAttr(nl, vl=None, namespc=SlsDetectorHw.Defs):
     def g(x):
         n = ''
         was_cap = True
@@ -61,7 +63,7 @@ def ConstListAttr(nl, vl=None, Defs=SlsDetectorHw.Defs):
         return n
 
     if vl is None:
-        vl = [getattr(Defs, n) for n in nl]
+        vl = [getattr(namespc, n) for n in nl]
     return OrderedDict([(g(n), v) for n, v in zip(nl, vl)])
 
 
@@ -75,6 +77,13 @@ class SlsDetector(PyTango.Device_4Impl):
 #------------------------------------------------------------------
 
     MilliVoltSuffix = '_mv'
+
+    ModelAttrs = ['parallel_mode',
+                  'high_voltage',
+                  'clock_div',
+                  'fixed_clock_div',
+                  'threshold_energy',
+    ]
 
     def __init__(self,*args) :
         PyTango.Device_4Impl.__init__(self,*args)
@@ -103,6 +112,13 @@ class SlsDetector(PyTango.Device_4Impl):
         self.proc_finished = self.cam.getProcessingFinishedEvent()
         self.proc_finished.registerStatusCallback(_SlsDetectorControl)
 
+        if self.high_voltage > 0:
+            self.model.setHighVoltage(self.high_voltage)
+        if self.fixed_clock_div > 0:
+            self.model.setFixedClockDiv(self.fixed_clock_div)
+        if self.threshold_energy > 0:
+            self.model.setThresholdEnergy(self.threshold_energy)
+
         self.cam.setTolerateLostPackets(self.tolerate_lost_packets)
         self.netdev_groups = [g.split(',') for g in self.netdev_groups]
         aff_array = self.pixel_depth_cpu_affinity_map
@@ -116,8 +132,8 @@ class SlsDetector(PyTango.Device_4Impl):
         nl = ['FullSpeed', 'HalfSpeed', 'QuarterSpeed', 'SuperSlowSpeed']
         self.__ClockDiv = ConstListAttr(nl)
 
-        vl, nl = self.cam.getValidReadoutFlags()
-        self.__ReadoutFlags = ConstListAttr(nl, vl)
+        nl = ['Parallel', 'NonParallel', 'Safe']
+        self.__ParallelMode = ConstListAttr(nl, namespc=SlsDetectorHw.Eiger)
 
         nl = ['PixelDepth4', 'PixelDepth8', 'PixelDepth16', 'PixelDepth32']
         bdl = map(lambda x: getattr(SlsDetectorHw, x), nl)
@@ -173,7 +189,11 @@ class SlsDetector(PyTango.Device_4Impl):
             if stats_tok[1] in ['do_hist']:
                 stats_name = '_'.join(stats_tok)
                 return get_attr_4u(self, stats_name, SlsDetectorHw.SimpleStat)
-        return get_attr_4u(self, name, self.cam)
+        obj = self.cam
+        for attr in self.ModelAttrs:
+            if attr in name:
+                obj = self.model
+        return get_attr_4u(self, name, obj)
 
     @Core.DEB_MEMBER_FUNCT
     def read_config_fname(self, attr):
@@ -232,14 +252,14 @@ class SlsDetector(PyTango.Device_4Impl):
 
     @Core.DEB_MEMBER_FUNCT
     def read_all_trim_bits(self, attr):
-        val_list = self.cam.getAllTrimBitsList()
+        val_list = self.model.getAllTrimBitsList()
         deb.Return("val_list=%s" % val_list)
         attr.set_value(val_list)
 
     @Core.DEB_MEMBER_FUNCT
     def write_all_trim_bits(self, attr):
         for i, val in self.get_write_mod_idx_val_list(attr):
-            self.cam.setAllTrimBits(i, val)
+            self.model.setAllTrimBits(i, val)
 
     @Core.DEB_MEMBER_FUNCT
     def get_write_mod_idx_val_list(self, attr):
@@ -348,22 +368,64 @@ class SlsDetector(PyTango.Device_4Impl):
             raise err
         aff_map = {}
         CPUAffinity = SlsDetectorHw.CPUAffinity
+        RecvCPUAffinity = SlsDetectorHw.RecvCPUAffinity
+        NetDevRxQueueCPUAffinity = SlsDetectorHw.NetDevRxQueueCPUAffinity
         NetDevGroupCPUAffinity = SlsDetectorHw.NetDevGroupCPUAffinity
         GlobalCPUAffinity = SlsDetectorHw.GlobalCPUAffinity
         for aff_data in aff_array:
             aff_data = map(int, aff_data)
             pixel_depth, recv_l, recv_w, lima, other = aff_data[:5]
             netdev_aff = aff_data[5:]
+            all_cpus = range(CPUAffinity.getNbSystemCPUs())
+            recv_lw = [[6, 7], [9, 10]]
+            indep_lw = True
+            if indep_lw:
+                recv_l = recv_lw
+                recv_w = [map(lambda x: x + 12, l) for l in recv_l]
+            else:
+                recv_l = [[(x, x + 12) for x in r] for r in recv_lw]
+                recv_w = recv_l
+            recv_pt = [(8, 20), (11, 23)]
+            recv_pt = zip(*([recv_pt] * 2))
+            lima = list(range(6))
+            lima += map(lambda x: x + 12, lima)
+            lima.remove(0)
+            other = [0]
+            irq_aff = [0, (8, 20), (11, 23)]
+            proc_aff = irq_aff
+            def Affinity(*x):
+                if type(x[0]) in [tuple, list]:
+                    x = list(chain(*x))
+                m = reduce(lambda a, b: a | b, map(lambda a: 1 << a, x))
+                return CPUAffinity(m)
             global_affinity = GlobalCPUAffinity()
-            global_affinity.recv.listeners = CPUAffinity(recv_l)
-            global_affinity.recv.writers = CPUAffinity(recv_w)
-            global_affinity.lima = CPUAffinity(lima)
-            global_affinity.other = CPUAffinity(other)
+            recv_list = []
+            for l, w, pt in zip(recv_l, recv_w, recv_pt):
+                recv = RecvCPUAffinity()
+                recv.listeners = map(Affinity, l)
+                recv.writers = map(Affinity, w)
+                recv.port_threads = map(Affinity, pt)
+                recv_list.append(recv)
+            global_affinity.recv = recv_list
+            for i, r in enumerate(global_affinity.recv):
+                s = "Recv[%d]:" % i
+                def A(x):
+                    return hex(long(x))
+                s += " listeners=%s," % [A(x) for x in r.listeners]
+                s += " writers=%s," % [A(x) for x in r.writers]
+                s += " port_threads=%s" % [A(x) for x in r.port_threads]
+                print(s)
+            global_affinity.lima = Affinity(*lima)
+            global_affinity.other = Affinity(*other)
             ng_aff_list = []
-            for name_list, a in zip(self.netdev_groups, netdev_aff):
+            for name_list, (irq, proc) in zip(self.netdev_groups, 
+                                              zip(irq_aff, proc_aff)):
                 ng_aff = NetDevGroupCPUAffinity()
                 ng_aff.name_list = name_list
-                ng_aff.processing = CPUAffinity(a)
+                ng_aff_queue = NetDevRxQueueCPUAffinity()
+                ng_aff_queue.irq = Affinity(irq)
+                ng_aff_queue.processing = Affinity(proc)
+                ng_aff.queue_affinity = {-1: ng_aff_queue}
                 ng_aff_list.append(ng_aff)
             global_affinity.netdev = ng_aff_list
             aff_map[pixel_depth] = global_affinity
@@ -404,6 +466,19 @@ class SlsDetectorClass(PyTango.DeviceClass):
         'config_fname':
         [PyTango.DevString,
          "Path to the SlsDetector config file",[]],
+        'full_config_fname':
+        [PyTango.DevString,
+         "In case of partial configuration, path to the full config file",[]],
+        'high_voltage':
+        [PyTango.DevShort,
+         "Initial detector high voltage (V) "
+         "(set to 150 if already tested)", 0],
+        'fixed_clock_div':
+        [PyTango.DevShort,
+         "Initial detector fixed-clock-div (0, 1)", 0],
+        'threshold_energy':
+        [PyTango.DevLong,
+         "Initial detector threshold energy (eV)", 0],
         'tolerate_lost_packets':
         [PyTango.DevBoolean,
          "Initial tolerance to lost packets", True],
@@ -480,11 +555,19 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevLong,
           PyTango.SPECTRUM,
           PyTango.READ_WRITE, 64]],
+        'high_voltage':
+        [[PyTango.DevLong,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
         'clock_div':
         [[PyTango.DevString,
           PyTango.SCALAR,
           PyTango.READ_WRITE]],
-        'readout_flags':
+        'fixed_clock_div':
+        [[PyTango.DevBoolean,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'parallel_mode':
         [[PyTango.DevString,
           PyTango.SCALAR,
           PyTango.READ_WRITE]],
@@ -508,6 +591,10 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevBoolean,
           PyTango.SCALAR,
           PyTango.READ_WRITE]],
+        'skip_frame_freq':
+        [[PyTango.DevLong,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
         }
 
     def __init__(self,name) :
@@ -528,7 +615,18 @@ def get_control(config_fname, **keys) :
     global _SlsDetectorCam, _SlsDetectorHwInter, _SlsDetectorEiger
     global _SlsDetectorCorrection, _SlsDetectorControl
     if _SlsDetectorControl is None:
+        full_config_fname = keys.pop('full_config_fname', None)
+        if full_config_fname:
+            p = Process(target=setup_partial_config,
+                        args=(config_fname, full_config_fname))
+            p.start()
+            p.join()
+
         _SlsDetectorCam = SlsDetectorHw.Camera(config_fname)
+        for i, n in enumerate(_SlsDetectorCam.getHostnameList()):
+            print('Enabling: %s (%d)' % (n, i))
+            _SlsDetectorCam.putCmd('activate 1', i)
+
         _SlsDetectorHwInter = SlsDetectorHw.Interface(_SlsDetectorCam)
         if _SlsDetectorCam.getType() == SlsDetectorHw.EigerDet:
             _SlsDetectorEiger = SlsDetectorHw.Eiger(_SlsDetectorCam)
@@ -544,3 +642,32 @@ def get_control(config_fname, **keys) :
 
 def get_tango_specific_class_n_device():
     return SlsDetectorClass, SlsDetector
+
+
+#----------------------------------------------------------------------------
+# Deactivate modules in partial config
+#----------------------------------------------------------------------------
+
+def setup_partial_config(config_fname, full_config_fname):
+    import re
+
+    cam = SlsDetectorHw.Camera(full_config_fname)
+    full_hostname_list = cam.getHostnameList()
+    print('Full config: %s' % ','.join(full_hostname_list))
+    host_re_str = '([A-Za-z0-9]+)+?'
+    host_re_obj = re.compile(host_re_str)
+    re_obj = re.compile('^[ \\t]*hostname[ \\t]+(%s[^# ]+)' % host_re_str)
+    partial_hostname_list = []
+    with open(config_fname) as f:
+        for l in f:
+            m = re_obj.match(l)
+            if m:
+                s = m.groups()[0]
+                partial_hostname_list = host_re_obj.findall(s)
+                break
+    print('Partial config: %s' % ','.join(partial_hostname_list))
+    for i, n in enumerate(full_hostname_list):
+        if n not in partial_hostname_list:
+            print('Disabling: %s (%d)' % (n, i))
+            cam.putCmd('activate 0', i)
+    print('Partial config: Done!')
