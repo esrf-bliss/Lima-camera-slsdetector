@@ -78,6 +78,10 @@ class Eiger : public Model
 				FloatList& min_val_list);
 
 	virtual void getTimeRanges(TimeRanges& time_ranges);
+	static void calcTimeRanges(PixelDepth pixel_depth,
+				   ClockDiv clock_div,
+				   ParallelMode parallel_mode, 
+				   TimeRanges& time_ranges);
 
 	// the returned object must be deleted by the caller
 	Correction *createCorrectionTask();
@@ -85,8 +89,12 @@ class Eiger : public Model
 	void setParallelMode(ParallelMode  mode);
 	void getParallelMode(ParallelMode& mode);
 
+	void setFixedClockDiv(bool  fixed_clock_div);
+	void getFixedClockDiv(bool& fixed_clock_div);
 	void setClockDiv(ClockDiv  clock_div);
 	void getClockDiv(ClockDiv& clock_div);
+	void setSubExpTime(double  sub_exp_time);
+	void getSubExpTime(double& sub_exp_time);
 
 	void setAllTrimBits(int sub_mod_idx, int  val);
 	void getAllTrimBits(int sub_mod_idx, int& val);
@@ -336,9 +344,6 @@ class Eiger : public Model
 	int getNbEigerModules()
 	{ return getNbDetModules() / 2; }
 
-	static double KiloHzPeriod(double f)
-	{ return 1e6 / (f * 1e3); }
-
 	void getRecvFrameDim(FrameDim& frame_dim, bool raw, bool geom);
 
 	CorrBase *createBadRecvFrameCorr();
@@ -358,9 +363,27 @@ class Eiger : public Model
 	static const int HalfModuleChips;
 	static const int RecvPorts;
 
+	struct LinScale {
+		double factor, offset;
+		LinScale(double f, double o) : factor(f), offset(o) {}
+		double calcY(double x) const
+		{ return x * factor + offset; }
+		double calcX(double y) const
+		{ return (y - offset) / factor; }
+	};
+
+	static const int BitsPerXfer;
+	static const int SuperColNbCols;
+	static const double BaseChipXferFreq;
+	static const double MaxFebBebBandwidth;
+	static const LinScale ChipXfer2Buff;
+	static const LinScale ChipRealReadout;
+
 	FrameDim m_recv_frame_dim;
 	CorrList m_corr_list;
 	PortGeometryList m_port_geom_list;
+	bool m_fixed_clock_div;
+	ClockDiv m_clock_div;
 };
 
 std::ostream& operator <<(std::ostream& os, Eiger::ParallelMode mode);

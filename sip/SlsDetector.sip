@@ -20,40 +20,21 @@
 // along with this program; if not, see <http://www.gnu.org/licenses/>.
 //###########################################################################
 
-%MappedType std::set<int>
+%MappedType std::vector<unsigned long>
 {
 %TypeHeaderCode
-#include <set>
-
-using namespace std;
-
-typedef set<int> CPP_SeqType;
+#include "SlsDetectorSip.h"
 %End
 
 %ConvertToTypeCode
-	if (sipIsErr == NULL) {
-		bool ok = PyList_Check(sipPy);
-		for (int i = 0; ok && (i < PyList_Size(sipPy)); ++i)
-			ok = PyInt_Check(PyList_GET_ITEM(sipPy, i));
-		return ok;
-	}
-
-	*sipCppPtr = new CPP_SeqType();
-	for (int i = 0; i < PyList_Size(sipPy); ++i) {
-		int val = PyInt_AS_LONG(PyList_GET_ITEM(sipPy, i));
-		(*sipCppPtr)->insert(val);
-	}
-	return sipGetState(sipTransferObj);
+	SipSequence<vector<unsigned long> > seq;
+	return seq.convertToTypeCode(sipPy, sipCppPtr, sipIsErr,
+				     sipTransferObj);
 %End
 
 %ConvertFromTypeCode
-	PyObject* sip_list = PyList_New(sipCpp->size());
-	if (sip_list == NULL)
-		return NULL;
-	CPP_SeqType::iterator it = sipCpp->begin();
-	for (int i = 0; it != sipCpp->end(); ++it, ++i)
-		PyList_SET_ITEM(sip_list, i, PyInt_FromLong(*it));
-	return sip_list;
+	SipSequence<vector<unsigned long> > seq;
+	return seq.convertFromTypeCode(sipCpp);
 %End
 };
 

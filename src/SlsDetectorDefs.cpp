@@ -303,6 +303,9 @@ StringList Glob::split(string path)
 
 StringList Glob::getSubPathList(int idx) const
 {
+	if (idx == -1)
+		return getPathList();
+
 	StringList sub_path_list;
 	StringList::const_iterator it, end = m_found_list.end();
 	for (it = m_found_list.begin(); it != end; ++it)
@@ -332,18 +335,24 @@ NumericGlob::NumericGlob(string pattern_prefix, string pattern_suffix)
 NumericGlob::IntStringList NumericGlob::getIntPathList() const
 {
 	DEB_MEMBER_FUNCT();
+	return getIntSubPathList(-1);
+}
+
+NumericGlob::IntStringList NumericGlob::getIntSubPathList(int idx) const
+{
+	DEB_MEMBER_FUNCT();
 	IntStringList list;
-	StringList path_list = m_glob.getPathList();
-	StringList::const_iterator pit = path_list.begin();
+	StringList ret_path_list = m_glob.getSubPathList(idx);
+	StringList::const_iterator rit = ret_path_list.begin();
 	StringList sub_path_list = m_glob.getSubPathList(m_nb_idx);
 	StringList::const_iterator it, end = sub_path_list.end();
-	for (it = sub_path_list.begin(); it != end; ++it, ++pit) {
+	for (it = sub_path_list.begin(); it != end; ++it, ++rit) {
 		size_t l = (*it).size() - m_prefix_len - m_suffix_len;
 		string s = (*it).substr(m_prefix_len, l);
 		int nb;
 		istringstream(s) >> nb;
-		DEB_TRACE() << DEB_VAR2(nb, *pit);
-		list.push_back(IntString(nb, *pit));
+		DEB_TRACE() << DEB_VAR2(nb, *rit);
+		list.push_back(IntString(nb, *rit));
 	}
 	sort(list.begin(), list.end());
 	return list;
@@ -517,6 +526,16 @@ ostream& lima::SlsDetector::operator <<(ostream& os, Type type)
 	return os << name;
 }
 
+ostream& lima::SlsDetector::operator <<(ostream& os, const StringList& l)
+{
+	os << "[";
+	StringList::const_iterator it, end = l.end();
+	bool first = true;
+	for (it = l.begin(); it != end; ++it, first = false)
+		os << (first ? "" : ",") << *it;
+	return os << "]";
+}
+
 ostream& lima::SlsDetector::operator <<(ostream& os, const SortedIntList& l)
 {
 	return os << PrettySortedList(l);
@@ -526,7 +545,7 @@ ostream& lima::SlsDetector::operator <<(ostream& os, const FrameArray& a)
 {
 	os << "[";
 	for (unsigned int i = 0; i < a.size(); ++i)
-		os << (i ? ", " : "") << a[i];
+		os << (!i ? "" : ", ") << a[i];
 	return os << "]";
 }
 
@@ -535,11 +554,9 @@ ostream& lima::SlsDetector::operator <<(ostream& os, const
 {
 	os << "{";
 	SimpleStat::Histogram::const_iterator it, end = h.end();
-	const char *sep = "";
-	for (it = h.begin(); it != end; ++it) {
-		os << sep << it->first << ":" << it->second;
-		sep = ",";
-	}
+	bool first = true;
+	for (it = h.begin(); it != end; ++it, first = false)
+		os << (first ? "" : ",") << it->first << ":" << it->second;
 	return os << "}";
 }
 

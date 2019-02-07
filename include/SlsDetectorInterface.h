@@ -164,6 +164,7 @@ class Interface : public HwInterface
 
  public:
 	Interface(Camera& cam);
+	Interface(const Interface& o) = delete;
 	virtual ~Interface();
 
 	virtual void getCapList(CapList&) const;

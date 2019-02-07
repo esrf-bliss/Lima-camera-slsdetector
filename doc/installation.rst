@@ -15,7 +15,7 @@ Disable CPU power management
 In the 'Advanced -> CPU Configuration' menu
 
 +-----------------+---------+
-| Hyper-Threading | Disable |
+| Hyper-Threading | Enable  |
 +-----------------+---------+
 
 In the 'Advanced -> CPU Configuration -> CPU Power Management
@@ -62,6 +62,43 @@ and leave only the Intel X540-AT2 ports:
 Debian 7
 --------
 
+*Linux kernel*
+~~~~~~~~~~~~~~
+
+Update the *Linux kernel* from Debian repository in order to improve system reliability:
+
+::
+
+    # as root
+    lid10eiger1:~ # linux_ver=$(dpkg --list linux-image-3.2\* | grep '^ii' | awk '{print $3}')
+    lid10eiger1:~ # echo ${linux_ver}
+    3.2.82-1
+
+    lid10eiger1:~ # linux_pkgs=$(dpkg --list linux\* | grep ${linux_ver} | awk '{print $2}')
+    lid10eiger1:~ # echo "${linux_pkgs}"
+    linux-doc-3.2
+    linux-headers-3.2.0-4-all-amd64
+    linux-headers-3.2.0-4-amd64
+    linux-headers-3.2.0-4-common
+    linux-headers-3.2.0-4-common-rt
+    linux-headers-3.2.0-4-rt-amd64
+    linux-image-3.2.0-4-amd64
+    linux-libc-dev:amd64
+    linux-manual-3.2
+
+    lid10eiger1:~ # apt-get install ${linux_pkgs}
+    ...
+    Get:1 http://lin-repo-master.esrf.fr/debian/stable/debian-security/ wheezy/updates/main linux-image-3.2.0-4-amd64 amd64 3.2.96-2 [23.5 MB]
+    Get:2 http://lin-repo-master.esrf.fr/debian/stable/debian-security/ wheezy/updates/main linux-doc-3.2 all 3.2.102-1 [6,501 kB]
+    Get:3 http://lin-repo-master.esrf.fr/debian/stable/debian-security/ wheezy/updates/main linux-headers-3.2.0-4-all-amd64 amd64 3.2.96-2 [270 kB]
+    Get:4 http://lin-repo-master.esrf.fr/debian/stable/debian-security/ wheezy/updates/main linux-headers-3.2.0-4-amd64 amd64 3.2.96-2 [671 kB]
+    Get:5 http://lin-repo-master.esrf.fr/debian/stable/debian-security/ wheezy/updates/main linux-headers-3.2.0-4-common amd64 3.2.96-2 [3,641 kB]
+    Get:6 http://lin-repo-master.esrf.fr/debian/stable/debian-security/ wheezy/updates/main linux-headers-3.2.0-4-rt-amd64 amd64 3.2.96-2 [671 kB]
+    Get:7 http://lin-repo-master.esrf.fr/debian/stable/debian-security/ wheezy/updates/main linux-headers-3.2.0-4-common-rt amd64 3.2.96-2 [3,646 kB]
+    Get:8 http://lin-repo-master.esrf.fr/debian/stable/debian-security/ wheezy/updates/main linux-libc-dev amd64 3.2.102-1 [890 kB]
+    Get:9 http://lin-repo-master.esrf.fr/debian/stable/debian-security/ wheezy/updates/main linux-manual-3.2 all 3.2.102-1 [3,051 kB]
+    ...
+    
 *libc*
 ~~~~~~
 
@@ -97,6 +134,15 @@ software can run properly:
     ii  libc6-i386       2.13-38+deb7u10  amd64  Embedded GNU C Library: 32-bit shared libraries for AMD64
     ii  libc6-i686:i386  2.13-38+deb7u10  i386   Embedded GNU C Library: Shared libraries [i686 optimized]
 
+Copy the good *getconf* binary (64-bit):
+
+::
+
+    lid10eiger1:~ # cd /usr/bin
+    lid10eiger1:/usr/bin # mv getconf getconf.32
+    lid10eiger1:~ # scp lid01eiger1:/usr/bin/getconf .
+    ...
+
 *cpufrequtils*
 ~~~~~~~~~~~~~~
 
@@ -108,10 +154,11 @@ future, force the 'performance' governor in *cpufrequtils* INIT service:
 ::
 
     # as root
-    lid10eiger1:~ # cat /etc/default/cpufrequtils
+    lid10eiger1:~ # cat > /etc/default/cpufrequtils <<'EOF'
     # valid values: userspace conservative powersave ondemand performance
     # get them from cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors
     GOVERNOR="performance"
+    EOF
 
 *irqbalance*
 ~~~~~~~~~~~~
@@ -228,6 +275,55 @@ Test the effective write speed:
     4096+0 records out
     34359738368 bytes (34 GB) copied, 32.3067 s, 1.1 GB/s
 
+Conda volume
+~~~~~~~~~~~~
+
+Reduce the *data* volume in order to create a *conda* volume
+and mount it on */opt/bliss/conda*:
+
+::
+
+    # as root
+    
+    lid10eiger1:~ # (
+        # create conda volume
+        vg="vg"
+        data_name="data"
+        conda_name="conda"
+        conda_size="20"
+        conda_size_unit="GiB"
+        conda_size_suffix=${conda_size_unit:0:1}
+        part="/dev/mapper/${vg}-${data_name}"
+        umount ${part}
+        e2fsck -f ${part}
+        curr_size_full=$(lvdisplay ${part} | grep 'LV Size' | awk '{print $3 " " $4}')
+        curr_size=$(echo ${curr_size_full} | cut -d" " -f1)
+        curr_size_unit=$(echo ${curr_size_full} | cut -d" " -f2)
+        [ ${curr_size_unit} == ${conda_size_unit} ] || exit ]
+        new_size=$(expr $(printf "%.0f" ${curr_size}) - ${conda_size})
+        resize2fs ${part} ${new_size}${conda_size_unit:0:1}
+        lvresize -L${new_size}${conda_size_suffix} ${part}
+        e2fsck -f ${part}
+        mount ${part}
+      
+        free_size_full=$(vgdisplay ${vg} | 
+                             grep 'Free \+PE / Size' | awk '{print $7 " " $8}')
+        free_size=$(echo ${free_size_full} | cut -d" " -f1)
+        free_size_unit=$(echo ${free_size_full} | cut -d" " -f2)
+        [ ${free_size_unit} == ${conda_size_unit} ] || exit ]
+        size_opt="-L ${conda_size}${conda_size_suffix}"
+        [ $(printf "%.0f" ${free_size}) -eq ${conda_size} ] && \
+          size_opt="-l 100%FREE"
+        lvcreate -n ${conda_name} ${size_opt} ${vg}
+        part="/dev/mapper/${vg}-${conda_name}"
+        mkfs.ext4 ${part}
+        part_dir="/opt/bliss/conda"
+        mkdir -p ${part_dir}
+        echo "${part} ${part_dir} ext4 relatime,nodev,nosuid 0 2" >> /etc/fstab
+        mount ${part_dir}
+        chown blissadm:bliss ${part_dir} 
+    )
+
 Network performance
 ~~~~~~~~~~~~~~~~~~~
 
@@ -254,16 +350,20 @@ the highest priority:
 
 ::
 
-    lid10eiger1:~ # cat /etc/security/limits.d/net-performance.conf
+    lid10eiger1:~ # cat > /etc/security/limits.d/net-performance.conf <<'EOF'
     @netperf         -       rtprio 99
+    EOF
 
-Compile the *netdev_set_queue_rps_cpus* util, used by the *SlsDetector* plugin
+Compile the *netdev_set_queue_cpu_affinity* util, used by the *SlsDetector* plugin
 to change the network packet dispatching tasks' CPU affinity, and install it 
 in */usr/local/bin*:
 
 ::
 
-    lid10eiger1:~ # cat /tmp/netdev_set_queue_rps_cpus.c
+    lid10eiger1:~ # (
+        cd /tmp
+        prog_name="netdev_set_queue_cpu_affinity"
+        cat > ${prog_name}.c <<'EOF'
     #include <stdio.h>
     #include <stdlib.h>
     #include <string.h>
@@ -275,26 +375,34 @@ in */usr/local/bin*:
     
     int main(int argc, char *argv[])
     {
-            char *dev, *queue, *p, fname[256], buffer[128];
-            int fd, len, ret;
+            char *dev, *irq_queue, *p, fname[256], buffer[128];
+            int irq, rps, fd, len, ret;
             long aff;
     
-            if (argc != 4)
+            if (argc != 5)
                     exit(1);
-            if (!strlen(argv[1]) || !strlen(argv[2]) || !strlen(argv[3]))
+            irq = (strcmp(argv[1], "-i") == 0);
+            rps = (strcmp(argv[1], "-r") == 0);
+            if (!irq && !rps)
+                    exit(2);
+            if (!strlen(argv[2]) || !strlen(argv[3]) || !strlen(argv[4]))
                     exit(2);
     
-            dev = argv[1];
-            queue = argv[2];
+            dev = argv[2];
+            irq_queue = argv[3];
     
             errno = 0;
-            aff = strtol(argv[3], &p, 0);
+            aff = strtol(argv[4], &p, 0);
             if (errno || *p)
                     exit(3);
     
             len = sizeof(fname);
-            ret = snprintf(fname, len, "/sys/class/net/%s/queues/%s/rps_cpus",
-                           dev, queue);
+            if (irq)
+                    ret = snprintf(fname, len, "/proc/irq/%s/smp_affinity",
+                                   irq_queue);
+            else
+                    ret = snprintf(fname, len, "/sys/class/net/%s/queues/%s/rps_cpus",
+                                   dev, irq_queue);
             if ((ret < 0) || (ret == len))
                     exit(4);
     
@@ -315,26 +423,31 @@ in */usr/local/bin*:
                     exit(8);
             return 0;
     }
-    
-    lid10eiger1:~ # gcc -Wall -o /tmp/netdev_set_queue_rps_cpus /tmp/netdev_set_queue_rps_cpus.c
-    lid10eiger1:~ # cp /tmp/netdev_set_queue_rps_cpus /usr/local/bin
+    EOF
+
+        gcc -Wall -o ${prog_name} ${prog_name}.c
+        rm -f ${prog_name}.c
+        mv ${prog_name} /usr/local/bin
+    )
 
 Allow *netperf* users to execute *sudo* in order to change other tasks' CPU affinity
-(*taskset* and *netdev_set_queue_rps_cpus*) and to configure the network devices (*ethtool* and
-*ifconfig*):
+(*taskset* and *netdev_set_queue_cpu_affinity*), to configure the network devices (*ethtool* and
+*ifconfig*) and start/stop system services like *irqbalance* (*service*):
 
 ::
 
-    lid10eiger1:~ # cat /etc/sudoers.d/netperf
+    lid10eiger1:~ # cat > /etc/sudoers.d/netperf <<'EOF'
     %netperf        ALL=(root) NOPASSWD: /usr/bin/taskset, /sbin/ethtool, \
                                          /sbin/ifconfig, \
-                                         /usr/local/bin/netdev_set_queue_rps_cpus
+                                         /usr/local/bin/netdev_set_queue_cpu_affinity, \
+                                         /usr/sbin/service
+    EOF
 
 Tune the OS network buffer sizes:
 
 ::
 
-    lid10eiger1:~ # cat /etc/sysctl.d/net-performance.conf
+    lid10eiger1:~ # cat > /etc/sysctl.d/net-performance.conf <<'EOF'
     # Tune network buffers for UDP RX performance
 
     # Original values: sysctl -a | grep net
@@ -359,42 +472,13 @@ Tune the OS network buffer sizes:
 
     # Size of per-device buffer (in packets) before Linux kernel dispatching
     net.core.netdev_max_backlog = 262144
+    EOF
 
-Linux *maxcpus* option
-~~~~~~~~~~~~~~~~~~~~~~
+*cmake* & *libnuma-dev*
+~~~~~~~~~~~~~~~~~~~~~~~
 
-The *Supermicro* BIOS does not always acknowledge the *Disable Hyper-Threading* option,
-so after some reboot conditions the Hyper-Threading is activated and Linux sees twice the
-number of CPUs. The only way to control this is to limit the number of CPUs used by 
-Linux in the kernel command line.
-
-Edit the */etc/default/grub* file and add *maxcpus=12* to the *GRUB_CMDLINE_LINUX_DEFAULT*
-variable and force the update *GRUB* configuration file:
-
-::
-
-    # as root
-    lid10eiger1:~ # cat /etc/default/grub
-    # If you change this file, run 'update-grub' afterwards to update
-    # /boot/grub/grub.cfg.
-    # For full documentation of the options in this file, see:
-    #   info -f grub -n 'Simple configuration'
-    
-    GRUB_DEFAULT=0
-    GRUB_TIMEOUT=5
-    GRUB_DISTRIBUTOR=`lsb_release -i -s 2> /dev/null || echo Debian`
-    GRUB_CMDLINE_LINUX_DEFAULT="ipv6.disable=1 quiet maxcpus=12"
-    GRUB_CMDLINE_LINUX=""
-    ...    
-
-    lid10eiger1:~ # update-grub
-    ...
-
-*cmake*
-~~~~~~~
-
-A recent version of *cmake* (> 3.0) is needed to compile Lima. Debian 7 package is 
-cmake-2.8.9-1, so it must be compiled from the sources. First un-install the Debian package:
+*Conda* includes *cmake*, needed to compile Lima. De-install the Debian 7 package,
+if present, or the manually installed *cmake-3.8.0*:
 
 ::
 
@@ -403,24 +487,45 @@ cmake-2.8.9-1, so it must be compiled from the sources. First un-install the Deb
         [ -n "${p}" ] && dpkg --purge ${p}
     ...
 
-and then copy and compile the sources as *opid00* and install as *root*:
+    lid10eiger1:~ # \
+        curr_cmake=$(which cmake)
+        if [ -n "${curr_cmake}" ] && [ $(dirname ${curr_cmake}) == "/usr/local/bin" ]; then
+            cmake_src=$(find ~ ~opid00 -type d -name cmake-3.8.0)
+            [ -n "${cmake_src}" ] && cd ${cmake_src} && su -c "make uninstall"
+        fi
+    ...
+
+The same applies to *libnuma-dev*:
 
 ::
 
-    # as opid00
-    lid10eiger1:~ % mkdir -p ~/Downloads/cmake && cd ~/Downloads/cmake
-    lid10eiger1:~/Downloads/cmake % scp lisgeiger1:Downloads/cmake/cmake-3.8.0.tar.gz .
+    # as root
+    lid10eiger1:~ # p=$(dpkg --list libnuma-dev | grep '^ii' | awk '{print $2}'); \
+        [ -n "${p}" ] && dpkg --purge ${p}
     ...
-    lid10eiger1:~/Downloads/cmake % tar -xzf cmake-3.8.0.tar.gz 
-    lid10eiger1:~/Downloads/cmake % cd cmake-3.8.0
-    lid10eiger1:~/Downloads/cmake/cmake-3.8.0 % ./bootstrap --parallel=12 --qt-gui
-    ...
-    lid10eiger1:~/Downloads/cmake/cmake-3.8.0 % make -j12
-    ...
-    lid10eiger1:~/Downloads/cmake/cmake-3.8.0 % su
-    Password: 
-    lid10eiger1:Downloads/cmake/cmake-3.8.0 # make install
-    ...
+
+*Xsession*
+~~~~~~~~~~
+
+*Xsession* executes *ssh-agent*, which has the *setgid* bit set. This forces
+*Linux* to clear its *LD_LIBRARY_PATH*, and hence that of its descendant processes -
+the full *X11* session. The following patch propagates the *LD_LIBRARY_PATH*
+configured at login (*.bash_profile*) to the *X11* session:
+
+::
+
+    # as root
+    lid10eiger1:~ # (
+        Xsession_patch="/etc/X11/Xsession.d/80ld_library_path"
+        [ -f ${Xsession_patch} ] || cat > ${Xsession_patch} <<'EOF'
+    # This file is sourced by Xsession(5), not executed.
+    
+    # ensure LD_LIBRARY_PATH is propagated after ssh-agent is executed
+    STARTUP="${LD_LIBRARY_PATH:+env LD_LIBRARY_PATH=$LD_LIBRARY_PATH} $STARTUP"
+    
+    # vim:set ai et sts=2 sw=2 tw=80:
+    EOF
+    )
 
 Network configuration
 ---------------------
@@ -857,65 +962,300 @@ Qwt development package is needed by some applications in the
     ii  libqwt6             6.0.0-1.2       amd64  Qt widgets library for technical applications (runtime)
     ii  libqwtplot3d-qt4-0  0.2.7+svn191-7  amd64  3D plotting library based on Qt4/OpenGL (runtime)
 
-BLISS software installation
+Conda software installation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Install and execute the `GitLab
-Admin/bliss_python_install <https://gitlab.esrf.fr/Admin/bliss_python_install>`__
-script (*blissadm*).
+Before installing *Conda*, first stop the *BLISS daemons*:
 
-First, install the Gitlab project deployment keys:
+::
+
+    # as root
+    lid10eiger1:~ # /users/blissadm/admin/etc/S70daemons stop
+
+and delete the previous installation of the *BLISS pew environment*:
 
 ::
 
     # as blissadm
-    lid10eiger1:~ % bliss_rpm dev-gitlab
-    Installing package dev-gitlab-src-1.3-1.src.rpm
-    ...
+    lid10eiger1:~ % (
+      rm -rf ${HOME}/.local/bin ${HOME}/.local/lib ${HOME}/lib
+      sed -i '/\(PEW\|virtualenv\)/D' ${HOME}/local/BLISS_ENV_VAR 
+      find ${HOME}/bin -type l |
+          while read l; do
+              t=$(readlink ${l})
+              if echo ${t} | grep -q "${HOME}/.local/bin"; then
+                  echo "Deleting ${l} -> ${t}"
+                  rm -f ${l}
+              fi
+          done
+      )
+    Deleting /users/blissadm/bin/virtualenv-clone -> /users/blissadm/.local/bin/virtualenv-clone
+    Deleting /users/blissadm/bin/virtualenv -> /users/blissadm/.local/bin/virtualenv
+    Deleting /users/blissadm/bin/pythonz -> /users/blissadm/.local/bin/pythonz
+    Deleting /users/blissadm/bin/pythonz_install -> /users/blissadm/.local/bin/pythonz_install
+    Deleting /users/blissadm/bin/pew -> /users/blissadm/.local/bin/pew
 
-Then clone the project:
+Download and install *conda*:
 
 ::
 
     # as blissadm
-    lid10eiger1:~ % mkdir -p ~/src/install
-    lid10eiger1:~ % cd ~/src/install
-    lid10eiger1:~/src/install % git clone git@blissinstaller.gitlab.esrf.fr:Admin/bliss_python_install.git
+    lid10eiger1:~ % (
+        ln -s /opt/bliss/conda ${HOME}
+        export http_proxy=http://proxy.esrf.fr:3128
+        export https_proxy=${http_proxy}
+        export no_proxy=.esrf.fr
+        cat >> ${HOME}/.bash_profile <<EOF
+    
+    # Proxy
+    export http_proxy=${http_proxy}
+    export https_proxy=${https_proxy}
+    export no_proxy=${no_proxy}
+    EOF
+        cd ${HOME}/Downloads
+        wget https://repo.continuum.io/miniconda/Miniconda2-latest-Linux-x86_64.sh
+        chmod a+x Miniconda2-latest-Linux-x86_64.sh 
+        ./Miniconda2-latest-Linux-x86_64.sh
+        # installation directory: /users/blissadm/conda/miniconda
+    ) && . ${HOME}/.bash_profile
 
-And execute the script as *root*:
+
+Configure the *conda* BCU ESRF channel, update the software
+and create the *slsdetector* environment:
 
 ::
 
     # as blissadm
-    lid10eiger1:~/src/install % ssh root@localhost
-    The authenticity of host 'localhost (127.0.0.1)' can't be established.
-    ECDSA key fingerprint is d7:da:38:9c:c4:20:8f:87:66:73:5a:85:62:44:01:f8.
-    Are you sure you want to continue connecting (yes/no)? yes
-    ...
+    lid10eiger1:~ % (
+      cat > ${HOME}/conda/miniconda/.condarc <<'EOF'
+    channels:
+      - http://bcu-ci.esrf.fr/stable
+      - defaults
+      - conda-forge
+    EOF
+      ${HOME}/conda/miniconda/bin/conda update -n base conda
+      ${HOME}/conda/miniconda/bin/conda create -n slsdetector python=2.7
+    )
 
-    lid10eiger1:~ # /users/blissadm/src/install/bliss_python_install/install_python_debian
-    Logging to file: /users/blissadm/admin/log/install_python_debian.log
-    Running on debian7 lid10eiger1 [Fri Sep  8 16:19:52 CEST 2017]
-    6576d6b78ac7469a254d310e6136931c  install_python_debian
-    98c591cbf712ac69e6963058c2c9474c  install_python_debian.blissadm
-    ...
+Patch *blissrc* to use *conda* environments:
+
+::
+
+    # as blissadm
+    lid10eiger1:~ % (
+      cat > /tmp/blissrc.patch <<'EOF'
+    diff -Naur a/blissrc b/blissrc
+    --- a/blissrc   2018-08-09 20:42:27.798785071 +0200
+    +++ b/blissrc   2018-08-09 20:39:24.325593908 +0200
+    @@ -359,17 +359,65 @@
+         export LD_LIBRARY_PATH
+       fi
+     
+    -  # Check if pew is required and load the good environment
+    +  # Check if pew/conda is required and load the good environment
+       if [ -n "${BLISS_PEW_DEFAULT_ENV}" ] && [ -z "${BLISS_PEW_ENV}" ]; then
+         BLISS_PEW_ENV=${BLISS_PEW_DEFAULT_ENV}
+         export BLISS_PEW_ENV
+       fi
+    +  if [ -n "${BLISS_CONDA_DEFAULT_ENV}" ] && [ -z "${BLISS_CONDA_ENV}" ]; then
+    +    BLISS_CONDA_ENV=${BLISS_CONDA_DEFAULT_ENV}
+    +    export BLISS_CONDA_ENV
+    +  fi
+    +  if [ -n "${BLISS_PEW_ENV}" -a -n "${BLISS_CONDA_ENV}" ]; then
+    +    print "Warning: both PEW and CONDA are configured. Ignoring PEW"
+    +    unset BLISS_PEW_ENV
+    +  fi
+    +  redo_cd=0
+       if [ -n "${BLISS_PEW_ENV}" ] && [ "${BLISS_PEW_ENV}" != "NONE" ] && \
+          [ -x "$(which pew)" ]; then
+    -    ve_dir=$(HOME=$BLISSADM pew in ${BLISS_PEW_ENV} bash -c "echo \$VIRTUAL_ENV") && \
+    -      . ${ve_dir}/bin/activate
+    +    ve_dir=$(HOME=$BLISSADM \
+    +             pew in ${BLISS_PEW_ENV} bash -c "echo \$VIRTUAL_ENV") && \
+    +             . ${ve_dir}/bin/activate
+         unset ve_dir
+    -
+    +    redo_cd=1
+    +  fi
+    +  if [ -n "${BLISS_CONDA_ENV}" ] && [ "${BLISS_CONDA_ENV}" != "NONE" ]; then
+    +    this_prog=$(basename $(cd /proc/self && readlink exe))
+    +    if ([ -z "${CONDA_DEFAULT_ENV}" ] ||
+    +        [ "${CONDA_DEFAULT_ENV}" != "${BLISS_CONDA_ENV}" ]) && \
+    +       [ -f "${BLISS_CONDA_BASE}/bin/activate" ] && \
+    +       [ ${this_prog} == "bash" ]; then
+    +      if [ -n "${BLISS_CONDA_BASE}" ]; then
+    +        PATH=${BLISS_CONDA_BASE}/bin:${PATH}
+    +        export PATH
+    +      fi
+    +      . activate ${BLISS_CONDA_ENV} > /dev/null
+    +      CONDA_SYSROOT=$(echo ${CONDA_PREFIX}/*/sysroot)
+    +      export CONDA_SYSROOT
+    +      redo_cd=1
+    +      BLISS_CONDA_PREV_PYTHONPATH=${PYTHONPATH}
+    +    fi
+    +    unset this_prog
+    +    PYTHONPATH=$(echo ${PYTHONPATH} | 
+    +                 sed -e "s,${BLISSADM}/python/bliss_modules\(/[^:]\+\)\?:,,g")
+    +    export BLISS_CONDA_PREV_PYTHONPATH
+    +  fi
+    +  if [ -n "${BLISS_CONDA_ENV}" ] && [ "${BLISS_CONDA_ENV}" == "NONE" ] && \
+    +     [ -n "${CONDA_DEFAULT_ENV}" ] && \
+    +     [ -f "${BLISS_CONDA_BASE}/bin/deactivate" ]; then
+    +    if [ $(basename $0) == "bash" ]; then
+    +      . deactivate > /dev/null
+    +      redo_cd=1
+    +    else
+    +      PATH=$(echo ${PATH} | sed "s,${CONDA_PREFIX}/bin:,,")
+    +      export PATH
+    +    fi
+    +    PATH=$(echo ${PATH} | sed "s,${BLISS_CONDA_BASE}/bin:,,")
+    +    PYTHONPATH=${BLISS_CONDA_PREV_PYTHONPATH}
+    +    export PATH PYTHONPATH
+    +    unset CONDA_SYSROOT BLISS_CONDA_PREV_PYTHONPATH
+    +  fi
+    +  if [ ${redo_cd} -ne 0 ]; then
+         # redo the _esrf_cd if it is already defined (ESRF standard)
+         if type _esrf_cd > /dev/null 2>&1; then
+           _esrf_cd () {
+    @@ -377,6 +425,7 @@
+           }
+         fi
+       fi
+    +  unset redo_cd
+     
+       # force BLISSADM [local/]bin to lead the PATH
+       one_dir_re="${BLISSADM}/\(local/\)\?bin"
+    EOF
+      (cd ${HOME}/bin && patch -b -p1 < /tmp/blissrc.patch)
+    )
+
+Configure *blissadm* software to use *conda* with the default
+*slsdetector* environment:
+
+::
+
+    # as blissadm
+    lid10eiger1:~ % \
+      sed -i -e '/^BLISS_LIB_PATH/i\
+    BLISS_CONDA_BASE=${BLISSADM}/conda/miniconda export BLISS_CONDA_BASE' -e '/^BLISS_LIB_PATH/i\
+    BLISS_CONDA_DEFAULT_ENV=slsdetector export BLISS_CONDA_DEFAULT_ENV' ~/local/BLISS_ENV_VAR
+
+Patch *bliss_drivers* and *bliss_daemons* so they **do not** use
+the *conda* environment:
+
+::
+
+    # as blissadm
+    lid10eiger1:~ % (
+      cat > /tmp/bliss_drivers.patch <<'EOF'
+    diff -Naur a/bliss_drivers b/bliss_drivers
+    --- a/bliss_drivers     2018-08-10 15:49:35.306633892 +0200
+    +++ b/bliss_drivers     2018-08-10 15:50:01.846229119 +0200
+    @@ -7,6 +7,9 @@
+     # Author(s):    A. Homs (ahoms@esrf.fr)
+     ##########################################################################
+     
+    +BLISS_CONDA_ENV=NONE
+    +export BLISS_CONDA_ENV
+    +
+     . blissrc
+     
+     COLUMNS=
+    EOF
+      (cd ${HOME}/bin && patch -b -p1 < /tmp/bliss_drivers.patch)
+    
+      cat > /tmp/bliss_daemons.patch <<'EOF'
+    diff -Naur a/blisswatch b/blisswatch
+    --- a/blisswatch        2018-08-09 20:03:15.274806479 +0200
+    +++ b/blisswatch        2018-08-09 20:00:00.109181262 +0200
+    @@ -2,6 +2,9 @@
+     # Copyright (c) 2004 Bliss group, ESRF, France
+     # System startup script for HardwareRepositoryServer
+     
+    +BLISS_CONDA_ENV=NONE
+    +export BLISS_CONDA_ENV
+    +
+     . blissrc
+     
+     BLISSWATCHHOME=${BLISSADM}/admin/bliss_tools/blisswatch/
+    diff -Naur a/dserver_daemon b/dserver_daemon
+    --- a/dserver_daemon    2018-08-09 20:06:40.700207938 +0200
+    +++ b/dserver_daemon    2018-08-09 20:07:01.347931182 +0200
+    @@ -1,6 +1,9 @@
+     #! /bin/ksh
+     # Copyright (c) 2004 Bliss group, ESRF, France
+     
+    +BLISS_CONDA_ENV=NONE
+    +export BLISS_CONDA_ENV
+    +
+     . blissrc
+     DSERVERHOME=${BLISSADM}/admin/bliss_tools/dserver
+     exec ${DSERVERHOME}/dserver_daemon.py 2>&1 >/dev/null
+    EOF
+      (cd ${HOME}/admin/daemon/src && patch -b -p1 < /tmp/bliss_daemons.patch)
+    )
+
+Install basic *conda* packages:
+
+::
+
+    # as blissadm
+    lid10eiger1:~ % (
+      . blissrc
+      conda install gxx_linux-64 gxx-dbg_linux-64
+      conda install cmake
+      conda install sip="4.18*" numpy gsl
+      conda install lz4-c=1.8.2 hdf5="1.10*"
+      conda install libpng 
+      conda install -c valkyriesystemscorporation libnuma
+      conda install gevent
+    )
+
+Restart the *BLISS daemons*:
+
+::
+
+    # as root
+    lid10eiger1:~ # /users/blissadm/admin/etc/S70daemons start
+
+BLISS software installation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Install *PyTango*, needed by *Lima*:
 
 ::
 
     # as blissadm
-    lid10eiger1:~/src/install % bliss_rpm six
-    Installing package six-src-1.0-1.src.rpm
-    ...
+    lid10eiger1:~ % (. blissrc && conda install pytango)
 
-    lid10eiger1:~/src/install % bliss_rpm tango_lib
-    Installing package tango_lib-debian7-9.25-1.src.rpm
-    ...
+Apply a patch fixing Unicode string management in attribute names
+(Python 3 compatible *SIP*):
 
-    lid10eiger1:~/src/install % bliss_rpm PyTango
-    Installing package PyTango-debian7-9.5-1.src.rpm
-    ...
+::
+
+    # as blissadm
+    lid10eiger1:~ % (
+      cat > /tmp/PyTango.patch <<'EOF'
+    --- a/attr_data.py      2017-01-09 17:10:46.000000000 +0100
+    +++ b/attr_data.py      2018-04-04 09:44:13.551026750 +0200
+    @@ -62,6 +62,7 @@
+         def from_dict(cls, attr_dict):
+             attr_dict = dict(attr_dict)
+             name = attr_dict.pop('name', None)
+    +        name = name if isinstance(name, bytes) else name.encode()
+             class_name = attr_dict.pop('class_name', None)
+             self = cls(name, class_name)
+             self.build_from_dict(attr_dict)
+    EOF
+      cat > /tmp/find_pytango_attr_data.py <<'EOF'
+    from PyTango import AttrData
+    import sys
+    fname = sys.modules[AttrData.__module__].__file__
+    print(fname.replace('.pyc', '.py'))
+    EOF
+      attr_data=$(. blissrc && python /tmp/find_pytango_attr_data.py)
+      (cd $(dirname ${attr_data}) && patch -b -p1 < /tmp/PyTango.patch)
+    )
 
 Install the Python modules needed for building the HTML documentation
 with Doxygen, Sphinx and Read-the-Docs:
@@ -923,43 +1263,34 @@ with Doxygen, Sphinx and Read-the-Docs:
 ::
 
     # as blissadm
-    lid10eiger1:~ . blissrc
-    (bliss) lid10eiger1:~ % pip install sphinx_rtd_theme breathe
+    lid10eiger1:~ (. blissrc && conda install sphinx_rtd_theme breathe)
+    ...
+
+Include the Python *Scapy* interface por network packet capture and decoding:
+
+::
+
+    # as blissadm
+    lid10eiger1:~ % (. blissrc && pip install scapy)
     ...
 
 Eiger calibration development: *Seaborn* and *Spyder*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The *seaborn* Python module and the *spyder* IDE for are used by Eiger
-calibration development (Erik Frojdh). First *seaborn*:
-
-::
-
-    # as blissadm
-    lid10eiger1:~ % (. blissrc && pip install seaborn)
-    ...
-
-Then install *spyder*:
+calibration development (Erik Frojdh). First, de-install any OS installation:
 
 ::
 
     # as root
-    lid10eiger1:/users/blissadm # apt-get install spyder
-    ...
-
-Configure *spyder* to use the BLISS python:
+    lid10eiger1:~ # p=$(dpkg --list spyder\* | grep '^ii' | awk '{print $2}'); \
+        [ -n "${p}" ] && dpkg --purge ${p}
 
 ::
 
-    # as opid00
-    lid10eiger1:~ % (. blissrc && spyder)
-
-and go to 'Tools -> Preferences -> Console -> Advanced Settings ->
-Python executable' and set:
-
-+----------------------------------------------+--------------------------------------------------+
-| Path to Python interpreter executable binary | /users/blissadm/lib/virtualenvs/bliss/bin/python |
-+----------------------------------------------+--------------------------------------------------+
+    # as blissadm
+    lid10eiger1:~ % (. blissrc && conda install seaborn spyder)
+    ...
 
 Detector software and development account: *opid00*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -972,9 +1303,10 @@ Add the *eiger.sh* entry in the system-wide Bash login setup scripts:
 ::
 
     # as root
-    lid10eiger1:~ # cat /etc/profile.d/eiger.sh
+    lid10eiger1:~ # cat > /etc/profile.d/eiger.sh <<'EOF'
     EIGER_HOME=~opid00
     export EIGER_HOME
+    EOF
 
 Eiger environment setup
 ^^^^^^^^^^^^^^^^^^^^^^^
@@ -985,21 +1317,23 @@ the beginning it just contains the BLISS environment:
 ::
 
     # as opid00
-    lid10eiger1:~ % cat eiger_setup.sh
+    lid10eiger1:~ % cat > eiger_setup.sh <<'EOF'
     # Setup the Eiger data acquisition environment
 
     # include the BLISS environment
     . blissrc
+    EOF
 
 and include it in the *.bash_profile* so it is executed at every login
 shell:
 
 ::
 
-    lid10eiger1:~ % tail -n 3 .bash_profile
+    lid10eiger1:~ % cat >> .bash_profile <<'EOF'
 
     # include the PSI/Eiger environment
     . ${EIGER_HOME}/eiger_setup.sh
+    EOF
 
 *git-sig* Bash helper
 ^^^^^^^^^^^^^^^^^^^^^
@@ -1008,7 +1342,7 @@ Add the *git-sig* Bash helper for authoring future commits:
 
 ::
 
-    lid10eiger1:~ % tail -n 22 .bashrc
+    lid10eiger1:~ % cat >> .bashrc <<'EOF'
 
     # Signature: from dev-gitlab dot_bashrc
 
@@ -1031,6 +1365,7 @@ Add the *git-sig* Bash helper for authoring future commits:
         export GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL
         echo "Now git will use \"$GIT_AUTHOR_NAME\" to commits until SHELL ends"
     }
+    EOF
 
 Logout from *opid00* and re-login so changes are taken into account for
 next steps.
@@ -1043,18 +1378,19 @@ computer directories:
 
 ::
 
-    (bliss) lid10eiger1:~ % EIGER_DIR=${EIGER_HOME}/eiger/eiger_v3.1.1
-    (bliss) lid10eiger1:~ % EIGER_CONFIG=${EIGER_DIR}/config/beb-021-020-direct-FO-10g.config
-    (bliss) lid10eiger1:~ % mkdir -p $(dirname ${EIGER_CONFIG})
-    (bliss) lid10eiger1:~ % scp lisgeiger1:${EIGER_CONFIG} $(dirname ${EIGER_CONFIG})
-    beb-021-020-direct-FO-10g.config         100%  781     0.8KB/s   00:00
-    (bliss) lid10eiger1:~ % sed -i 's:lisgeiger1:lid10eiger1:g' ${EIGER_CONFIG}
+    (slsdetector) lid10eiger1:~ % \
+        EIGER_DIR=${EIGER_HOME}/eiger/eiger_v3.1.1
+        EIGER_CONFIG=${EIGER_DIR}/config/beb-021-020-direct-FO-10g.config
+        mkdir -p $(dirname ${EIGER_CONFIG})
+        scp lisgeiger1:${EIGER_CONFIG} $(dirname ${EIGER_CONFIG})
+        sed -i 's:lisgeiger1:lid10eiger1:g' ${EIGER_CONFIG}
+    ...
 
 The resulting configuration file:
 
 ::
 
-    (bliss) lid10eiger1:~ % cat ${EIGER_CONFIG}
+    (slsdetector) lid10eiger1:~ % cat ${EIGER_CONFIG}
     detsizechan 1024 512
 
     #type Eiger+
@@ -1071,7 +1407,7 @@ The resulting configuration file:
     0:rx_udpport 50010
     0:rx_udpport2 50011
     0:rx_udpip 192.168.12.1
-    0:detectorip 192.168.12.20
+    0:detectorip 192.168.12.22
     0:detectormac 00:50:c2:46:d9:2b
     0:flippeddatax 0
 
@@ -1080,7 +1416,7 @@ The resulting configuration file:
     1:rx_udpport 50012
     1:rx_udpport2 50013
     1:rx_udpip 192.168.14.1
-    1:detectorip 192.168.14.21
+    1:detectorip 192.168.14.23
     1:detectormac 00:50:c2:46:d9:29
     1:flippeddatax 1
 
@@ -1102,9 +1438,10 @@ Copy the detector calibration data:
 
 ::
 
-    (bliss) lid10eiger1:~ % SLS_DETECTOR_SETTINGS=$(grep ^settings ${EIGER_CONFIG} | awk '{print $2}')/standard
-    (bliss) lid10eiger1:~ % mkdir -p $(dirname ${SLS_DETECTOR_SETTINGS})
-    (bliss) lid10eiger1:~ % scp -r lisgeiger1:${SLS_DETECTOR_SETTINGS} $(dirname ${SLS_DETECTOR_SETTINGS})
+    (slsdetector) lid10eiger1:~ % \
+        SLS_DETECTOR_SETTINGS=$(grep ^settings ${EIGER_CONFIG} | awk '{print $2}')/standard
+        mkdir -p $(dirname ${SLS_DETECTOR_SETTINGS})
+        scp -r lisgeiger1:${SLS_DETECTOR_SETTINGS} $(dirname ${SLS_DETECTOR_SETTINGS})
     ...
 
 Add the configuration file to *eiger_setup.sh* and decode the
@@ -1112,7 +1449,7 @@ Add the configuration file to *eiger_setup.sh* and decode the
 
 ::
 
-    (bliss) lid10eiger1:~ % tail -n 8 eiger_setup.sh
+    (slsdetector) lid10eiger1:~ % cat >> eiger_setup.sh <<'EOF'
 
     EIGER_DIR=${EIGER_HOME}/eiger/eiger_v3.1.1
     EIGER_CONFIG=${EIGER_DIR}/config/beb-021-020-direct-FO-10g.config
@@ -1121,6 +1458,7 @@ Add the configuration file to *eiger_setup.sh* and decode the
 
     SLS_DETECTOR_SETTINGS=$(grep ^settings ${EIGER_CONFIG} | awk '{print $2}')/standard
     export SLS_DETECTOR_SETTINGS
+    EOF
 
 Logout from *opid00* and login again in order to apply the previous
 changes.
@@ -1134,8 +1472,8 @@ project\|\ https://gitlab.esrf.fr/Hardware/sls_detectors]:
 
 ::
 
-    (bliss) lid10eiger1:~ % mkdir -p ~/esrf && cd ~/esrf
-    (bliss) lid10eiger1:~/esrf % git clone -o gitlab git://gitlab.esrf.fr/Hardware/sls_detectors.git
+    (slsdetector) lid10eiger1:~ % mkdir -p ~/esrf && cd ~/esrf
+    (slsdetector) lid10eiger1:~/esrf % git clone -o gitlab git://gitlab.esrf.fr/Hardware/sls_detectors.git
     Cloning into 'sls_detectors'...
     ...
 
@@ -1143,12 +1481,13 @@ Add the *ESRF scripts* to *eiger_setup.sh*:
 
 ::
 
-    (bliss) lid10eiger1:~ % tail -n 5 eiger_setup.sh
+    (slsdetector) lid10eiger1:~ % cat >> eiger_setup.sh <<'EOF'
 
     SLS_DETECTORS=${EIGER_HOME}/esrf/sls_detectors
     export SLS_DETECTORS
     PATH=${SLS_DETECTORS}/eiger/scripts:${PATH}
     export PATH
+    EOF
 
 Logout and re-login as *opid00* to have the previous environment set.
 
@@ -1163,51 +1502,53 @@ First install *flex*, which might needed to compile some *Lima* subsystems:
     lid10eiger1:~ # apt-get install flex
     ...
 
+De-install *libgsl* and *libnuma-dev*:
+
+::
+
+    # as root
+    lid10eiger1:~ # \
+        dpkg --purge inkscape bogofilter bogofilter-bdb libgsl0ldbl libgsl0-dev
+        dpkg --purge libnuma-dev
+    ...
+
 *Lima* is referenced as a submodule by the *sls_detectors* project installed before:
 
 ::
 
     # as opid00
-    (bliss) lid10eiger1:~ % cd ${SLS_DETECTORS}
-    (bliss) lid10eiger1:~/esrf/sls_detectors % git submodule init Lima
-    Submodule 'Lima' (git://gitlab.esrf.fr/limagroup/lima.git) registered for path 'Lima'
-    (bliss) lid10eiger1:~/esrf/sls_detectors % git submodule update
-    ...
-    (bliss) lid10eiger1:~/esrf/sls_detectors % LIMA_DIR=${SLS_DETECTORS}/Lima
-    (bliss) lid10eiger1:~/esrf/sls_detectors % cd ${LIMA_DIR}
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % submod="third-party/Processlib
-        third-party/Sps
-        third-party/gldisplay
-        camera/slsdetector
-        applications/spec
-        applications/tango/python"
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % github_submod_names="Sps"
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % github_submod=$(for s in ${submod}; do \
-        for m in ${github_submod_names}; do \
-            echo ${s} | grep ${m}; \
-        done; \
-    done)
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % re_pat="(${github_submod_names// /|})"
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % gitlab_submod=$(echo "${submod}" | grep -Ev ${re_pat})
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule init ${submod}
-    ...
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule update
-    ...
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % for s in ${github_submod}; do \
-        (cd ${s} && \
-             git remote rename origin github.bliss); \
-    done
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % for s in ${gitlab_submod}; do \
-        (cd ${s} && \
-             git remote rename origin gitlab && \
-             git remote add github.bliss \
-                 $(git config remote.gitlab.url | sed "s%git://gitlab.esrf.fr/limagroup%git://github.com/esrf-bliss%")); \
-    done
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git remote rename origin gitlab
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git remote add github.bliss git://github.com/esrf-bliss/Lima.git
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git submodule foreach git fetch --all
-    ...
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % git fetch --all
+    (slsdetector) lid10eiger1:~ % \
+        cd ${SLS_DETECTORS}
+        git submodule init Lima
+        git submodule update
+        LIMA_DIR=${SLS_DETECTORS}/Lima
+        cd ${LIMA_DIR}
+        submod="third-party/Processlib
+            third-party/bitshuffle
+            camera/slsdetector
+            applications/spec
+            applications/tango/python"
+        ext_submod_names="bitshuffle"
+        ext_submod=$(for s in ${submod}; do
+                for m in ${ext_submod_names}; do
+                    echo ${s} | grep ${m}
+                done
+            done)
+        re_pat="(${ext_submod_names// /|})"
+        gitlab_submod=$(echo "${submod}" | grep -Ev ${re_pat})
+        git submodule init ${submod}
+        git submodule update
+        for s in ${gitlab_submod}; do
+                (cd ${s} &&
+                     git remote rename origin gitlab &&
+                     git remote add github.bliss \
+                         $(git config remote.gitlab.url |
+                             sed "s%git://gitlab.esrf.fr/limagroup%git://github.com/esrf-bliss%"))
+            done
+        git remote rename origin gitlab
+        git remote add github.bliss git://github.com/esrf-bliss/Lima.git
+        git submodule foreach git fetch --all
+        git fetch --all
     ...
 
 Eiger software: slsDetectorPackage
@@ -1219,16 +1560,15 @@ plugin:
 ::
 
     # as opid00
-    (bliss) lid10eiger1:~ % cd ${LIMA_DIR}/camera/slsdetector
-    (bliss) lid10eiger1:Lima/camera/slsdetector % git submodule init
-    Submodule 'slsDetectorPackage' (git://github.com/esrf-bliss/slsDetectorPackage.git) registered for path 'slsDetectorPackage'
-    (bliss) lid10eiger1:Lima/camera/slsdetector % git submodule update
-    ...
-    (bliss) lid10eiger1:Lima/camera/slsdetector % cd slsDetectorPackage
-    (bliss) lid10eiger1:camera/slsdetector/slsDetectorPackage % git remote rename origin github.bliss
-    (bliss) lid10eiger1:camera/slsdetector/slsDetectorPackage % git remote add github.slsdetectorgroup \
-        git://github.com/slsdetectorgroup/slsDetectorPackage.git
-    (bliss) lid10eiger1:camera/slsdetector/slsDetectorPackage % git fetch --all
+    (slsdetector) lid10eiger1:~ % \
+        cd ${LIMA_DIR}/camera/slsdetector
+        git submodule init
+        git submodule update
+        cd slsDetectorPackage
+        git remote rename origin github.bliss
+        git remote add github.slsdetectorgroup \
+            git://github.com/slsdetectorgroup/slsDetectorPackage.git
+        git fetch --all
     ...
 
 *Lima* compilation
@@ -1238,21 +1578,21 @@ Compile *Lima*, including *slsDetectorPackage* using *CMake*:
 
 ::
 
-    (bliss) lid10eiger1:~ % cd ${LIMA_DIR}
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % cp scripts/config.txt_default scripts/config.txt
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % echo "CMAKE_BUILD_TYPE=RelWithDebInfo" >> scripts/config.txt
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % mkdir -p ${LIMA_DIR}/install/python
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % ./install.sh \
+    (slsdetector) lid10eiger1:~ % \
+        cd ${LIMA_DIR}
+        cp scripts/config.txt_default scripts/config.txt
+        mkdir -p ${LIMA_DIR}/install/python
+    (slsdetector) lid10eiger1:~/esrf/sls_detectors/Lima % ./install.sh \
         --install-prefix=${LIMA_DIR}/install \
         --install-python-prefix=${LIMA_DIR}/install/python \
-        slsdetector sps-image gldisplay edfgz python pytango-server tests
+        slsdetector hdf5 hdf5-bs edfgz edflz4 python pytango-server tests 2>&1
     ...
 
 Build the documentation:
 
 ::
 
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % make -C docs html
+    (slsdetector) lid10eiger1:~/esrf/sls_detectors/Lima % make -C docs html
     ...
 
 Add *Lima* to the *PATH*, *LD_LIBRARY_PATH* and *PYTHONPATH* environment variables in
@@ -1260,13 +1600,14 @@ Add *Lima* to the *PATH*, *LD_LIBRARY_PATH* and *PYTHONPATH* environment variabl
 
 ::
 
-    (bliss) lid10eiger1:~ % tail -n 6 eiger_setup.sh
+    (slsdetector) lid10eiger1:~ % cat >> eiger_setup.sh <<'EOF'
 
     LIMA_DIR=${SLS_DETECTORS}/Lima
     PATH=${LIMA_DIR}/install/bin:${PATH}
     LD_LIBRARY_PATH=${LIMA_DIR}/install/lib:${LD_LIBRARY_PATH}
     PYTHONPATH=${LIMA_DIR}/install/python:${PYTHONPATH}
     export LIMA_DIR PATH LD_LIBRARY_PATH PYTHONPATH
+    EOF
 
 *eigerDetectorServer* and detector firmwares
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1275,36 +1616,24 @@ If necessary, the *eigerDetectorServer* corresponding to the installed *slsDetec
 must be copied into the modules embedded Linux. Please refer to :doc:`installation_eiger_server_and_fw`
 
 
-Test the *slsDetectorSoftware* and *Lima*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Test the *slsdetector* *Lima* plugin
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Logout and re-login as *opid00*, so the previous changes can be tested. 
-First, test the 'slsDetectorGui':
+Test the *Lima* plugin without and with *CtControl* instantiation:
 
 ::
 
-    (bliss) lid10eiger1:~ % start_eiger_gui
+    (slsdetector) lid10eiger1:~ % \
+        cd ${LIMA_DIR}
+        (rm -f /tmp/eiger.edf &&
+             build/camera/slsdetector/test/test_slsdetector -c ${EIGER_CONFIG})
     ...
-
-One *xterm* per Receiver (half-module) window should appear. Accept the
-message box acknowleging the detector configuration parameters, and the
-GUI will open. Wait for few seconds until a message box pops out asking
-to activate the high voltage; answer *No*. In the GUI, disable the *File
-Name* check box and press *Start* for a single acquisition. A frame
-should be taken.
-
-Finally, test the *Lima* plugin without and with *CtControl* instantiation:
-
-::
-
-    (bliss) lid10eiger1:~ % cd ${LIMA_DIR}
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % rm -f /tmp/eiger.edf && \
-                                                    build/camera/slsdetector/test/test_slsdetector -c ${EIGER_CONFIG}
-    ...
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % mkdir -p /nobackup/lid10eiger12/data/eiger/lima
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % ln -s /nobackup/lid10eiger12/data/eiger/lima data
-    (bliss) lid10eiger1:~/esrf/sls_detectors/Lima % rm -f data/img*.edf && \
-                                                    python camera/slsdetector/test/test_slsdetector_control.py -c ${EIGER_CONFIG}
+    (slsdetector) lid10eiger1:~/esrf/sls_detectors/Lima % \
+        mkdir -p /nobackup/lid10eiger12/data/eiger/lima
+        ln -s /nobackup/lid10eiger12/data/eiger/lima data
+        (rm -f data/img*.edf &&
+             python camera/slsdetector/test/test_slsdetector_control.py -c ${EIGER_CONFIG})
     ...
 
 Clean the shared memory segments used by the SlsDetector library, so
@@ -1313,9 +1642,10 @@ thay can be re-created by *opid10*:
 ::
 
     # as opid00
-    (bliss) lid10eiger1:~ % for m in $(ipcs -m | grep '^0x000016' | awk '{print $2}'); do \
-                                ipcrm -m ${m}; \
-                            done
+    (slsdetector) lid10eiger1:~ % \
+        for m in $(ipcs -m | grep '^0x000016' | awk '{print $2}'); do
+            ipcrm -m ${m}
+        done
 
 
 Setup *opid10* account
@@ -1326,11 +1656,11 @@ Include the Eiger environment at login:
 ::
 
     # as opid10
-    lid10eiger1:~ % tail -n 3 .bash_profile
+    lid10eiger1:~ % cat >> .bash_profile <<'EOF'
 
     # include the PSI/Eiger environment
     . ${EIGER_HOME}/eiger_setup.sh
-
+    EOF
 
 Install Lima Python Tango software in *blissadm*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1364,9 +1694,10 @@ Include the *Lima* libraries and modules in the *BLISS_LIB_PATH* and *PYTHONPATH
 ::
 
     # as blissadm
-    lid10eiger1:~ % . ${EIGER_HOME}/eiger_setup.sh
-    (bliss) lid10eiger1:~ % blissrc -a BLISS_LIB_PATH ${LIMA_DIR}/install/lib
-    (bliss) lid10eiger1:~ % blissrc -a PYTHONPATH ${LIMA_DIR}/install/python
+    lid10eiger1:~ % \
+        . ${EIGER_HOME}/eiger_setup.sh
+        blissrc -a BLISS_LIB_PATH ${LIMA_DIR}/install/lib
+        blissrc -a PYTHONPATH ${LIMA_DIR}/install/python
 
 Rename the Lima installed directories so they are no longer visible, and create the necessary
 symbolic links:
@@ -1374,13 +1705,14 @@ symbolic links:
 ::
 
     # as blissadm
-    (bliss) lid10eiger1:~ % cd ~/python/bliss_modules
-    (bliss) lid10eiger1:~/python/bliss_modules % mv Lima Lima-pack
-    (bliss) lid10eiger1:~/python/bliss_modules % cd ~/applications
-    (bliss) lid10eiger1:~/applications % mv LimaCCDs LimaCCDs-pack
-    (bliss) lid10eiger1:~/python/bliss_modules % cd ~/server/src
-    (bliss) lid10eiger1:~/server/src % mv LimaCCDs LimaCCDs-pack
-    (bliss) lid10eiger1:~/server/src % ln -s ${LIMA_DIR}/install/bin/LimaCCDs
+    (slsdetector) lid10eiger1:~ % \
+        cd ~/python/bliss_modules
+        mv Lima Lima-pack
+        cd ~/applications
+        mv LimaCCDs LimaCCDs-pack
+        cd ~/server/src
+        mv LimaCCDs LimaCCDs-pack
+        ln -s ${LIMA_DIR}/install/bin/LimaCCDs
 
 
 Lima Python Tango server configuration in *blissadm*
@@ -1391,7 +1723,7 @@ the Tango database:
 
 ::
 
-    (bliss) lid10eiger1:~ % jive > /dev/null 2>&1 &
+    (slsdetector) lid10eiger1:~ % jive > /dev/null 2>&1 &
 
 Define the server *LimaCCDs/eiger500k* and include it in the *dserver*
 local database:
@@ -1406,7 +1738,7 @@ local database:
 ::
 
     # as opid10
-    (bliss) lid10eiger1:~ % bliss_dserver -fg start LimaCCDs
+    (slsdetector) lid10eiger1:~ % bliss_dserver -fg start LimaCCDs
     Starting: LimaCCDs/eiger500k
 
 Add LimaCCDs and SlsDetector class devices.
@@ -1416,7 +1748,9 @@ Add LimaCCDs and SlsDetector class devices.
 +----------------------------------------------------------+-------------------------------------------+
 | id10/limaccds/eiger500k->LimaCameraType                  | SlsDetector                               |
 +----------------------------------------------------------+-------------------------------------------+
-| id10/limaccds/eiger500k->NbProcessingThread              | 11                                        |
+| id10/limaccds/eiger500k->NbProcessingThread              | 23                                        |
++----------------------------------------------------------+-------------------------------------------+
+| id10/limaccds/eiger500k->BufferMaxMemory                 | 40                                        |
 +----------------------------------------------------------+-------------------------------------------+
 | LimaCCDs/eiger500k/DEVICE/SlsDetector                    | id10/slsdetector/eiger500k                |
 +----------------------------------------------------------+-------------------------------------------+
@@ -1424,12 +1758,17 @@ Add LimaCCDs and SlsDetector class devices.
 |                                                          | beb-021-020-direct-FO-10g.config          |
 +----------------------------------------------------------+-------------------------------------------+
 | id10/slsdetector/eiger500k->netdev_groups                | | eth0,eth1,eth2,eth4,eth6,eth7,eth8,eth9 |
-|                                                          | | eth3,eth5                               |
+|                                                          | | eth3                                    |
+|                                                          | | eth5                                    |
 +----------------------------------------------------------+-------------------------------------------+
-| id10/slsdetector/eiger500k->pixel_depth_cpu_affinity_map | | 4,0xf00,0xfc,0x2,0x1,0x1,0x2            |
-|                                                          | | 8,0xf00,0xfc,0x2,0x1,0x1,0x2            |
-|                                                          | | 16,0xfff,0xfff,0xfff,0xfff,0xfff,0xfff  |
-|                                                          | | 32,0xfff,0xfff,0xfff,0xfff,0xfff,0xfff  |
+| id10/slsdetector/eiger500k->pixel_depth_cpu_affinity_map | |  4,0x0006c0,0x6c0000,0x03f03e,0x000001, |
+|                                                          |      0x000001,0x100100,0x800800           |
+|                                                          | |  8,0x0006c0,0x6c0000,0x03f03e,0x000001, |
+|                                                          |      0x000001,0x100100,0x800800           |
+|                                                          | | 16,0xffffff,0xffffff,0xffffff,0xffffff, |
+|                                                          |      0xffffff,0xffffff,0xffffff           |
+|                                                          | | 32,0xffffff,0xffffff,0xffffff,0xffffff, |
+|                                                          |      0xffffff,0xffffff,0xffffff           |
 +----------------------------------------------------------+-------------------------------------------+
 
 .. note:: in order to perform high frame rate acquisitions, the CPU affinity must be fixed for 
@@ -1439,16 +1778,41 @@ Add LimaCCDs and SlsDetector class devices.
    * Receiver writers
    * Lima processing threads
    * OS processes
+   * Net-dev group #0 packet dispatching
    * Net-dev group #1 packet dispatching
-   * Net-dev group #2 packet dispatching
    * ...
 
-   The previous example is based on a dual 6-core CPUs backend (12 cores). After the data acquisition finishes
-   the Lima processing threads will run also on the CPUs assigned to listeners and writers (0xffe), that is
-   11 cores in total, which is used for setting the NbProcessingThreads. Please note that there are two network
-   groups and four pixel_depth->cpu_affinity settings (4-, 8-, 16- and 32-bit), each one represented by a line
-   in a multi-line string array.
-  
+   The previous example is based on a dual 6-core CPUs backend with *Hyper-Threading Technology* (12 cores, 
+   24 threads). After the data acquisition finishes the Lima processing threads will run also on the CPUs
+   assigned to listeners and writers (0xfffffe), that is 23 cores in total, which is used for setting the
+   NbProcessingThreads. Please note that there are three network groups and four pixel_depth->cpu_affinity
+   settings (4-, 8-, 16- and 32-bit), each one represented by a line in a multi-line string array.
+
+.. note:: The Intel 10 Gigabit Ethernet Server Adapter has multiple hardware FIFOs per port, called
+   queues in the OS terminology. The hardware uses a hash algorithm to dispatch packets into the active
+   queues, which includes the source IP address. Each FIFO has an associated IRQ, so the *irqbalance* service
+   activates the Receive-Side Scaling (RSS) mechanism by distributing the queues IRQ Service 
+   Routine (ISR) CPU affinity on different cores.
+   
+   The destination FIFO in the Intel adapter depends on the Eiger 10 Gigabit Ethernet data interface IP,
+   and thus the CPU where the corresponding ISR will run. ISRs have higher priority than packet dispatch
+   tasks. If the queue IRQs are serviced by the same CPU that does the packet dispatching, the latter is
+   affected when the frame rate is important. Care must be taken to avoid this kind of CPU conflict by 
+   having a deterministic CPU task distribution. With this aim, the Lima plugin sets not only the
+   (network stack dispatching) Receive Packet Steering (RPS) CPU Affinity for both data interfaces eth3/eth5
+   but also their effective hardware FIFO ISR CPU Affinity (netdev_group CPU affinity).
+   
+   Lima uses the *ethtool -S* command, which shows the statistics of a network device, including the
+   bytes/packets received per FIFO, in order to determine the active FIFOs. Then it uses the files:
+   
+   * */proc/interrupts*
+   * */sys/class/net/<netdev>/device/msi_irqs/<irq>*
+   * */proc/irq/<irq>/smp_affinity_list*
+   
+   to find out the active device IRQs and to set their corresponding CPU affinities. If running,
+   the *irqbalance* service is stopped before setting the IRQ affinity and restored during application
+   cleanup.
+                
 Finally, configure *opid10* as the default *DSERVER_USER*, which is used
 by the *dserver_daemon*
    
@@ -1499,9 +1863,11 @@ version compiled on *opid00*:
 ::
 
     # as blissadm
-    lid10eiger1:~ % LIMA_DIR=${EIGER_HOME}/esrf/sls_detectors/Lima
-    lid10eiger1:~ % cd ~/spec/macros/lima
-    lid10eiger1:~/spec/macros/lima % ln -s ${LIMA_DIR}/applications/spec/limaslsdetector.mac
+    lid10eiger1:~ % (
+        . ${EIGER_HOME}/eiger_setup.sh
+        cd ~/spec/macros/lima
+        ln -s ${LIMA_DIR}/applications/spec/limaslsdetector.mac
+    )
 
 SPEC configuration
 ~~~~~~~~~~~~~~~~~~
@@ -1538,7 +1904,7 @@ Configure the *LimaCCDs/eiger500k* Taco interface server.
 
 ::
 
-    (bliss) lid10eiger1:~ % cat ~blissadm/local/spec/spec.d/eiger/config
+    (slsdetector) lid10eiger1:~ % cat ~blissadm/local/spec/spec.d/eiger/config
     # ID @(#)getinfo.c  6.5  03/14/15 CSS
     # Device nodes
     PSE_MAC_MOT  = slsdetmot 32 eiger500k
@@ -1562,7 +1928,7 @@ interfaces.
 
 ::
 
-    (bliss) lid10eiger1:~ % cat ~blissadm/local/spec/spec.d/eiger/setup
+    (slsdetector) lid10eiger1:~ % cat ~blissadm/local/spec/spec.d/eiger/setup
     #
     # Add or modify setup lines.
     # Comment out the lines you want to cancel temporarily.

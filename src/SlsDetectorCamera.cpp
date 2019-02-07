@@ -150,6 +150,7 @@ void Camera::AcqThread::threadFunction()
 	SeqFilter seq_filter;
 	bool had_frames = false;
 	bool cont_acq = true;
+	bool acq_end = false;
 	do {
 		while ((m_state != StopReq) && m_frame_queue.empty()) {
 			if (!m_cond.wait(m_cam->m_new_frame_timeout)) {
@@ -168,7 +169,9 @@ void Camera::AcqThread::threadFunction()
 				int f = frames.first;
 				do {
 					DEB_TRACE() << DEB_VAR1(f);
-					cont_acq = newFrameReady(f);
+					Status status = newFrameReady(f);
+					cont_acq = status.first;
+					acq_end = status.second;
 					had_frames = true;
 				} while ((++f != frames.end()) && cont_acq);
 			}
@@ -176,6 +179,11 @@ void Camera::AcqThread::threadFunction()
 	} while ((m_state != StopReq) && cont_acq);
 	State prev_state = m_state;
 
+	if (acq_end && m_cam->m_skip_frame_freq) {
+		AutoMutexUnlock u(l);
+		m_cam->waitLastSkippedFrame();
+	}
+		
 	m_state = Stopping;
 	DEB_TRACE() << DEB_VAR2(prev_state, m_state);
 	{
@@ -272,19 +280,25 @@ void Camera::AcqThread::stopAcq()
 	det->stopReceiver();
 }
 
-bool Camera::AcqThread::newFrameReady(FrameType frame)
+Camera::AcqThread::Status Camera::AcqThread::newFrameReady(FrameType frame)
 {
 	DEB_MEMBER_FUNCT();
 	HwFrameInfoType frame_info;
 	frame_info.acq_frame_nb = frame;
-	bool cont_acq = m_cam->m_buffer_cb_mgr->newFrameReady(frame_info);
-	return cont_acq && (frame < m_cam->m_nb_frames - 1);
+	StdBufferCbMgr *cb_mgr = m_cam->getBufferCbMgr();
+	bool cont_acq = cb_mgr->newFrameReady(frame_info);
+	bool acq_end = (frame == m_cam->m_lima_nb_frames - 1);
+	cont_acq &= !acq_end;
+	return Status(cont_acq, acq_end);
 }
 
 Camera::Camera(string config_fname) 
 	: m_model(NULL),
 	  m_recv_fifo_depth(1000),
-	  m_nb_frames(1),
+	  m_lima_nb_frames(1),
+	  m_det_nb_frames(1),
+	  m_skip_frame_freq(0),
+	  m_last_skipped_frame_timeout(0.5),
 	  m_lat_time(0),
 	  m_recv_nb_ports(0),
 	  m_pixel_depth(PixelDepth16), 
@@ -299,7 +313,7 @@ Camera::Camera(string config_fname)
 {
 	DEB_CONSTRUCTOR();
 
-	CPUAffinity::getNbCPUs();
+	CPUAffinity::getNbSystemCPUs();
 
 	m_input_data = new AppInputData(config_fname);
 
@@ -417,7 +431,7 @@ char *Camera::getFrameBufferPtr(FrameType frame_nb)
 {
 	DEB_MEMBER_FUNCT();
 
-	StdBufferCbMgr *cb_mgr = m_buffer_cb_mgr;
+	StdBufferCbMgr *cb_mgr = getBufferCbMgr();
 	if (!cb_mgr)
 		THROW_HW_ERROR(InvalidValue) << "No BufferCbMgr defined";
 	void *ptr = cb_mgr->getFrameBufferPtr(frame_nb);
@@ -482,7 +496,7 @@ void Camera::setTrigMode(TrigMode trig_mode)
 	ExtComMode mode = static_cast<ExtComMode>(trig_mode);
 	m_det->setTimingMode(mode);
 	m_trig_mode = trig_mode;
-	setNbFrames(m_nb_frames);
+	setNbFrames(m_lima_nb_frames);
 }
 
 void Camera::getTrigMode(TrigMode& trig_mode)
@@ -504,19 +518,38 @@ void Camera::setNbFrames(FrameType nb_frames)
 					     <<	DEB_VAR2(nb_frames, MaxFrames);
 
 	waitState(Idle);
+	FrameType det_nb_frames = nb_frames;
+	if (m_skip_frame_freq)
+		det_nb_frames += nb_frames / m_skip_frame_freq;
 	bool trig_exp = (m_trig_mode == Defs::TriggerExposure);
-	int cam_frames = trig_exp ? 1 : nb_frames;
-	int cam_triggers = trig_exp ? nb_frames : 1;
+	int cam_frames = trig_exp ? 1 : det_nb_frames;
+	int cam_triggers = trig_exp ? det_nb_frames : 1;
 	m_det->setNumberOfFrames(cam_frames);
 	m_det->setNumberOfCycles(cam_triggers);
-	m_nb_frames = nb_frames;
+	m_lima_nb_frames = nb_frames;
+	m_det_nb_frames = det_nb_frames;
 }
 
 void Camera::getNbFrames(FrameType& nb_frames)
 {
 	DEB_MEMBER_FUNCT();
-	nb_frames = m_nb_frames;
+	nb_frames = m_lima_nb_frames;
 	DEB_RETURN() << DEB_VAR1(nb_frames);
+}
+
+void Camera::setSkipFrameFreq(FrameType skip_frame_freq)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(skip_frame_freq);
+	m_skip_frame_freq = skip_frame_freq;
+	setNbFrames(m_lima_nb_frames);
+}
+
+void Camera::getSkipFrameFreq(FrameType& skip_frame_freq)
+{
+	DEB_MEMBER_FUNCT();
+	skip_frame_freq = m_skip_frame_freq;
+	DEB_RETURN() << DEB_VAR1(skip_frame_freq);
 }
 
 void Camera::setExpTime(double exp_time)
@@ -619,32 +652,21 @@ void Camera::updateCPUAffinity(bool recv_restarted)
 	m_global_cpu_affinity_mgr.applyAndSet(global_affinity);
 }
 
-void Camera::setRecvCPUAffinity(const RecvCPUAffinity& recv_affinity)
+void Camera::setRecvCPUAffinity(const RecvCPUAffinityList& recv_affinity_list)
 {
 	DEB_MEMBER_FUNCT();
+	unsigned int nb_recv = m_recv_list.size();
+	unsigned int nb_aff = recv_affinity_list.size();
+	DEB_PARAM() << DEB_VAR2(nb_recv, nb_aff);
+	if (nb_aff != nb_recv)
+		THROW_HW_ERROR(InvalidValue) << "invalid affinity list size: "
+					     <<  DEB_VAR2(nb_recv, nb_aff);
 
-	CPUAffinity listeners_affinity = recv_affinity.listeners;
-	CPUAffinity writers_affinity = recv_affinity.writers;
-	cpu_set_t list_cpu_set;
-	listeners_affinity.initCPUSet(list_cpu_set);
-	cpu_set_t writ_cpu_set;
-	writers_affinity.initCPUSet(writ_cpu_set);
+	RecvCPUAffinityList::const_iterator ait = recv_affinity_list.begin();
 	RecvList::iterator it, end = m_recv_list.end();
-	for (it = m_recv_list.begin(); it != end; ++it) {
+	for (it = m_recv_list.begin(); it != end; ++it, ++ait) {
 		Receiver *recv = *it;
-		DEB_TRACE() << "setting recv " << recv->m_idx << " "
-			     << "listeners CPU mask to " << listeners_affinity;
-		DEB_TRACE() << "setting recv " << recv->m_idx << " "
-			     << "writers CPU mask to " << writers_affinity;
-		slsReceiverUsers *recv_users = recv->m_recv;
-		recv_users->setThreadCPUAffinity(sizeof(list_cpu_set),
-						 &list_cpu_set, &writ_cpu_set);
-	}
-	RecvPortList port_list = getRecvPortList();
-	RecvPortList::iterator pit, pend = port_list.end();
-	for (pit = port_list.begin(); pit != pend; ++pit) {
-		pid_t tid = (*pit)->getThreadID();
-		writers_affinity.applyToTask(tid, false);
+		recv->setCPUAffinity(*ait);
 	}
 }
 
@@ -747,7 +769,8 @@ void Camera::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
 
-	if (!m_buffer_cb_mgr)
+	StdBufferCbMgr *cb_mgr = getBufferCbMgr();
+	if (!cb_mgr)
 		THROW_HW_ERROR(Error) << "No BufferCbMgr defined";
 	if (!m_model)
 		THROW_HW_ERROR(Error) << "No BufferCbMgr defined";
@@ -756,14 +779,14 @@ void Camera::prepareAcq()
 	if (getState() != Idle)
 		THROW_HW_ERROR(Error) << "Camera is not idle";
 
-	bool need_period = !m_nb_frames || (m_nb_frames > 1);
+	bool need_period = !m_lima_nb_frames || (m_lima_nb_frames > 1);
 	need_period &= ((m_trig_mode == Defs::Auto) || 
 			(m_trig_mode == Defs::BurstTrigger));
 	if (need_period && (m_lat_time > 0))
 		setFramePeriod(m_exp_time + m_lat_time);
 
 	int nb_buffers;
-	m_buffer_cb_mgr->getNbBuffers(nb_buffers);
+	cb_mgr->getNbBuffers(nb_buffers);
 
 	{
 		AutoMutex l = lock();
@@ -773,6 +796,11 @@ void Camera::prepareAcq()
 		RecvList::iterator it, end = m_recv_list.end();
 		for (it = m_recv_list.begin(); it != end; ++it)
 			(*it)->prepareAcq();
+
+		m_missing_last_skipped_frame.clear();
+		if (m_skip_frame_freq)
+			for (int i = 0; i < getTotNbPorts(); ++i)
+				m_missing_last_skipped_frame.insert(i);
 	}
 
 	m_model->prepareAcq();
@@ -790,7 +818,8 @@ void Camera::startAcq()
 	if (m_acq_thread)
 		THROW_HW_ERROR(Error) << "Must call prepareAcq first";
 
-	m_buffer_cb_mgr->setStartTimestamp(Timestamp::now());
+	StdBufferCbMgr *cb_mgr = getBufferCbMgr();
+	cb_mgr->setStartTimestamp(Timestamp::now());
 
 	m_acq_thread = new AcqThread(this);
 	m_acq_thread->start();
@@ -870,6 +899,45 @@ FrameType Camera::getLastReceivedFrame()
 	FrameType last_frame = m_frame_map.getLastItemFrame();
 	DEB_RETURN() << DEB_VAR1(last_frame);
 	return last_frame;
+}
+
+void Camera::waitLastSkippedFrame()
+{
+	DEB_MEMBER_FUNCT();
+	AutoMutex l = lock();
+	bool stopping = false;
+	Timestamp t0;
+	SortedIntList& port_list = m_missing_last_skipped_frame;
+	while (!port_list.empty()) {
+		double timeout = -1;
+		if (!stopping && (m_state == StopReq)) {
+			DEB_TRACE() << "stop requested";
+			stopping = true;
+			t0 = Timestamp::now();
+		} 
+		if (stopping) {
+			double elapsed = Timestamp::now() - t0;
+			timeout = m_last_skipped_frame_timeout - elapsed;
+			if (timeout <= 0) {
+				DEB_WARNING() << "Missing last skipped frame "
+					      << elapsed << " sec after stop: "
+					      << "remaining port_list="
+					      << PrettySortedList(port_list);
+				break;
+			}
+		}
+		m_cond.wait(timeout);
+	}
+}
+
+void Camera::processLastSkippedFrame(int port_idx)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(port_idx);
+	AutoMutex l = lock();
+	if (m_missing_last_skipped_frame.erase(port_idx) != 1)
+		DEB_ERROR() << "port " << port_idx << " already processed";
+	m_cond.broadcast();
 }
 
 int Camera::getFramesCaught()

@@ -24,7 +24,7 @@
 #define __SLS_DETECTOR_RECEIVER_H
 
 #include "SlsDetectorModel.h"
-
+#include "SlsDetectorCPUAffinity.h"
 #include "slsReceiverUsers.h"
 
 namespace lima 
@@ -47,6 +47,8 @@ public:
 	void setNbPorts(int nb_ports);
 
 	void prepareAcq();
+
+	void setCPUAffinity(const RecvCPUAffinity& recv_affinity);
 
 private:
 	friend class Camera;
@@ -160,8 +162,13 @@ private:
 
 	int fileStartCallback(char *fpath, char *fname, uint64_t fidx, 
 			      uint32_t dsize);
-	void portCallback(FrameType frame, int port, char *dptr, 
+	void portCallback(FrameType det_frame, int port, char *dptr, 
 			  uint32_t dsize);
+
+	void getNodeMaskList(const CPUAffinityList& listener,
+			     const CPUAffinityList& writer,
+			     slsReceiverUsers::NodeMaskList& fifo_node_mask,
+			     int& max_node);
 
 	Camera *m_cam;
 	int m_idx;

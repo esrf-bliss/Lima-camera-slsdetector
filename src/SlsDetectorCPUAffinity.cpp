@@ -33,39 +33,55 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <sys/types.h>
+#include <pwd.h>
+#include <numa.h>
+#include <iomanip>
 
 using namespace std;
 using namespace lima;
 using namespace lima::SlsDetector;
 
-bool CPUAffinity::UseSudo = true;
+bool SystemCmd::UseSudo = true;
 
-void CPUAffinity::setUseSudo(bool use_sudo)
+SystemCmd::SystemCmd(string cmd, string desc, bool try_sudo)
+	: m_cmd(cmd), m_desc(desc), m_try_sudo(try_sudo),
+	  m_stdin(NULL), m_stdout(NULL), m_stderr(NULL)
+{
+	DEB_CONSTRUCTOR();
+	DEB_PARAM() << DEB_VAR3(m_cmd, m_desc, m_try_sudo);
+}
+
+SystemCmd::SystemCmd(const SystemCmd& o)
+	: m_cmd(o.m_cmd), m_desc(o.m_desc), m_try_sudo(o.m_try_sudo),
+	  m_stdin(o.m_stdin), m_stdout(o.m_stdout), m_stderr(o.m_stderr)
+{
+	DEB_CONSTRUCTOR();
+	DEB_PARAM() << DEB_VAR3(m_cmd, m_desc, m_try_sudo);
+	DEB_PARAM() << DEB_VAR3(m_stdin, m_stdout, m_stderr);
+}
+
+void SystemCmd::setUseSudo(bool use_sudo)
 {
 	UseSudo = use_sudo;
 }
 
-bool CPUAffinity::getUseSudo()
+bool SystemCmd::getUseSudo()
 {
 	return UseSudo;
 }
 
-void CPUAffinity::checkSudo(string cmd, string desc)
+void SystemCmd::checkSudo()
 {
 	DEB_STATIC_FUNCT();
 
 	typedef map<string, bool> CacheMap;
 	static CacheMap cache_map;
-	CacheMap::iterator it = cache_map.find(cmd);
+	CacheMap::iterator it = cache_map.find(m_cmd);
 	if (it == cache_map.end()) {
-		ostringstream os;
-		os << "sudo -l " << cmd;
-		if (!DEB_CHECK_ANY(DebTypeTrace))
-			os << " > /dev/null 2>&1";
-		DEB_TRACE() << "executing: '" << os.str() << "'";
-		int ret = system(os.str().c_str());
-		bool ok = (ret == 0);
-		CacheMap::value_type entry(cmd, ok);
+		SystemCmd sudo("sudo", "", false);
+		sudo.args() << "-l " << m_cmd;
+		bool ok = (sudo.execute() == 0);
+		CacheMap::value_type entry(m_cmd, ok);
 		pair<CacheMap::iterator, bool> v = cache_map.insert(entry);
 		if (!v.second)
 			THROW_HW_ERROR(Error) << "Error inserting cache entry";
@@ -74,21 +90,165 @@ void CPUAffinity::checkSudo(string cmd, string desc)
 	if (it->second)
 		return;
 
-	char user[128];
-	if (getlogin_r(user, sizeof(user)) != 0)
-		THROW_HW_ERROR(Error) << "Cannot get user login name";
+	const char *user = "Unknown";
+	uid_t uid = getuid();
+	DEB_TRACE() << DEB_VAR1(uid);
+	struct passwd pw, *res;
+	char buffer[4 * 1024];
+	int ret = getpwuid_r(uid, &pw, buffer, sizeof(buffer), &res);
+	if (ret != 0)
+		DEB_WARNING() << "getpwuid_r failed: " << strerror(errno);
+	else if (res == NULL)
+		DEB_WARNING() << "could not get passwd entry for uid=" << uid;
+	else
+		user = pw.pw_name;
 
-	DEB_ERROR() << "The command '" << cmd << "' is not allowed for " << user
-		    << " in the sudoers database. ";
+	DEB_ERROR() << "The command '" << m_cmd << "' is not allowed for "
+		    << user << " in the sudoers database. ";
 	DEB_ERROR() << "Check sudoers(5) man page and restart this process";
-	if (!desc.empty())
-		DEB_ERROR() << desc;
+	if (!m_desc.empty())
+		DEB_ERROR() << m_desc;
 
-	THROW_HW_ERROR(Error) << "Cannot execute sudo " << cmd << "! "
+	THROW_HW_ERROR(Error) << "Cannot execute sudo " << m_cmd << "! "
 			      << "See output for details";
 }
 
-int CPUAffinity::findNbCPUs()
+void SystemCmd::setPipes(Pipe *stdin, Pipe *stdout, Pipe *stderr)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR3(stdin, stdout, stderr);
+	m_stdin = stdin;
+	m_stdout = stdout;
+	m_stderr = stderr;
+}
+
+int SystemCmd::execute()
+{
+	DEB_MEMBER_FUNCT();
+	string args = m_args.str();
+	DEB_PARAM() << DEB_VAR3(m_cmd, args, m_try_sudo);
+
+	ostringstream os;
+	if (m_try_sudo && getUseSudo()) {
+		checkSudo();
+		os << "sudo -n ";
+	}
+	os << m_cmd << " " << args;
+	if (!DEB_CHECK_ANY(DebTypeTrace) && !m_stdout)
+		os << " > /dev/null";
+	if (sameOutErr())
+		os << " 2>&1";
+	DEB_TRACE() << "executing: '" << os.str() << "'";
+	preparePipes();
+	int ret = system(os.str().c_str());
+	restorePipes();
+	DEB_RETURN() << DEB_VAR1(ret);
+	return ret;
+}
+
+void SystemCmd::preparePipes()
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR3(m_stdin, m_stdout, m_stderr);
+	if (m_stdin) {
+		DEB_TRACE() << "Duplicating PIPE into STDIN";
+		m_stdin->dupInto(Pipe::ReadFd, 0);
+	}
+	if (m_stderr && !sameOutErr()) {
+		DEB_TRACE() << "Duplicating PIPE into STDERR";
+		m_stderr->dupInto(Pipe::WriteFd, 2);
+	}
+	if (m_stdout) {
+		DEB_TRACE() << "Duplicating PIPE into STDOUT";
+		m_stdout->dupInto(Pipe::WriteFd, 1);
+	}
+}
+
+void SystemCmd::restorePipes()
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR3(m_stdin, m_stdout, m_stderr);
+	if (m_stdout) {
+		m_stdout->restoreDup(Pipe::WriteFd);
+		DEB_TRACE() << "Restored STDOUT";
+	}
+	if (m_stderr && !sameOutErr()) {
+		m_stderr->restoreDup(Pipe::WriteFd);
+		DEB_TRACE() << "Restored STDERR";
+	}
+	if (m_stdin) {
+		DEB_TRACE() << "Restored STDIN";
+		m_stdin->restoreDup(Pipe::ReadFd);
+	}
+}
+
+SystemCmdPipe::SystemCmdPipe(string cmd, string desc, bool try_sudo)
+	: m_pipe_list(NbPipes), m_child_pid(-1), m_cmd(cmd, desc, try_sudo)
+{
+	DEB_CONSTRUCTOR();
+}
+
+SystemCmdPipe::~SystemCmdPipe()
+{
+	DEB_DESTRUCTOR();
+
+	if (m_child_pid >= 0)
+		wait();
+}
+
+void SystemCmdPipe::start()
+{
+	DEB_MEMBER_FUNCT();
+
+	if (m_child_pid >= 0)
+		THROW_HW_ERROR(Error) << "cmd already running";
+
+	m_cmd.setPipes(m_pipe_list[StdIn].ptr,
+		       m_pipe_list[StdOut].ptr,
+		       m_pipe_list[StdErr].ptr);
+
+	m_child_pid = fork();
+	if (m_child_pid == 0) {
+		m_pipe_list[StdIn].close(Pipe::WriteFd);
+		m_pipe_list[StdOut].close(Pipe::ReadFd);
+		m_pipe_list[StdErr].close(Pipe::ReadFd);
+
+		int ret = m_cmd.execute();
+		DEB_RETURN() << DEB_VAR1(ret);
+		_exit(ret);
+	} else {
+		m_pipe_list[StdIn].close(Pipe::ReadFd);
+		m_pipe_list[StdOut].close(Pipe::WriteFd);
+		m_pipe_list[StdErr].close(Pipe::WriteFd);
+	}
+}
+
+void SystemCmdPipe::wait()
+{
+	DEB_MEMBER_FUNCT();
+	if (m_child_pid < 0)
+		THROW_HW_ERROR(Error) << "cmd not running";
+	int child_ret;
+	waitpid(m_child_pid, &child_ret, 0);
+	DEB_TRACE() << DEB_VAR1(child_ret);
+	m_child_pid = -1;
+}
+
+void SystemCmdPipe::setPipe(PipeIdx idx, PipeType type)
+{
+	DEB_MEMBER_FUNCT();
+	m_pipe_list[idx] = PipeData(type);
+}
+
+Pipe& SystemCmdPipe::getPipe(PipeIdx idx)
+{
+	DEB_MEMBER_FUNCT();
+	if (!m_pipe_list[idx])
+		THROW_HW_ERROR(InvalidValue) << "null pipe " << DEB_VAR1(idx);
+	return *m_pipe_list[idx].ptr;
+}
+
+int CPUAffinity::findNbSystemCPUs()
 {
 	DEB_STATIC_FUNCT();
 	int nb_cpus = 0;
@@ -107,7 +267,7 @@ int CPUAffinity::findNbCPUs()
 	return nb_cpus;
 }
 
-int CPUAffinity::findMaxNbCPUs()
+int CPUAffinity::findMaxNbSystemCPUs()
 {
 	DEB_STATIC_FUNCT();
 	NumericGlob proc_glob("/proc/sys/kernel/sched_domain/cpu");
@@ -116,12 +276,12 @@ int CPUAffinity::findMaxNbCPUs()
 	return max_nb_cpus;
 }
 
-int CPUAffinity::getNbCPUs(bool max_nb)
+int CPUAffinity::getNbSystemCPUs(bool max_nb)
 {
 	static int nb_cpus = 0;
-	EXEC_ONCE(nb_cpus = findNbCPUs());
+	EXEC_ONCE(nb_cpus = findNbSystemCPUs());
 	static int max_nb_cpus = 0;
-	EXEC_ONCE(max_nb_cpus = findMaxNbCPUs());
+	EXEC_ONCE(max_nb_cpus = findMaxNbSystemCPUs());
 	int cpus = (max_nb && max_nb_cpus) ? max_nb_cpus : nb_cpus;
 	return cpus;
 }
@@ -153,7 +313,7 @@ std::string CPUAffinity::getTaskProcDir(pid_t task, bool is_thread)
 void CPUAffinity::initCPUSet(cpu_set_t& cpu_set) const
 {
 	CPU_ZERO(&cpu_set);
-	uint64_t mask = *this;
+	uint64_t mask = getMask();
 	for (unsigned int i = 0; i < sizeof(mask) * 8; ++i) {
 		if ((mask >> i) & 1)
 			CPU_SET(i, &cpu_set);
@@ -161,7 +321,7 @@ void CPUAffinity::initCPUSet(cpu_set_t& cpu_set) const
 }
 
 void CPUAffinity::applyToTask(pid_t task, bool incl_threads,
-				      bool use_taskset) const
+			      bool use_taskset) const
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR4(*this, task, incl_threads, use_taskset);
@@ -181,29 +341,17 @@ void CPUAffinity::applyWithTaskset(pid_t task, bool incl_threads) const
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR3(*this, task, incl_threads);
 
-	ostringstream os;
-	uint64_t mask = *this;
-	if (UseSudo) {
-		checkSudo("taskset");
-		os << "sudo -n ";
-	}
+	SystemCmd taskset("taskset");
 	const char *all_tasks_opt = incl_threads ? "-a " : "";
-	os << "taskset " << all_tasks_opt
-	   << "-p " << hex << showbase << mask << " " 
-	   << dec << noshowbase << task;
-	if (!DEB_CHECK_ANY(DebTypeTrace))
-		os << " > /dev/null 2>&1";
-	DEB_TRACE() << "executing: '" << os.str() << "'";
-	int ret = system(os.str().c_str());
-	if (ret != 0) {
+	taskset.args() << all_tasks_opt << "-p " << *this << " " << task;
+	if (taskset.execute() != 0) {
 		const char *th = incl_threads ? "and threads " : "";
 		THROW_HW_ERROR(Error) << "Error setting task " << task 
 				      << " " << th << "CPU affinity";
 	}
 }
 
-void CPUAffinity::applyWithSetAffinity(pid_t task, bool incl_threads)
-									const
+void CPUAffinity::applyWithSetAffinity(pid_t task, bool incl_threads) const
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR3(*this, task, incl_threads);
@@ -238,107 +386,427 @@ void CPUAffinity::applyWithSetAffinity(pid_t task, bool incl_threads)
 	}
 }
 
-void CPUAffinity::applyToNetDev(string dev) const
+void CPUAffinity::getNUMANodeMask(vector<unsigned long>& node_mask,
+				  int& max_node)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(*this, dev);
 
-	string glob_str(string("/sys/class/net/" + dev + "/queues/*/rps_cpus"));
-	Glob rps_cpu_glob(glob_str);
+	typedef vector<unsigned long> Array;
 
-	static bool did_error_files = false;
-	static bool did_error_setter = false;
+	int nb_nodes = numa_max_node() + 1;
+	const int item_bits = sizeof(Array::reference) * 8;
+	int nb_items = nb_nodes / item_bits;
+	if (nb_nodes % item_bits != 0)
+		++nb_items;
 
-	if (!did_error_files) {
-		StringList list = rps_cpu_glob.getPathList();
-		StringList::iterator it, end = list.end();
+	DEB_PARAM() << DEB_VAR2(*this, nb_items);
+	max_node = nb_nodes + 1;
+
+	node_mask.assign(nb_items, 0);
+
+	uint64_t mask = getMask();
+	for (unsigned int i = 0; i < sizeof(mask) * 8; ++i) {
+		if ((mask >> i) & 1) {
+			unsigned int n = numa_node_of_cpu(i);
+			Array::reference v = node_mask[n / item_bits];
+			v |= 1L << (n % item_bits);
+		}
+	}
+
+	if (DEB_CHECK_ANY(DebTypeReturn)) {
+		ostringstream os;
+		os << hex << "0x" << setw(nb_nodes / 4) << setfill('0');
+		bool first = true;
+		Array::reverse_iterator it, end = node_mask.rend();
+		for (it = node_mask.rbegin(); it != end; ++it, first = false)
+			os << (!first ? "," : "") << *it;
+		DEB_RETURN() << "node_mask=" << os.str() << ", "
+			     << DEB_VAR1(max_node);
+	}
+}
+
+bool IrqMgr::m_irqbalance_stopped = false;
+StringList IrqMgr::m_dev_list;
+
+IrqMgr::IrqMgr(string net_dev)
+{
+	DEB_CONSTRUCTOR();
+	DEB_PARAM() << DEB_VAR1(net_dev);
+
+	if (!net_dev.empty())
+		setDev(net_dev);
+}
+
+IrqMgr::~IrqMgr()
+{
+	DEB_DESTRUCTOR();
+	DEB_PARAM() << DEB_VAR1(m_net_dev);
+
+	if (isManaged(m_net_dev))
+		updateRxQueueIrqAffinity(true);
+}
+
+void IrqMgr::setDev(string net_dev)
+{
+	DEB_CONSTRUCTOR();
+	DEB_PARAM() << DEB_VAR1(net_dev);
+
+	if (!m_net_dev.empty())
+		THROW_HW_ERROR(Error) << "device already set";
+	if (isManaged(net_dev))
+		THROW_HW_ERROR(Error) << net_dev << " already managed";
+
+	m_net_dev = net_dev;
+}
+
+bool IrqMgr::isManaged(string net_dev)
+{
+	if (net_dev.empty())
+		return false;
+	StringList::iterator it, end = m_dev_list.end();
+	it = find(m_dev_list.begin(), end, net_dev);
+	return (it != end);
+}
+
+IntList IrqMgr::getIrqList()
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(m_net_dev);
+
+	string pci_irq_dir = (string("/sys/class/net/") + m_net_dev + 
+			      "/device/msi_irqs/");
+	NumericGlob pci_irqs(pci_irq_dir);
+	typedef NumericGlob::IntStringList IntStringList;
+	IntStringList dev_irqs = pci_irqs.getIntPathList();
+
+	IntList act_irqs;
+	ifstream proc_ints("/proc/interrupts");
+	ostringstream os;
+	int nb_cpus = CPUAffinity::getNbSystemCPUs();
+	os << "[ \t]*"
+	   << "(?P<irq>[0-9]+):[ \t]+"
+	   << "(?P<counts>(([0-9]+)[ \t]+){" << nb_cpus << "})"
+	   << "(?P<type>[-A-Za-z0-9_]+)[ \t]+"
+	   << "(?P<name>[-A-Za-z0-9_]+)";
+	DEB_TRACE() << DEB_VAR1(os.str());
+	RegEx int_re(os.str());
+	while (proc_ints) {
+		char buffer[1024];
+		proc_ints.getline(buffer, sizeof(buffer));
+		string s = buffer;
+		DEB_TRACE() << DEB_VAR1(s);
+		RegEx::FullNameMatchType match;
+		if (!int_re.matchName(s, match))
+			continue;
+		int irq;
+		istringstream(match["irq"]) >> irq;
+		DEB_TRACE() << "found match: " << irq << ": " 
+			     << string(match["name"]);
+		IntStringList::iterator it, end = dev_irqs.end();
+		bool ok = false;
+		for (it = dev_irqs.begin(); !ok && (it != end); ++it)
+			ok = (it->first == irq);
+		if (ok)
+			act_irqs.push_back(irq);
+	}
+
+	DEB_RETURN() << PrettyIntList(act_irqs);
+	return act_irqs;
+}
+
+void IrqMgr::updateRxQueueIrqAffinity(bool default_affinity)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(m_net_dev, default_affinity);
+
+	if (isManaged(m_net_dev) && default_affinity) {
+		StringList::iterator it, end = m_dev_list.end();
+		it = find(m_dev_list.begin(), end, m_net_dev);
+		m_dev_list.erase(it);
+		if (m_dev_list.empty())
+			restoreIrqBalance();
+	} else if (!isManaged(m_net_dev) && !default_affinity) {
+		stopIrqBalance();
+		m_dev_list.push_back(m_net_dev);
+	}
+}
+
+void IrqMgr::stopIrqBalance()
+{
+	DEB_STATIC_FUNCT();
+	DEB_PARAM() << DEB_VAR1(m_irqbalance_stopped);
+	if (!getIrqBalanceActive()) {
+		DEB_TRACE() << "nothing to do";
+		return;
+	} else if (m_irqbalance_stopped) {
+		DEB_WARNING() << "irqbalance stopped and still running!";
+	}
+	setIrqBalanceActive(false);
+	m_irqbalance_stopped = true;
+}
+
+void IrqMgr::restoreIrqBalance()
+{
+	DEB_STATIC_FUNCT();
+	DEB_PARAM() << DEB_VAR1(m_irqbalance_stopped);
+	if (!m_irqbalance_stopped)
+		return;
+	setIrqBalanceActive(true);
+	m_irqbalance_stopped = false;
+}
+
+bool IrqMgr::getIrqBalanceActive()
+{
+	DEB_STATIC_FUNCT();
+	SystemCmd bash("bash", "", false);
+	ConstStr cmd = "ps -ef | grep -v grep | grep irqbalance";
+	bash.args() << "-c '" << cmd << "'";
+	bool act = (bash.execute() == 0);
+	DEB_RETURN() << DEB_VAR1(act);
+	return act;
+}
+
+void IrqMgr::setIrqBalanceActive(bool act)
+{
+	DEB_STATIC_FUNCT();
+	DEB_PARAM() << DEB_VAR1(act);
+	SystemCmd service("service");
+	ConstStr cmd = act ? "start" : "stop";
+	DEB_ALWAYS() << "irqbalance: executing " << cmd;
+	service.args() << "irqbalance " << cmd;
+	if (service.execute() != 0)
+		THROW_HW_ERROR(Error) << "Could not " << cmd << " "
+				      << "irqbalance service";
+	DEB_ALWAYS() << "Done!";
+}
+
+
+NetDevRxQueueMgr::NetDevRxQueueMgr(string dev)
+	: m_dev(dev), m_irq_mgr(dev)
+{
+	DEB_CONSTRUCTOR();
+	DEB_PARAM() << DEB_VAR1(m_dev);
+}
+
+NetDevRxQueueMgr::~NetDevRxQueueMgr()
+{
+	DEB_DESTRUCTOR();
+	if (!NetDevRxQueueAffinityMap_isDefault(m_aff_map))
+		apply(NetDevRxQueueAffinityMap());
+}
+
+void NetDevRxQueueMgr::setDev(string dev)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(dev);
+	if (m_dev.empty()) {
+		m_dev = dev;
+		m_irq_mgr.setDev(dev);
+	} else if (dev != m_dev) {
+		THROW_HW_ERROR(InvalidValue) << "name mismatch: "
+					     << DEB_VAR2(dev, m_dev);
+	}
+}
+
+void NetDevRxQueueMgr::checkDev()
+{
+	DEB_MEMBER_FUNCT();
+	if (m_dev.empty())
+		THROW_HW_ERROR(InvalidValue) << "no device defined yet";
+}
+
+void NetDevRxQueueMgr::apply(int queue, const Affinity& queue_affinity)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR3(m_dev, queue, queue_affinity);
+
+	checkDev();
+	apply(Irq, queue, queue_affinity.irq);	
+	m_irq_mgr.updateRxQueueIrqAffinity(queue_affinity.irq.isDefault());
+	apply(Processing, queue, queue_affinity.processing);
+	m_aff_map[queue] = queue_affinity;
+}
+
+void NetDevRxQueueMgr::apply(const AffinityMap& affinity_map)
+{
+	m_aff_map.clear();
+	if (NetDevRxQueueAffinityMap_isDefault(affinity_map)) {
+		apply(-1, NetDevRxQueueCPUAffinity());
+	} else {
+		AffinityMap::const_iterator qit, qend = affinity_map.end();
+		for (qit = affinity_map.begin(); qit != qend; ++qit)
+			apply(qit->first, qit->second);
+	}
+}
+
+void NetDevRxQueueMgr::apply(Task task, int queue, CPUAffinity a)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR3(m_dev, queue, a);
+
+	FileSetterData file_setter;
+	if (task == Irq)
+		getIrqFileSetterData(queue, file_setter);
+	else
+		getProcessingFileSetterData(queue, file_setter);
+
+	static bool did_error_files[NbTasks] = {false, false};
+	if (!did_error_files[task]) {
+		const StringList& list = file_setter.file;
+		StringList::const_iterator it, end = list.end();
 		bool ok = true;
 		for (it = list.begin(); ok && (it != end); ++it)
-			ok = applyWithNetDevFile(*it);
+			ok = applyWithFile(*it, a);
 		if (ok)
 			return;
 		DEB_WARNING() << "Could not write to files. Will try setter...";
-		did_error_files = true;
+		did_error_files[task] = true;
 	}
 
-	if (!did_error_setter) {
-		StringList queue_list = rps_cpu_glob.getSubPathList(6);
-		StringList::iterator it, end = queue_list.end();
+	static bool did_error_setter[NbTasks] = {false, false};
+	if (!did_error_setter[task]) {
+		const StringList& list = file_setter.setter;
+		StringList::const_iterator it, end = list.end();
 		bool ok = true;
-		for (it = queue_list.begin(); ok && (it != end); ++it)
-			ok = applyWithNetDevSetter(dev, *it);
+		for (it = list.begin(); ok && (it != end); ++it)
+			ok = applyWithSetter(task, *it, a);
 		if (ok)
 			return;
 		DEB_ERROR() << "Could not use setter";
-		did_error_setter = true;
+		did_error_setter[task] = true;
 	}
 }
 
-void CPUAffinity::applyToNetDevGroup(StringList dev_list) const
+void NetDevRxQueueMgr::getIrqFileSetterData(int queue,
+					    FileSetterData& file_setter)
 {
-	StringList::iterator it, end = dev_list.end();
-	for (it = dev_list.begin(); it != end; ++it)
-		applyToNetDev(*it);
+	DEB_MEMBER_FUNCT();
+
+	if (queue != -1)
+		THROW_HW_ERROR(NotSupported) << "only all queues (-1) mode "
+					     << "is supported";
+
+	IntList act_irqs = m_irq_mgr.getIrqList();
+	IntList::const_iterator it, end = act_irqs.end();
+	for (it = act_irqs.begin(); it != end; ++it) {
+		ostringstream os1, os2;
+		os1 << "/proc/irq/" << *it << "/smp_affinity";
+		file_setter.file.push_back(os1.str());
+		os2 << *it;
+		file_setter.setter.push_back(os2.str());
+	}
 }
 
-bool CPUAffinity::applyWithNetDevFile(const string& fname) const
+void NetDevRxQueueMgr::getProcessingFileSetterData(int queue,
+						   FileSetterData& file_setter)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(m_dev);
+
+	enum {
+		File, Setter, NbLists,
+	};
+
+	string glob_str(string("/sys/class/net/" + m_dev + "/queues/rx-"));
+	NumericGlob rps_cpus_glob(glob_str, "/rps_cpus");
+
+	typedef NumericGlob::IntStringList IntStringList;
+	IntStringList list_array[NbLists];
+	list_array[File] = rps_cpus_glob.getIntPathList();
+	list_array[Setter] = rps_cpus_glob.getIntSubPathList(6);
+	IntList filter_list;
+	if (queue == -2)
+		filter_list = getRxQueueList();
+	else if (queue != -1)
+		filter_list.push_back(queue);
+	for (int i = 0; !filter_list.empty() && (i < NbLists); ++i) {
+		IntStringList& list = list_array[i];
+		while (true) {
+			IntStringList::iterator lit, lend = list.end();
+			bool ok = true;
+			for (lit = list.begin(); ok && (lit != lend); ++lit) {
+				IntList::iterator fit, fend;
+				fend = filter_list.end();
+				fit = find(filter_list.begin(), fend,
+					   lit->first);
+				ok = (fit != fend);
+				if (!ok)
+					list.erase(lit);
+			}
+			if (ok)
+				break;
+		}
+	}
+	if (list_array[File].size() != list_array[Setter].size()) {
+		THROW_HW_ERROR(Error) << "File and Setter lists differ";
+	} else if (list_array[File].empty()) {
+		DEB_WARNING() << "No Rx queue (" << queue << ") for " << m_dev;
+		return;
+	}
+
+	StringList *file_setter_list[NbLists] = {&file_setter.file,
+						 &file_setter.setter};
+	for (int i = 0; i < NbLists; ++i) {
+		const IntStringList& list = list_array[i];
+		IntStringList::const_iterator it, end = list.end();
+		for (it = list.begin(); it != end; ++it)
+			file_setter_list[i]->push_back(it->second);
+	}
+}
+
+bool NetDevRxQueueMgr::applyWithFile(const string& fname, CPUAffinity a)
 {
 	DEB_MEMBER_FUNCT();
 
 	ostringstream os;
-	os << noshowbase << hex << m_mask;
+	os << hex << a.getZeroDefaultMask();
 	DEB_TRACE() << "writing " << os.str() << " to " << fname;
-	ofstream rps_file(fname.c_str());
-	if (rps_file)
-		rps_file << os.str();
-	if (rps_file)
-		rps_file.close();
-	bool file_ok = rps_file;
+	ofstream aff_file(fname.c_str());
+	if (aff_file)
+		aff_file << os.str();
+	if (aff_file)
+		aff_file.close();
+	bool file_ok(aff_file);
 	DEB_RETURN() << DEB_VAR1(file_ok);
 	return file_ok;
 }
 
-bool CPUAffinity::applyWithNetDevSetter(const string& dev, 
-					const string& queue) const
+bool NetDevRxQueueMgr::applyWithSetter(Task task, const string& irq_queue,
+				       CPUAffinity a)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(dev, queue);
+	DEB_PARAM() << DEB_VAR2(m_dev, irq_queue);
 
-	ostringstream os;
-	if (UseSudo) {
-		static string desc;
-		if (desc.empty())
-			desc = getNetDevSetterSudoDesc();
-		checkSudo(NetDevSetQueueRpsName, desc);
-		os << "sudo -n ";
-	}
-	os << NetDevSetQueueRpsName << " " << dev << " " << queue << " " 
-	   << showbase << hex << m_mask;
-	if (!DEB_CHECK_ANY(DebTypeTrace) && false)
-		os << " > /dev/null 2>&1";
-	DEB_TRACE() << "executing: '" << os.str() << "'";
-	int ret = system(os.str().c_str());
-	bool setter_ok = (ret == 0);
+	static string desc = getSetterSudoDesc();
+	SystemCmd setter(AffinitySetterName, desc);
+	ConstStr task_opt = (task == Irq) ? "-i" : "-r";
+	setter.args() << task_opt << " " << m_dev << " " << irq_queue << " "
+		      << hex << "0x" << a.getZeroDefaultMask();
+	bool setter_ok = (setter.execute() == 0);
 	DEB_RETURN() << DEB_VAR1(setter_ok);
 	return setter_ok;
 }
 
-string CPUAffinity::getNetDevSetterSudoDesc()
+string NetDevRxQueueMgr::getSetterSudoDesc()
 {
 	DEB_STATIC_FUNCT();
 
-	const string& setter_name = NetDevSetQueueRpsName;
+	const string& setter_name = AffinitySetterName;
 	string dir = "/tmp";
 	string fname = dir + "/" + setter_name + ".c";
 	ofstream src_file(fname.c_str());
-	const StringList& SrcList = NetDevSetQueueRpsSrc;
-	StringList::const_iterator it, end = SrcList.end();
-	for (it = SrcList.begin(); src_file && (it != end); ++it)
-		src_file << *it << endl;
-	if (src_file)
-		src_file.close();
-	if (!src_file)
-		THROW_HW_ERROR(Error) << "Error writing to " << fname;
+	if (src_file) {
+		const StringList& SrcList = AffinitySetterSrc;
+		StringList::const_iterator it, end = SrcList.end();
+		for (it = SrcList.begin(); src_file && (it != end); ++it)
+			src_file << *it << endl;
+		if (src_file)
+			src_file.close();
+		if (!src_file)
+			DEB_WARNING() << "Error writing to " << fname;
+	} else {
+		DEB_WARNING() << "Error creating " << fname;
+	}
 
 	ostringstream desc;
 	string aux_setter = dir + "/" + setter_name;
@@ -349,9 +817,10 @@ string CPUAffinity::getNetDevSetterSudoDesc()
 	return desc.str();
 }
 
-const string CPUAffinity::NetDevSetQueueRpsName = "netdev_set_queue_rps_cpus";
+const string NetDevRxQueueMgr::AffinitySetterName = 
+					"netdev_set_queue_cpu_affinity";
 
-static const char *CPUAffinityNetDevSetQueueRpsSrcCList[] = {
+static const char *NetDevRxQueueMgrAffinitySetterSrcCList[] = {
 "#include <stdio.h>",
 "#include <stdlib.h>",
 "#include <string.h>",
@@ -363,26 +832,34 @@ static const char *CPUAffinityNetDevSetQueueRpsSrcCList[] = {
 "",
 "int main(int argc, char *argv[])",
 "{",
-"	char *dev, *queue, *p, fname[256], buffer[128];",
-"	int fd, len, ret;",
+"	char *dev, *irq_queue, *p, fname[256], buffer[128];",
+"	int irq, rps, fd, len, ret;",
 "	long aff;",
 "",
-"	if (argc != 4)",
+"	if (argc != 5)",
 "		exit(1);",
-"	if (!strlen(argv[1]) || !strlen(argv[2]) || !strlen(argv[3]))",
+"	irq = (strcmp(argv[1], \"-i\") == 0);",
+"	rps = (strcmp(argv[1], \"-r\") == 0);",
+"	if (!irq && !rps)",
+"		exit(2);",
+"	if (!strlen(argv[2]) || !strlen(argv[3]) || !strlen(argv[4]))",
 "		exit(2);",
 "",
-"	dev = argv[1];",
-"	queue = argv[2];",
+"	dev = argv[2];",
+"	irq_queue = argv[3];",
 "",
 "	errno = 0;",
-"	aff = strtol(argv[3], &p, 0);",
+"	aff = strtol(argv[4], &p, 0);",
 "	if (errno || *p)",
 "		exit(3);",
 "",
 "	len = sizeof(fname);",
-"	ret = snprintf(fname, len, \"/sys/class/net/%s/queues/%s/rps_cpus\",", 
-"		       dev, queue);",
+"	if (irq)",
+"		ret = snprintf(fname, len, \"/proc/irq/%s/smp_affinity\",", 
+"			       irq_queue);",
+"	else",
+"		ret = snprintf(fname, len, \"/sys/class/net/%s/queues/%s/rps_cpus\",", 
+"			       dev, irq_queue);",
 "	if ((ret < 0) || (ret == len))",
 "		exit(4);",
 "",
@@ -404,10 +881,53 @@ static const char *CPUAffinityNetDevSetQueueRpsSrcCList[] = {
 "	return 0;",
 "}",
 };
-const StringList CPUAffinity::NetDevSetQueueRpsSrc(
-		C_LIST_ITERS(CPUAffinityNetDevSetQueueRpsSrcCList));
+const StringList NetDevRxQueueMgr::AffinitySetterSrc(
+		C_LIST_ITERS(NetDevRxQueueMgrAffinitySetterSrcCList));
+
+IntList NetDevRxQueueMgr::getRxQueueList()
+{
+	DEB_MEMBER_FUNCT();
+
+	checkDev();
+
+	IntList queue_list;
+
+	SystemCmdPipe ethtool("ethtool");
+	ethtool.args() << "-S " << m_dev;
+	ethtool.setPipe(SystemCmdPipe::StdOut, SystemCmdPipe::DoPipe);
+	ethtool.start();
+	Pipe& child_out = ethtool.getPipe(SystemCmdPipe::StdOut);
+
+	RegEx re("^[ \t]*rx_queue_(?P<queue>[0-9]+)_packets:[ \t]+"
+		 "(?P<packets>[0-9]+)\n$");
+	while (true) {
+		string s = child_out.readLine(1024, "\n");
+		if (s.empty())
+			break;
+
+		RegEx::FullNameMatchType match;
+		if (!re.matchName(s, match))
+			continue;
+
+		int queue;
+		istringstream(match["queue"]) >> queue;
+		unsigned long packets;
+		istringstream(match["packets"]) >> packets;
+		if (packets != 0) {
+			DEB_TRACE() << m_dev << " RxQueue " << queue << ": "
+				    << packets << " packets";
+			queue_list.push_back(queue);
+		}
+	}
+	if (queue_list.empty())
+		DEB_WARNING() << "No queue found for " << m_dev;
+
+	DEB_RETURN() << DEB_VAR1(PrettyIntList(queue_list));
+	return queue_list;
+}
 
 SystemCPUAffinityMgr::WatchDog::WatchDog()
+	: m_cmd_pipe(0, true), m_res_pipe(0, true)
 {
 	DEB_CONSTRUCTOR();
 
@@ -430,7 +950,7 @@ SystemCPUAffinityMgr::WatchDog::WatchDog()
 		m_cmd_pipe.close(Pipe::ReadFd);
 		m_res_pipe.close(Pipe::WriteFd);
 
-		sendChildCmd(Init);
+		sendChildCmd(Packet(Init));
 		DEB_TRACE() << "Child is ready";
 	}
 }
@@ -440,7 +960,7 @@ SystemCPUAffinityMgr::WatchDog::~WatchDog()
 	DEB_DESTRUCTOR();
 
 	if (!childEnded()) {
-		sendChildCmd(CleanUp);
+		sendChildCmd(Packet(CleanUp));
 		waitpid(m_child_pid, NULL, 0);
 	}
 }
@@ -454,21 +974,16 @@ bool SystemCPUAffinityMgr::WatchDog::childEnded()
 	return (waitpid(m_child_pid, NULL, WNOHANG) != 0);
 }
 
-void SystemCPUAffinityMgr::WatchDog::sendChildCmd(Cmd cmd, Arg arg, string str)
+void SystemCPUAffinityMgr::WatchDog::sendChildCmd(const Packet& packet)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR3(cmd, DebHex(arg), str);
+	DEB_PARAM() << DEB_VAR1(packet.cmd);
 
 	if (childEnded())
 		THROW_HW_ERROR(Error) << "Watchdog child process killed: " 
 				      << m_child_pid;
-	if (str.size() >= sizeof(Packet::str))
-		THROW_HW_ERROR(InvalidValue) << "Child cmd string too long";
 
-	Packet packet = {cmd, arg};
-	memset(packet.str, 0, sizeof(packet.str));
-	strcpy(packet.str, str.c_str());
-	void *p = static_cast<void *>(&packet);
+	void *p = static_cast<void *>(const_cast<Packet *>(&packet));
 	string s(static_cast<char *>(p), sizeof(packet));
 	m_cmd_pipe.write(s);
 
@@ -488,7 +1003,7 @@ SystemCPUAffinityMgr::WatchDog::readParentCmd()
 	if (s.empty())
 		THROW_HW_ERROR(Error) << "Watchdog cmd pipe closed/intr";
 	memcpy(&packet, s.data(), s.size());
-	DEB_RETURN() << DEB_VAR3(packet.cmd, DebHex(packet.arg), packet.str);
+	DEB_RETURN() << DEB_VAR1(packet.cmd);
 	return packet;
 }
 
@@ -515,13 +1030,10 @@ void SystemCPUAffinityMgr::WatchDog::childFunction()
 		do {
 			Packet packet = readParentCmd();
 			if (packet.cmd == SetProcAffinity) {
-				CPUAffinity cpu_affinity = packet.arg;
-				procAffinitySetter(cpu_affinity);
+				procAffinitySetter(packet.u.proc_affinity);
 			} else if (packet.cmd == SetNetDevAffinity) {
-				NetDevGroupCPUAffinity netdev_affinity;
-				netdev_affinity.processing = packet.arg;
-				StringList nl = splitStringList(packet.str);
-				netdev_affinity.name_list = nl;
+				NetDevGroupCPUAffinity netdev_affinity =
+					netDevAffinityEncode(packet);
 				netDevAffinitySetter(netdev_affinity);
 			} else if (packet.cmd == CleanUp) {
 				cleanup_req = true;
@@ -587,11 +1099,8 @@ SystemCPUAffinityMgr::WatchDog::getOtherProcList(CPUAffinity cpu_affinity)
 string SystemCPUAffinityMgr::WatchDog::concatStringList(StringList list)
 {
 	ostringstream os;
-	const char *sep = "";
-	StringList::const_iterator it, end = list.end();
-	for (it = list.begin(); it != end; ++it, sep = ",")
-		os << sep << *it;
-	return os.str();
+	os << list;
+	return os.str().substr(1, os.str().size() - 2);
 }
 
 StringList SystemCPUAffinityMgr::WatchDog::splitStringList(string str)
@@ -608,34 +1117,66 @@ StringList SystemCPUAffinityMgr::WatchDog::splitStringList(string str)
 	return list;
 }
 
-void SystemCPUAffinityMgr::WatchDog::netDevAffinitySetter(
-				NetDevGroupCPUAffinity netdev_affinity)
+NetDevGroupCPUAffinity
+SystemCPUAffinityMgr::WatchDog::netDevAffinityEncode(const Packet& packet)
 {
 	DEB_MEMBER_FUNCT();
 
-	if (netdev_affinity.name_list.empty()) {
-		if (m_netdev_list.empty())
+	NetDevGroupCPUAffinity netdev_affinity;
+	const PacketNetDevAffinity& packet_affinity = packet.u.netdev_affinity;
+	netdev_affinity.name_list = splitStringList(packet_affinity.name_list);
+	NetDevAffinityMap& queue_affinity = netdev_affinity.queue_affinity;
+	unsigned int nb_queues = packet_affinity.queue_affinity_len;
+	const PacketNetDevQueueAffinity *a = packet_affinity.queue_affinity;
+	for (unsigned int i = 0; i < nb_queues; ++i, ++a) {
+		NetDevRxQueueCPUAffinity qa;
+		qa.irq = a->irq;
+		qa.processing = a->processing;
+		NetDevRxQueueAffinityMap::value_type v(a->queue, qa);
+		queue_affinity.insert(v);
+	}
+	return netdev_affinity;
+}
+
+void SystemCPUAffinityMgr::WatchDog::netDevAffinitySetter(
+				const NetDevGroupCPUAffinity& netdev_affinity)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(netdev_affinity);
+
+	NetDevMgrMap& netdev_map = m_netdev_mgr_map;
+
+	StringList nl = netdev_affinity.name_list;
+	if (nl.empty()) {
+		if (netdev_map.empty())
 			return;
-		netdev_affinity.name_list = m_netdev_list;
-		netdev_affinity.processing = CPUAffinity();
+		NetDevMgrMap::const_iterator it, end = netdev_map.end();
+		for (it = netdev_map.begin(); it != end; ++it)
+			nl.push_back(it->first);
 	}
 
-	const StringList& nl = netdev_affinity.name_list;
-	CPUAffinity a = netdev_affinity.processing;
-	DEB_ALWAYS() << "setting [" << concatStringList(nl) << "] "
-		     << "network devices CPU affinity to " << a;
-	a.applyToNetDevGroup(nl);
+	DEB_ALWAYS() << "setting " << DEB_VAR1(netdev_affinity);
+
+	StringList::const_iterator dit, dend = nl.end();
+	for (dit = nl.begin(); dit != dend; ++dit) {
+		const string& dev = *dit;
+		NetDevRxQueueMgr& mgr = netdev_map[dev];
+		mgr.setDev(dev);
+		mgr.apply(netdev_affinity.queue_affinity);
+	}
+
 	DEB_ALWAYS() << "Done!";
 
-	bool erase = a.isDefault();
+	bool erase = netdev_affinity.isDefault();
+	if (!erase)
+		return;
+
 	StringList::const_iterator it, end = nl.end();
 	for (it = nl.begin(); it != end; ++it) {
-		StringList::iterator sit, send = m_netdev_list.end();
-		sit = find(m_netdev_list.begin(), send, *it);
-		if (erase && (sit != send))
-			m_netdev_list.erase(sit);
-		else if (!erase && (sit == send))
-			m_netdev_list.push_back(*it);
+		NetDevMgrMap::iterator sit, send = netdev_map.end();
+		sit = netdev_map.find(*it);
+		if (sit != send)
+			netdev_map.erase(sit);
 	}
 }
 
@@ -644,16 +1185,35 @@ SystemCPUAffinityMgr::WatchDog::setOtherCPUAffinity(CPUAffinity cpu_affinity)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(cpu_affinity);
-	sendChildCmd(SetProcAffinity, cpu_affinity);
+	Packet packet(SetProcAffinity);
+	packet.u.proc_affinity = cpu_affinity;
+	sendChildCmd(packet);
 }
 
 void SystemCPUAffinityMgr::WatchDog::setNetDevCPUAffinity(
 				NetDevGroupCPUAffinity netdev_affinity)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(netdev_affinity.processing);
 	string name_list = concatStringList(netdev_affinity.name_list);
-	sendChildCmd(SetNetDevAffinity, netdev_affinity.processing, name_list);
+	NetDevAffinityMap& queue_affinity = netdev_affinity.queue_affinity;
+	DEB_PARAM() << DEB_VAR2(name_list, queue_affinity.size());
+	if (name_list.size() > StringLen)
+		THROW_HW_ERROR(InvalidValue) << "Child cmd string too long";
+	if (queue_affinity.size() > AffinityMapLen)
+		THROW_HW_ERROR(InvalidValue) << "Child affinity map too long";
+
+	Packet packet(SetNetDevAffinity);
+	PacketNetDevAffinity& ndga = packet.u.netdev_affinity;
+	strcpy(ndga.name_list, name_list.c_str());
+	ndga.queue_affinity_len = queue_affinity.size();
+	NetDevAffinityMap::const_iterator it, end = queue_affinity.end();
+	PacketNetDevQueueAffinity *a = ndga.queue_affinity;
+	for (it = queue_affinity.begin(); it != end; ++it, ++a) {
+		a->queue = it->first;
+		a->irq = it->second.irq;
+		a->processing = it->second.processing;
+	}
+	sendChildCmd(packet);
 }
 
 SystemCPUAffinityMgr::SystemCPUAffinityMgr()
@@ -768,6 +1328,32 @@ void SystemCPUAffinityMgr::setNetDevCPUAffinity(
 
 	m_netdev = netdev_list;
 	checkWatchDogStop();
+}
+
+RecvCPUAffinity::RecvCPUAffinity()
+	: listeners(1), writers(1), port_threads(1)
+{
+}
+
+RecvCPUAffinity& RecvCPUAffinity::operator =(CPUAffinity a)
+{
+	listeners.assign(1, a);
+	writers.assign(1, a);
+	port_threads.assign(1, a);
+	return *this;
+}
+
+CPUAffinity GlobalCPUAffinity::all() const
+{
+	return (RecvCPUAffinityList_all(recv) |
+		NetDevGroupCPUAffinityList_all(netdev) | lima | other);
+}
+
+void GlobalCPUAffinity::updateRecvAffinity(CPUAffinity a)
+{
+	RecvCPUAffinityList::iterator it, end = recv.end();
+	for (it = recv.begin(); it != end; ++it)
+		*it = a;
 }
 
 GlobalCPUAffinityMgr::
@@ -908,7 +1494,7 @@ ProcessingFinishedEvent::imageStatusChanged(
 
 GlobalCPUAffinityMgr::GlobalCPUAffinityMgr(Camera *cam)
 	: m_cam(cam), m_proc_finished(NULL), 
-	  m_lima_finished_timeout(3)
+	  m_lima_finished_timeout(0.5)
 {
 	DEB_CONSTRUCTOR();
 
@@ -933,11 +1519,9 @@ void GlobalCPUAffinityMgr::applyAndSet(const GlobalCPUAffinity& o)
 	if (!m_cam)
 		THROW_HW_ERROR(InvalidValue) << "apply without camera";
 
-	CPUAffinity all_system = o.recv.all() | o.lima | o.other;
-	cpu_set_t all_cpu_set;
-	all_system.initCPUSet(all_cpu_set);
-	if (CPU_COUNT(&all_cpu_set) <= CPUAffinity::getNbCPUs() / 2)
-		THROW_HW_ERROR(Error) << "Hyper-threading is activated!";
+	CPUAffinity all_system = o.all();
+	if (all_system.getNbCPUs() == CPUAffinity::getNbSystemCPUs() / 2)
+		DEB_WARNING() << "Hyper-threading seems activated!";
 
 	setLimaAffinity(o.lima);
 	setRecvAffinity(o.recv);
@@ -968,26 +1552,39 @@ void GlobalCPUAffinityMgr::setLimaAffinity(CPUAffinity lima_affinity)
 	} else {
 		pid_t pid = getpid();
 		lima_affinity.applyToTask(pid, true);
-		m_curr.recv = lima_affinity;
+		m_curr.updateRecvAffinity(lima_affinity);
 	}
 	m_curr.lima = lima_affinity;
 }
 
-void GlobalCPUAffinityMgr::setRecvAffinity(const RecvCPUAffinity& recv_affinity)
+void GlobalCPUAffinityMgr::setRecvAffinity(
+			   const RecvCPUAffinityList& recv_affinity_list)
 {
 	DEB_MEMBER_FUNCT();
 
-	if (recv_affinity == m_curr.recv)
+	if (recv_affinity_list == m_curr.recv)
 		return;
 
-	m_cam->setRecvCPUAffinity(recv_affinity);
-	m_curr.recv = recv_affinity;
+	m_cam->setRecvCPUAffinity(recv_affinity_list);
+
+	CPUAffinity buffer_affinity;
+	if (!recv_affinity_list.empty()) {
+		const RecvCPUAffinityList& l = recv_affinity_list;
+		RecvCPUAffinityList::const_iterator it = l.begin();
+		buffer_affinity = CPUAffinityList_all(it->writers);
+		while (++it != l.end())
+			buffer_affinity |= CPUAffinityList_all(it->writers);
+	}
+	DEB_ALWAYS() << DEB_VAR1(buffer_affinity);
+	m_cam->m_buffer_ctrl_obj->setCPUAffinityMask(buffer_affinity);
+
+	m_curr.recv = recv_affinity_list;
 }
 
 void GlobalCPUAffinityMgr::updateRecvRestart()
 {
 	DEB_MEMBER_FUNCT();
-	m_curr.recv = m_curr.lima;
+	m_curr.updateRecvAffinity(m_curr.lima);
 }
 
 GlobalCPUAffinityMgr::ProcessingFinishedEvent *
@@ -1035,7 +1632,9 @@ void GlobalCPUAffinityMgr::recvFinished()
 	if (m_state == Ready) 
 		return;
 
-	if (m_curr.lima != m_curr.recv.all()) {
+	CPUAffinity recv_all = RecvCPUAffinityList_all(m_curr.recv);
+	DEB_TRACE() << DEB_VAR2(m_curr.lima, recv_all);
+	if (m_curr.lima != recv_all) {
 		m_state = Changing;
 		AutoMutexUnlock u(l);
 		SystemCPUAffinityMgr::Filter filter;
@@ -1043,8 +1642,7 @@ void GlobalCPUAffinityMgr::recvFinished()
 		m_lima_tids = SystemCPUAffinityMgr::getThreadList(filter,
 								m_curr.lima);
 		DEB_ALWAYS() << "Lima TIDs: " << PrettyIntList(m_lima_tids);
-		CPUAffinity lima_affinity = (uint64_t(m_curr.lima) | 
-					     uint64_t(m_curr.recv.all()));
+		CPUAffinity lima_affinity = m_curr.lima | recv_all;
 		DEB_ALWAYS() << "Allowing Lima to run on Recv CPUs: " 
 			     << lima_affinity;
 		setLimaAffinity(lima_affinity);
@@ -1090,7 +1688,7 @@ void GlobalCPUAffinityMgr::waitLimaFinished()
 
 	AutoMutex l = lock();
 	while (m_state != Ready) {
-		if (m_cond.wait(1))
+		if (m_cond.wait(0.1))
 			continue;
 
 		AutoMutexUnlock u(l);
@@ -1113,14 +1711,62 @@ void GlobalCPUAffinityMgr::cleanUp()
 
 ostream& lima::SlsDetector::operator <<(ostream& os, const CPUAffinity& a)
 {
-	return os << hex << showbase << uint64_t(a) << dec << noshowbase;
+	return os << hex << "0x" << setw(CPUAffinity::getNbHexDigits())
+		  << setfill('0') << a.getMask() << dec << setfill(' ');
+}
+
+ostream&
+lima::SlsDetector::operator <<(ostream& os, const CPUAffinityList& l)
+{
+	os << "[";
+	bool first = true;
+	CPUAffinityList::const_iterator it, end = l.end();
+	for (it = l.begin(); it != end; ++it, first = false)
+		os << (first ? "" : ", ") << *it;
+	return os << "]";
+}
+
+ostream&
+lima::SlsDetector::operator <<(ostream& os, const NetDevRxQueueCPUAffinity& a)
+{
+	return os << "<" << "irq=" << a.irq << ", processing=" << a.processing
+		  << ">";
+}
+
+ostream&
+lima::SlsDetector::operator <<(ostream& os, const NetDevGroupCPUAffinity& a)
+{
+	os << "<" << a.name_list << ", [";
+	bool first = true;
+	const NetDevRxQueueAffinityMap& m = a.queue_affinity;
+	if (a.isDefault()) {
+		os << "default";
+	} else {
+		NetDevRxQueueAffinityMap::const_iterator it, end = m.end();
+		for (it = m.begin(); it != end; ++it, first = false)
+			os << (first ? "" : ", ") << it->first << ": " 
+			   << it->second;
+	}
+	return os << "]>";
 }
 
 ostream& lima::SlsDetector::operator <<(ostream& os, const RecvCPUAffinity& a)
 {
 	os << "<";
-	os << "listeners=" << a.listeners << ", writers=" << a.writers;
+	os << "listeners=" << a.listeners << ", writers=" << a.writers << ", "
+	   << "port_threads=" << a.port_threads;
 	return os << ">";
+}
+
+ostream&
+lima::SlsDetector::operator <<(ostream& os, const RecvCPUAffinityList& l)
+{
+	os << "[";
+	bool first = true;
+	RecvCPUAffinityList::const_iterator it, end = l.end();
+	for (it = l.begin(); it != end; ++it, first = false)
+		os << (first ? "" : ", ") << *it;
+	return os << "]";
 }
 
 ostream& lima::SlsDetector::operator <<(ostream& os, const GlobalCPUAffinity& a)
@@ -1136,7 +1782,7 @@ lima::SlsDetector::operator <<(ostream& os, const PixelDepthCPUAffinityMap& m)
 	os << "[";
 	bool first = true;
 	PixelDepthCPUAffinityMap::const_iterator it, end = m.end();
-	for (it = m.begin(); it != end; ++it, first=false)
+	for (it = m.begin(); it != end; ++it, first = false)
 		os << (!first ? ", " : "") << it->first << ": " << it->second;
 	return os << "]";
 }

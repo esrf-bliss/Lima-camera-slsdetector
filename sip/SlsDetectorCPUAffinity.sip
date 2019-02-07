@@ -23,6 +23,66 @@
 
 // namespace SlsDetector
 // {
+// typedef std::vector<CPUAffinity> CPUAffinityList;
+// };
+
+%MappedType SlsDetector::CPUAffinityList
+{
+%TypeHeaderCode
+#include "SlsDetectorCPUAffinity.h"
+#include "sipAPIlimaslsdetector.h"
+#include "SlsDetectorSip.h"
+
+using namespace lima::SlsDetector;
+%End
+
+%ConvertToTypeCode
+	typedef SipSequence<CPUAffinityList> Seq;
+	Seq seq(sipType_SlsDetector_CPUAffinity);
+	return seq.convertToTypeCode(sipPy, sipCppPtr, sipIsErr,
+				     sipTransferObj);
+%End
+
+%ConvertFromTypeCode
+	typedef SipSequence<CPUAffinityList> Seq;
+	Seq seq(sipType_SlsDetector_CPUAffinity);
+	return seq.convertFromTypeCode(sipCpp);
+%End
+};
+
+
+// namespace SlsDetector
+// {
+// typedef std::vector<RecvCPUAffinity> RecvCPUAffinityList;
+// };
+
+%MappedType SlsDetector::RecvCPUAffinityList
+{
+%TypeHeaderCode
+#include "SlsDetectorCPUAffinity.h"
+#include "sipAPIlimaslsdetector.h"
+#include "SlsDetectorSip.h"
+
+using namespace lima::SlsDetector;
+%End
+
+%ConvertToTypeCode
+	typedef SipSequence<RecvCPUAffinityList> Seq;
+	Seq seq(sipType_SlsDetector_RecvCPUAffinity);
+	return seq.convertToTypeCode(sipPy, sipCppPtr, sipIsErr,
+				     sipTransferObj);
+%End
+
+%ConvertFromTypeCode
+	typedef SipSequence<RecvCPUAffinityList> Seq;
+	Seq seq(sipType_SlsDetector_RecvCPUAffinity);
+	return seq.convertFromTypeCode(sipCpp);
+%End
+};
+
+
+// namespace SlsDetector
+// {
 // typedef std::vector<SlsDetector::NetDevGroupCPUAffinity>
 //					 NetDevGroupCPUAffinityList;
 // };
@@ -30,67 +90,54 @@
 %MappedType SlsDetector::NetDevGroupCPUAffinityList
 {
 %TypeHeaderCode
-#include <map>
 #include "SlsDetectorCPUAffinity.h"
 #include "sipAPIlimaslsdetector.h"
+#include "SlsDetectorSip.h"
 
-using namespace std;
-using namespace lima;
 using namespace lima::SlsDetector;
-
-typedef NetDevGroupCPUAffinity CPP_ValueType;
-typedef vector<NetDevGroupCPUAffinity> CPP_SeqType;
-#define SIP_ValueType sipType_SlsDetector_NetDevGroupCPUAffinity
 %End
 
 %ConvertToTypeCode
-	if (sipIsErr == NULL) {
-		bool ok = PyList_Check(sipPy);
-		for (int i = 0; ok && (i < PyList_Size(sipPy)); ++i) {
-			PyObject *value = PyList_GET_ITEM(sipPy, i);
-			ok = sipCanConvertToType(value, SIP_ValueType, 
-						 SIP_NOT_NONE);
-		}
-		return ok;
-	}
-
-	CPP_SeqType *cpp_seq = new CPP_SeqType();
-	for (int i = 0; i < PyList_Size(sipPy); ++i) {
-		PyObject *value = PyList_GET_ITEM(sipPy, i);
-		int state;
-		void *p = sipConvertToType(value, SIP_ValueType, NULL, 
-					   SIP_NOT_NONE, &state, sipIsErr);
-		CPP_ValueType *cpp_value = static_cast<CPP_ValueType *>(p);
-		if (*sipIsErr) {
-			sipReleaseType(cpp_value, SIP_ValueType, state);
-			delete cpp_seq;
-			return 0;
-		}
-		cpp_seq->push_back(*cpp_value);
-		sipReleaseType(cpp_value, SIP_ValueType, state);
-	}
-	*sipCppPtr = cpp_seq;
-
-	return sipGetState(sipTransferObj);
+	typedef SipSequence<NetDevGroupCPUAffinityList> Seq;
+	Seq seq(sipType_SlsDetector_NetDevGroupCPUAffinity);
+	return seq.convertToTypeCode(sipPy, sipCppPtr, sipIsErr,
+				     sipTransferObj);
 %End
 
 %ConvertFromTypeCode
-	PyObject* sip_list = PyList_New(sipCpp->size());
-	if (sip_list == NULL)
-		return NULL;
-	CPP_SeqType::iterator it = sipCpp->begin();
-	for (int i = 0; it != sipCpp->end(); ++it, ++i) {
-		CPP_ValueType *new_val = new CPP_ValueType(*it);
-		PyObject *value = sipConvertFromNewType(new_val, SIP_ValueType,
-							NULL);
-		if (value == NULL) {
-			delete new_val;
-			Py_DECREF(sip_list);
-			return NULL;
-		}
-		PyList_SET_ITEM(sip_list, i, value);
-	}
-	return sip_list;
+	typedef SipSequence<NetDevGroupCPUAffinityList> Seq;
+	Seq seq(sipType_SlsDetector_NetDevGroupCPUAffinity);
+	return seq.convertFromTypeCode(sipCpp);
+%End
+};
+
+
+// namespace SlsDetector
+// {
+// typedef std::map<int, NetDevRxQueueCPUAffinity> NetDevRxQueueAffinityMap;
+// };
+
+%MappedType SlsDetector::NetDevRxQueueAffinityMap
+{
+%TypeHeaderCode
+#include "SlsDetectorCPUAffinity.h"
+#include "sipAPIlimaslsdetector.h"
+#include "SlsDetectorSip.h"
+
+using namespace lima::SlsDetector;
+%End
+
+%ConvertToTypeCode
+	typedef SipMap<NetDevRxQueueAffinityMap> Map;
+	Map map(NULL, sipType_SlsDetector_NetDevRxQueueCPUAffinity);
+	return map.convertToTypeCode(sipPy, sipCppPtr, sipIsErr,
+				     sipTransferObj);
+%End
+
+%ConvertFromTypeCode
+	typedef SipMap<NetDevRxQueueAffinityMap> Map;
+	Map map(NULL, sipType_SlsDetector_NetDevRxQueueCPUAffinity);
+	return map.convertFromTypeCode(sipCpp);
 %End
 };
 
@@ -103,87 +150,34 @@ typedef vector<NetDevGroupCPUAffinity> CPP_SeqType;
 %MappedType SlsDetector::PixelDepthCPUAffinityMap
 {
 %TypeHeaderCode
-#include <map>
 #include "SlsDetectorCPUAffinity.h"
 #include "sipAPIlimaslsdetector.h"
+#include "SlsDetectorSip.h"
 
-using namespace std;
-using namespace lima;
 using namespace lima::SlsDetector;
 
-typedef PixelDepth CPP_KeyType;
-typedef GlobalCPUAffinity CPP_ValueType;
-typedef PixelDepthCPUAffinityMap CPP_MapType;
-#define SIP_ValueType sipType_SlsDetector_GlobalCPUAffinity
+#ifndef SIP_TYPE_INT_IMPL_PixelDepth
+SipTypeIntImpl(PixelDepth);
+#define SIP_TYPE_INT_IMPL_PixelDepth
+#endif
 %End
 
 %ConvertToTypeCode
-	if (sipIsErr == NULL) {
-		bool ok = PyDict_Check(sipPy);
-		PyObject *key, *value;
-		SIP_SSIZE_T pos = 0;
-		while (ok && PyDict_Next(sipPy, &pos, &key, &value))
-			ok = (PyInt_Check(key) && 
-			      sipCanConvertToType(value, SIP_ValueType, 
-						  SIP_NOT_NONE));
-		return ok;
-	}
-
-	CPP_MapType *cpp_map = new CPP_MapType();
-
-	PyObject *key, *value;
-	SIP_SSIZE_T pos = 0;
-	while (PyDict_Next(sipPy, &pos, &key, &value)) {
-		CPP_KeyType cpp_key = CPP_KeyType(PyInt_AS_LONG(key));
-		int state;
-		void *p = sipConvertToType(value, SIP_ValueType, NULL, 
-					   SIP_NOT_NONE, &state, sipIsErr);
-		CPP_ValueType *cpp_value = static_cast<CPP_ValueType *>(p);
-		if (*sipIsErr) {
-			sipReleaseType(cpp_value, SIP_ValueType, state);
-			delete cpp_map;
-			return 0;
-		}		   
-
-		CPP_MapType::value_type map_value(cpp_key, *cpp_value);
-		cpp_map->insert(map_value);
-		sipReleaseType(cpp_value, SIP_ValueType, state);
-	}
-	*sipCppPtr = cpp_map;
-
-	return sipGetState(sipTransferObj);
+	typedef SipMap<PixelDepthCPUAffinityMap> Map;
+	Map map(sipType_SlsDetector_PixelDepth,
+	        sipType_SlsDetector_GlobalCPUAffinity);
+	return map.convertToTypeCode(sipPy, sipCppPtr, sipIsErr,
+				     sipTransferObj);
 %End
 
 %ConvertFromTypeCode
-	PyObject* sip_map = PyDict_New();
-	if (sip_map == NULL)
-		return NULL;
-	CPP_MapType::iterator it, end = sipCpp->end();
-	for (it = sipCpp->begin(); it != end; ++it) {
-		PyObject *key = PyInt_FromLong(it->first);
-		if (key == NULL)
-			goto error;
-		CPP_ValueType *new_val = new CPP_ValueType(it->second);
-		PyObject *value = sipConvertFromNewType(new_val, SIP_ValueType,
-							NULL);
-		bool ok = (value != NULL);
-		if (!ok) {
-			delete new_val;
-			goto error_v;
-		}
-		ok = (PyDict_SetItem(sip_map, key, value) == 0);
-		Py_DECREF(value);
-error_v:
-		Py_DECREF(key);
-		if (!ok)
-			goto error;
-	}
-	return sip_map;
-error:
-	Py_DECREF(sip_map);
-	return NULL;
+	typedef SipMap<PixelDepthCPUAffinityMap> Map;
+	Map map(sipType_SlsDetector_PixelDepth,
+	        sipType_SlsDetector_GlobalCPUAffinity);
+	return map.convertFromTypeCode(sipCpp);
 %End
 };
+
 
 namespace SlsDetector
 {
@@ -192,40 +186,114 @@ namespace SlsDetector
 #include "SlsDetectorCamera.h"
 %End
 
-class CPUAffinity 
+class SystemCmd
 {
 public:
-	CPUAffinity(unsigned long m = 0);
+	SystemCmd(std::string cmd, std::string desc = "", bool try_sudo = true);
+	SystemCmd(const SlsDetector::SystemCmd& o);
 
 	static void setUseSudo(bool use_sudo);
 	static bool getUseSudo();
 
-	static void checkSudo(std::string cmd, std::string desc = "");
-	static int getNbCPUs(bool max_nb = false);
+	void addArgs(std::string args);
+%MethodCode
+	Py_BEGIN_ALLOW_THREADS
+	sipCpp->args() << *a0;
+	Py_END_ALLOW_THREADS
+%End
+
+	int execute();
+};
+
+class CPUAffinity
+{
+public:
+	CPUAffinity(unsigned long m = 0);
+
+	static int getNbSystemCPUs(bool max_nb = false);
+	static int getNbHexDigits(bool max_nb = false);
 	static unsigned long allCPUs(bool max_nb = false);
+
+	int getNbCPUs() const;
 
 	//void initCPUSet(cpu_set_t& cpu_set) const;
 	void applyToTask(int task, bool incl_threads = true,
 			 bool use_taskset = true) const;
-	void applyToNetDev(std::string dev) const;
+
+	unsigned long getMask() const;
+	unsigned long getZeroDefaultMask() const;
 
 	operator unsigned long() const;
 
-	//CPUAffinity& operator =(unsigned long m);
+	SlsDetector::CPUAffinity& operator |=(const SlsDetector::CPUAffinity& o);
 
 	bool isDefault() const;
+
+	void getNUMANodeMask(std::vector<unsigned long>& node_mask /Out/,
+			     int& max_node /Out/);
 
 	static std::string getProcDir(bool local_threads);
 	static std::string getTaskProcDir(int task, bool is_thread);
 };
 
+// typedef std::vector<CPUAffinity> CPUAffinityList;
+
+SlsDetector::CPUAffinity CPUAffinityList_all(
+				const SlsDetector::CPUAffinityList& l);
+
+class IrqMgr
+{
+ public:
+	IrqMgr(std::string net_dev = "");
+	~IrqMgr();
+
+	void setDev(std::string net_dev);
+
+	std::vector<int> getIrqList();
+	void updateRxQueueIrqAffinity(bool default_affinity);
+};
+
+struct NetDevRxQueueCPUAffinity {
+	SlsDetector::CPUAffinity irq;
+	SlsDetector::CPUAffinity processing;
+
+	bool isDefault() const;
+	SlsDetector::CPUAffinity all() const;
+};
+
+// typedef std::map<int, NetDevRxQueueCPUAffinity> NetDevRxQueueAffinityMap;
+
+bool NetDevRxQueueAffinityMap_isDefault(
+			const SlsDetector::NetDevRxQueueAffinityMap& m);
+
+class NetDevRxQueueMgr
+{
+ public:
+	NetDevRxQueueMgr(std::string dev = "");
+	~NetDevRxQueueMgr();
+
+	void setDev(std::string dev);
+
+	void apply(int queue,
+		   const SlsDetector::NetDevRxQueueCPUAffinity& queue_affinity);
+	void apply(const SlsDetector::NetDevRxQueueAffinityMap& affinity_map);
+
+	std::vector<int> getRxQueueList();
+};
+
 struct NetDevGroupCPUAffinity {
 	std::vector<std::string> name_list;
-	SlsDetector::CPUAffinity processing;
+	SlsDetector::NetDevRxQueueAffinityMap queue_affinity;
+
+	bool isDefault() const;
+	SlsDetector::CPUAffinity all() const;
 };
 
 // typedef std::vector<SlsDetector::NetDevGroupCPUAffinity> 
 //					NetDevGroupCPUAffinityList;
+
+SlsDetector::CPUAffinity NetDevGroupCPUAffinityList_all(
+			const SlsDetector::NetDevGroupCPUAffinityList& l);
 
 class SystemCPUAffinityMgr
 {
@@ -253,18 +321,26 @@ public:
 };
 
 struct RecvCPUAffinity {
-	SlsDetector::CPUAffinity listeners;
-	SlsDetector::CPUAffinity writers;
+	SlsDetector::CPUAffinityList listeners;
+	SlsDetector::CPUAffinityList writers;
+	SlsDetector::CPUAffinityList port_threads;
 
+	RecvCPUAffinity();
 	SlsDetector::CPUAffinity all() const;
 	// RecvCPUAffinity& operator =(CPUAffinity a);
 };
 
+// typedef std::vector<RecvCPUAffinity> RecvCPUAffinityList;
+
+SlsDetector::CPUAffinity RecvCPUAffinityList_all(
+				const SlsDetector::RecvCPUAffinityList& l);
+
 struct GlobalCPUAffinity {
-	SlsDetector::RecvCPUAffinity recv;
+	SlsDetector::RecvCPUAffinityList recv;
 	SlsDetector::CPUAffinity lima;
 	SlsDetector::CPUAffinity other;
 	SlsDetector::NetDevGroupCPUAffinityList netdev;
+	SlsDetector::CPUAffinity all() const;
 };
 
 // typedef std::map<SlsDetector::PixelDepth, SlsDetector::GlobalCPUAffinity> 

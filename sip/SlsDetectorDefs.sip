@@ -22,6 +22,32 @@
 
 // namespace SlsDetector
 // {
+// typedef std::set<int> SortedIntList;
+// };
+
+%MappedType SlsDetector::SortedIntList
+{
+%TypeHeaderCode
+#include "SlsDetectorDefs.h"
+#include "SlsDetectorSip.h"
+
+using namespace lima::SlsDetector;
+%End
+
+%ConvertToTypeCode
+	SipSequence<SortedIntList> seq;
+	return seq.convertToTypeCode(sipPy, sipCppPtr, sipIsErr,
+				     sipTransferObj);
+%End
+
+%ConvertFromTypeCode
+	SipSequence<SortedIntList> seq;
+	return seq.convertFromTypeCode(sipCpp);
+%End
+};
+
+// namespace SlsDetector
+// {
 // struct SimpleStat {
 //   typedef std::map<int, int> Histogram;
 // };
@@ -285,6 +311,8 @@ enum PixelDepth {
 	PixelDepth32 = 32,
 };
 
+// typedef std::set<int> SortedIntList;
+
 struct TimeRanges {
 	TimeRanges();
 	double min_exp_time;
@@ -334,9 +362,6 @@ struct SimpleStat {
 class FrameMap
 {
 public:
-	typedef std::set<int> List;
-	typedef std::map<unsigned long, std::set<int> > Map;
-
 	void setNbItems(int nb_items);
 	void setBufferSize(int buffer_size);
 	void clear();

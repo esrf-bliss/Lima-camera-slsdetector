@@ -41,7 +41,7 @@ public:
 	int getTotNbPorts();
 	int getPortIndex(int recv_idx, int port);
 
-	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr);
+	void setBufferCtrlObj(SoftBufferCtrlObj *buffer_ctrl_obj);
 
 	void setPixelDepth(SlsDetector::PixelDepth  pixel_depth);
 	void getPixelDepth(SlsDetector::PixelDepth& pixel_depth /Out/);
@@ -73,6 +73,9 @@ public:
 	void getLatTime(double& lat_time /Out/);
 	void setFramePeriod(double  frame_period);
 	void getFramePeriod(double& frame_period /Out/);
+
+	void setSkipFrameFreq(unsigned long  skip_frame_freq);
+	void getSkipFrameFreq(unsigned long& skip_frame_freq /Out/);
 
 	// setDAC: sub_mod_idx: 0-N=module, -1=all
 	void setDAC(int sub_mod_idx, SlsDetector::Defs::DACIndex dac_idx,
@@ -118,6 +121,9 @@ public:
 
 	SlsDetector::GlobalCPUAffinityMgr::ProcessingFinishedEvent *
 		getProcessingFinishedEvent();
+
+ private:
+	Camera(const SlsDetector::Camera& o);
 };
 
 

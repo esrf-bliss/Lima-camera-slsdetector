@@ -5,71 +5,208 @@
 #  European Synchrotron Radiation Facility
 #  BP 220, Grenoble 38043
 #  FRANCE
-# 
+#
 #  Contact: lima@esrf.fr
-# 
+#
 #  This is free software; you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
 #  the Free Software Foundation; either version 3 of the License, or
 #  (at your option) any later version.
-# 
+#
 #  This software is distributed in the hope that it will be useful,
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-# 
+#
 #  You should have received a copy of the GNU General Public License
 #  along with this program; if not, see <http://www.gnu.org/licenses/>.
 ############################################################################
+
+cmake_minimum_required(VERSION 3.1)
+
+project(slsdetector)
+
 set(NAME slsdetector)
 
-set(SLS_DETECTOR_DIR slsDetectorPackage)
+# Include additional modules that are used inconditionnaly
+include(GNUInstallDirs)
+include(GenerateExportHeader)
+
+# If conda build, always set lib dir to 'lib'
+if(NOT LIMA_ENABLE_NUMA)
+  message(FATAL_ERROR
+          "slsdetector requires NUMA control in Lima: set LIMA_ENABLE_NUMA ON")
+endif()
+
+# If conda build, always set lib dir to 'lib'
+if($ENV{CONDA_BUILD})
+  set(CMAKE_INSTALL_LIBDIR "lib")
+endif()
+
+# Set lower / upper case project names
+string(TOUPPER "${PROJECT_NAME}" PROJECT_NAME_UPPER)
+string(TOLOWER "${PROJECT_NAME}" PROJECT_NAME_LOWER)
+
+# Set targets export name (used by lima and dependencies)
+set(TARGETS_EXPORT_NAME "${PROJECT_NAME_LOWER}-targets")
+#set(namespace "${PROJECT_NAME}::")
+
+# Check if project is being used directly or via add_subdirectory
+set(CAMERA_MASTER_PROJECT OFF)
+if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+  set(CAMERA_MASTER_PROJECT ON)
+endif()
+
+if (CAMERA_MASTER_PROJECT)
+  find_package(Lima REQUIRED)
+endif()
+
+# CMake additional macros
+set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake ${LIMA_CMAKE_INCLUDE_DIRS} ${CMAKE_MODULE_PATH})
+
+# Set version
+include(project_version)
+
+# Enable python binding code compilation using sip generator
+if (CAMERA_MASTER_PROJECT)
+  option(LIMA_ENABLE_PYTHON "compile python binding code?" OFF)
+endif()
+
+if (LIMA_ENABLE_PYTHON)
+  # Find python interpreter and libs
+  find_package(PythonInterp)
+  find_package(PythonLibs)
+  if(${PYTHONINTERP_FOUND})
+    # python site-packages folder
+    execute_process(
+      COMMAND ${PYTHON_EXECUTABLE} -c "from distutils.sysconfig import get_python_lib; print (get_python_lib())"
+      OUTPUT_VARIABLE _PYTHON_SITE_PACKAGES_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
+  endif()
+
+  set(PYTHON_SITE_PACKAGES_DIR ${_PYTHON_SITE_PACKAGES_DIR} CACHE PATH "where should python modules be installed?")
+
+  find_package(SIP REQUIRED)
+  include(SIPMacros)
+  if(WIN32)
+    set(SIP_TAGS WIN32_PLATFORM)
+  elseif(UNIX)
+    set(SIP_TAGS POSIX_PLATFORM)
+  endif(WIN32)
+  set(SIP_EXTRA_OPTIONS -e -g)
+
+  find_package(NumPy REQUIRED)
+endif()
+
+# Additional packages
+find_package(Numa REQUIRED)
+
+# slsDetectorPackage
+set(SLS_DETECTOR_DIR ${CMAKE_CURRENT_SOURCE_DIR}/slsDetectorPackage)
 set(SLS_DETECTOR_SW ${SLS_DETECTOR_DIR}/slsDetectorSoftware)
 set(SLS_DETECTOR_RECV ${SLS_DETECTOR_DIR}/slsReceiverSoftware)
 
 option (USE_TEXTCLIENT "Text Client" ON)
 option (USE_RECEIVER "Receiver" ON)
-option (USE_GUI "GUI" ON)
+option (USE_GUI "GUI" OFF)
 
 add_subdirectory(${SLS_DETECTOR_DIR})
 
-set(${NAME}_srcs src/SlsDetectorDefs.cpp
-		 src/SlsDetectorArgs.cpp
-		 src/SlsDetectorCPUAffinity.cpp
-		 src/SlsDetectorModel.cpp
-		 src/SlsDetectorReceiver.cpp
-		 src/SlsDetectorCamera.cpp
-		 src/SlsDetectorEiger.cpp
-		 src/SlsDetectorInterface.cpp)
+file(GLOB_RECURSE SLSDETECTOR_INCS "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h")
 
-add_library(lima${NAME} SHARED ${${NAME}_srcs})
+add_library(slsdetector SHARED
+  src/SlsDetectorDefs.cpp
+  src/SlsDetectorArgs.cpp
+  src/SlsDetectorCPUAffinity.cpp
+  src/SlsDetectorModel.cpp
+  src/SlsDetectorReceiver.cpp
+  src/SlsDetectorCamera.cpp
+  src/SlsDetectorEiger.cpp
+  src/SlsDetectorInterface.cpp
+  ${SLSDETECTOR_INCS}
+)
 
-target_include_directories(lima${NAME} PUBLIC 
-			   include
-			   ${SLS_DETECTOR_SW}/include
-			   ${SLS_DETECTOR_SW}/commonFiles
-			   ${SLS_DETECTOR_SW}/slsDetector
-			   ${SLS_DETECTOR_SW}/multiSlsDetector
-			   ${SLS_DETECTOR_SW}/slsDetectorServer
-			   ${SLS_DETECTOR_SW}/slsDetectorAnalysis
-			   ${SLS_DETECTOR_SW}/slsReceiverInterface
-			   ${SLS_DETECTOR_RECV}/include)
+# Generate export macros
+generate_export_header(slsdetector)
 
-target_link_libraries(lima${NAME}
-		      limacore
-		      slsDetectorShared slsReceiverShared zmq)
+# Set version and output name
+set_target_properties(slsdetector PROPERTIES
+  OUTPUT_NAME "lima${PROJECT_NAME_LOWER}"
+  VERSION "${PROJECT_VERSION}"
+  SOVERSION "${PACKAGE_VERSION_MAJOR}.${PACKAGE_VERSION_MINOR}")
 
-limatools_set_library_soversion(lima${NAME} VERSION)
-install(TARGETS lima${NAME} LIBRARY DESTINATION lib)
+# Add dependencies
+target_include_directories(slsdetector
+    PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+    PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SW}/include>"
+    PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SW}/commonFiles>"
+    PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SW}/slsDetector>"
+    PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SW}/multiSlsDetector>"
+    PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SW}/slsDetectorServer>"
+    PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SW}/slsDetectorAnalysis>"
+    PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SW}/slsReceiverInterface>"
+    PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_RECV}/include>"
+    PUBLIC "$<BUILD_INTERFACE:${NUMA_INCLUDE_DIR}>"
+    PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>"           # For export header
+    PUBLIC "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
+)
 
+message("NUMA_LIBRARY=" ${NUMA_LIBRARY})
+
+target_link_libraries(slsdetector
+  PUBLIC limacore
+  PUBLIC slsDetectorShared slsReceiverShared zmq
+  PUBLIC ${NUMA_LIBRARY}
+)
+
+# Binding code for python
 if(LIMA_ENABLE_PYTHON)
-    limatools_run_sip_for_camera(${NAME})
-    install(FILES python/__init__.py DESTINATION 
-            ${PYTHON_SITE_PACKAGES_DIR}/Lima/SlsDetector)
+  include(LimaTools)
+  limatools_run_sip_for_camera(slsdetector)
 endif()
 
-set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake ${CMAKE_MODULE_PATH})
+# Generate and install package config file and version
+if(CAMERA_MASTER_PROJECT)
+  set (PROJECT_LIBRARIES slsdetector)
+  set(SIP_INSTALL_DIR ${CMAKE_INSTALL_DATADIR}/sip/lima)
+  set(CMAKE_INSTALL_DIR ${CMAKE_INSTALL_DATADIR}/cmake/lima)
+  include(package_config)
+endif()
 
-if(LIMA_ENABLE_TESTS)
-	add_subdirectory(test/)
+## Installation
+
+install(
+  TARGETS slsdetector
+  EXPORT "${TARGETS_EXPORT_NAME}"
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}   # import library
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}   # .so files are libraries
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}   # .dll files are binaries
+  INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}  # this does not actually install anything (but used by downstream projects)
+)
+
+install(
+  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
+  COMPONENT devel
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  FILES_MATCHING PATTERN "*.h"
+)
+
+install(
+  FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}/project_version.h
+    ${PROJECT_BINARY_DIR}/slsdetector_export.h
+  COMPONENT devel
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+if(LIMA_ENABLE_PYTHON)
+  install(
+    DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/python/
+    DESTINATION "${PYTHON_SITE_PACKAGES_DIR}/Lima/SlsDetector"
+  )
+endif()
+
+## Tests
+if(CAMERA_ENABLE_TESTS)
+    enable_testing()
+    #add_subdirectory(test)
 endif()

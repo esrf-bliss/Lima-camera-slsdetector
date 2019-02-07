@@ -150,7 +150,7 @@ enum ClockDiv {
 	FullSpeed,
 	HalfSpeed,
 	QuarterSpeed,
-	SuperSlowSpeed, 
+	SuperSlowSpeed,
 };
 
 enum DetStatus {
@@ -261,6 +261,7 @@ typedef std::set<int> SortedIntList;
 typedef std::vector<FrameType> FrameArray;
 typedef IntList ProcList;
 
+std::ostream& operator <<(std::ostream& os, const StringList& l);
 std::ostream& operator <<(std::ostream& os, const SortedIntList& l);
 std::ostream& operator <<(std::ostream& os, const FrameArray& a);
 
@@ -324,6 +325,7 @@ class NumericGlob
 	 { return m_glob.getNbEntries(); }
 
 	 IntStringList getIntPathList() const;
+	 IntStringList getIntSubPathList(int idx) const;
 
  private:
 	 int m_nb_idx;

@@ -54,6 +54,7 @@ public:
 	typedef Defs::NetworkParameter NetworkParameter;
 
 	Camera(std::string config_fname);
+	Camera(const Camera& o) = delete;
 	virtual ~Camera();
 
 	Type getType();
@@ -80,8 +81,8 @@ public:
 	{ return std::pair<int, int>(port_idx / m_recv_nb_ports, 
 				     port_idx % m_recv_nb_ports); }
 
-	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr)
-	{ m_buffer_cb_mgr = buffer_cb_mgr; }
+	void setBufferCtrlObj(SoftBufferCtrlObj *buffer_ctrl_obj)
+	{ m_buffer_ctrl_obj = buffer_ctrl_obj; }
 
 	void setPixelDepth(PixelDepth  pixel_depth);
 	void getPixelDepth(PixelDepth& pixel_depth);
@@ -118,6 +119,9 @@ public:
 	void getLatTime(double& lat_time);
 	void setFramePeriod(double  frame_period);
 	void getFramePeriod(double& frame_period);
+
+	void setSkipFrameFreq(FrameType  skip_frame_freq);
+	void getSkipFrameFreq(FrameType& skip_frame_freq);
 
 	// setDAC: sub_mod_idx: 0-N=sub_module, -1=all
 	void setDAC(int sub_mod_idx, DACIndex dac_idx, int  val, 
@@ -192,6 +196,8 @@ private:
 		virtual void threadFunction();
 
 	private:
+		typedef std::pair<bool, bool> Status;
+
 		class ExceptionCleanUp : Thread::ExceptionCleanUp
 		{
 			DEB_CLASS_NAMESPC(DebModCamera, 
@@ -202,7 +208,7 @@ private:
 			virtual ~ExceptionCleanUp();
 		};
 
-		bool newFrameReady(FrameType frame);
+		Status newFrameReady(FrameType frame);
 		void startAcq();
 		void stopAcq();
 		void cleanUp();
@@ -228,12 +234,15 @@ private:
 	void updateImageSize();
 	void updateTimeRanges();
 	void updateCPUAffinity(bool recv_restarted);
-	void setRecvCPUAffinity(const RecvCPUAffinity& recv_affinity);
+	void setRecvCPUAffinity(const RecvCPUAffinityList& recv_affinity_list);
 
 	static int64_t NSec(double x)
 	{ return int64_t(x * 1e9); }
 
 	State getEffectiveState();
+
+	StdBufferCbMgr *getBufferCbMgr()
+	{ return &m_buffer_ctrl_obj->getBuffer(); }
 
 	char *getFrameBufferPtr(FrameType frame_nb);
 	void removeSharedMem();
@@ -241,6 +250,9 @@ private:
 
 	bool checkLostPackets();
 	FrameType getLastReceivedFrame();
+
+	void waitLastSkippedFrame();
+	void processLastSkippedFrame(int port_idx);
 
 	void getSortedBadFrameList(IntList first_idx, IntList last_idx,
 				   IntList& bad_frame_list );
@@ -279,12 +291,16 @@ private:
 	RecvList m_recv_list;
 	int m_recv_fifo_depth;
 	TrigMode m_trig_mode;
-	FrameType m_nb_frames;
+	FrameType m_lima_nb_frames;
+	FrameType m_det_nb_frames;
+	FrameType m_skip_frame_freq;
+	SortedIntList m_missing_last_skipped_frame;
+	double m_last_skipped_frame_timeout;
 	double m_exp_time;
 	double m_lat_time;
 	double m_frame_period;
 	Settings m_settings;
-	StdBufferCbMgr *m_buffer_cb_mgr;
+	SoftBufferCtrlObj *m_buffer_ctrl_obj;
 	PixelDepth m_pixel_depth;
 	ImageType m_image_type;
 	bool m_raw_mode;
