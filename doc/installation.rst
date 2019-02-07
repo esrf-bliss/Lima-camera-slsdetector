@@ -1204,7 +1204,8 @@ Install basic *conda* packages:
       . blissrc
       conda install gxx_linux-64 gxx-dbg_linux-64
       conda install cmake
-      conda install sip=4.18\* numpy gsl
+      conda install sip="4.18*" numpy gsl
+      conda install lz4-c=1.8.2 hdf5="1.10*"
       conda install libpng 
       conda install -c valkyriesystemscorporation libnuma
       conda install gevent
@@ -1523,25 +1524,20 @@ De-install *libgsl* and *libnuma-dev*:
         LIMA_DIR=${SLS_DETECTORS}/Lima
         cd ${LIMA_DIR}
         submod="third-party/Processlib
-            third-party/Sps
-            third-party/gldisplay
+            third-party/bitshuffle
             camera/slsdetector
             applications/spec
             applications/tango/python"
-        github_submod_names="Sps"
-        github_submod=$(for s in ${submod}; do
-                for m in ${github_submod_names}; do
+        ext_submod_names="bitshuffle"
+        ext_submod=$(for s in ${submod}; do
+                for m in ${ext_submod_names}; do
                     echo ${s} | grep ${m}
                 done
             done)
-        re_pat="(${github_submod_names// /|})"
+        re_pat="(${ext_submod_names// /|})"
         gitlab_submod=$(echo "${submod}" | grep -Ev ${re_pat})
         git submodule init ${submod}
         git submodule update
-        for s in ${github_submod}; do
-                (cd ${s} &&
-                     git remote rename origin github.bliss)
-            done
         for s in ${gitlab_submod}; do
                 (cd ${s} &&
                      git remote rename origin gitlab &&
@@ -1587,11 +1583,9 @@ Compile *Lima*, including *slsDetectorPackage* using *CMake*:
         cp scripts/config.txt_default scripts/config.txt
         mkdir -p ${LIMA_DIR}/install/python
     (slsdetector) lid10eiger1:~/esrf/sls_detectors/Lima % ./install.sh \
-        --find-root-path=${CONDA_SYSROOT} \
         --install-prefix=${LIMA_DIR}/install \
         --install-python-prefix=${LIMA_DIR}/install/python \
-        gsl-root-dir=${CONDA_PREFIX} \
-        slsdetector edfgz python pytango-server tests 2>&1
+        slsdetector hdf5 hdf5-bs edfgz edflz4 python pytango-server tests 2>&1
     ...
 
 Build the documentation:

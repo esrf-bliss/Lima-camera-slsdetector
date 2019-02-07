@@ -81,8 +81,8 @@ public:
 	{ return std::pair<int, int>(port_idx / m_recv_nb_ports, 
 				     port_idx % m_recv_nb_ports); }
 
-	void setBufferCbMgr(StdBufferCbMgr *buffer_cb_mgr)
-	{ m_buffer_cb_mgr = buffer_cb_mgr; }
+	void setBufferCtrlObj(SoftBufferCtrlObj *buffer_ctrl_obj)
+	{ m_buffer_ctrl_obj = buffer_ctrl_obj; }
 
 	void setPixelDepth(PixelDepth  pixel_depth);
 	void getPixelDepth(PixelDepth& pixel_depth);
@@ -241,6 +241,9 @@ private:
 
 	State getEffectiveState();
 
+	StdBufferCbMgr *getBufferCbMgr()
+	{ return &m_buffer_ctrl_obj->getBuffer(); }
+
 	char *getFrameBufferPtr(FrameType frame_nb);
 	void removeSharedMem();
 	void createReceivers();
@@ -297,7 +300,7 @@ private:
 	double m_lat_time;
 	double m_frame_period;
 	Settings m_settings;
-	StdBufferCbMgr *m_buffer_cb_mgr;
+	SoftBufferCtrlObj *m_buffer_ctrl_obj;
 	PixelDepth m_pixel_depth;
 	ImageType m_image_type;
 	bool m_raw_mode;
