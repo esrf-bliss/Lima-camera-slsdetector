@@ -1554,7 +1554,6 @@ void GlobalCPUAffinityMgr::setLimaAffinity(CPUAffinity lima_affinity)
 		lima_affinity.applyToTask(pid, true);
 		m_curr.updateRecvAffinity(lima_affinity);
 	}
-	m_cam->m_buffer_ctrl_obj->setCPUAffinityMask(lima_affinity);
 	m_curr.lima = lima_affinity;
 }
 
@@ -1567,6 +1566,18 @@ void GlobalCPUAffinityMgr::setRecvAffinity(
 		return;
 
 	m_cam->setRecvCPUAffinity(recv_affinity_list);
+
+	CPUAffinity buffer_affinity;
+	if (!recv_affinity_list.empty()) {
+		const RecvCPUAffinityList& l = recv_affinity_list;
+		RecvCPUAffinityList::const_iterator it = l.begin();
+		buffer_affinity = CPUAffinityList_all(it->writers);
+		while (++it != l.end())
+			buffer_affinity |= CPUAffinityList_all(it->writers);
+	}
+	DEB_ALWAYS() << DEB_VAR1(buffer_affinity);
+	m_cam->m_buffer_ctrl_obj->setCPUAffinityMask(buffer_affinity);
+
 	m_curr.recv = recv_affinity_list;
 }
 
