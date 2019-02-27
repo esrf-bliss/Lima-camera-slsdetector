@@ -1743,50 +1743,54 @@ local database:
 
 Add LimaCCDs and SlsDetector class devices.
 
-+----------------------------------------------------------+-------------------------------------------+
-| LimaCCDs/eiger500k/DEVICE/LimaCCDs                       | id10/limaccds/eiger500k                   |
-+----------------------------------------------------------+-------------------------------------------+
-| id10/limaccds/eiger500k->LimaCameraType                  | SlsDetector                               |
-+----------------------------------------------------------+-------------------------------------------+
-| id10/limaccds/eiger500k->NbProcessingThread              | 23                                        |
-+----------------------------------------------------------+-------------------------------------------+
-| id10/limaccds/eiger500k->BufferMaxMemory                 | 40                                        |
-+----------------------------------------------------------+-------------------------------------------+
-| LimaCCDs/eiger500k/DEVICE/SlsDetector                    | id10/slsdetector/eiger500k                |
-+----------------------------------------------------------+-------------------------------------------+
-| id10/slsdetector/eiger500k->config_fname                 | /users/opid00/eiger/eiger_v3.1.1/config/  |
-|                                                          | beb-021-020-direct-FO-10g.config          |
-+----------------------------------------------------------+-------------------------------------------+
-| id10/slsdetector/eiger500k->netdev_groups                | | eth0,eth1,eth2,eth4,eth6,eth7,eth8,eth9 |
-|                                                          | | eth3                                    |
-|                                                          | | eth5                                    |
-+----------------------------------------------------------+-------------------------------------------+
-| id10/slsdetector/eiger500k->pixel_depth_cpu_affinity_map | |  4,0x0006c0,0x6c0000,0x03f03e,0x000001, |
-|                                                          |      0x000001,0x100100,0x800800           |
-|                                                          | |  8,0x0006c0,0x6c0000,0x03f03e,0x000001, |
-|                                                          |      0x000001,0x100100,0x800800           |
-|                                                          | | 16,0xffffff,0xffffff,0xffffff,0xffffff, |
-|                                                          |      0xffffff,0xffffff,0xffffff           |
-|                                                          | | 32,0xffffff,0xffffff,0xffffff,0xffffff, |
-|                                                          |      0xffffff,0xffffff,0xffffff           |
-+----------------------------------------------------------+-------------------------------------------+
++----------------------------------------------------------+-----------------------------------------------+
+| LimaCCDs/eiger500k/DEVICE/LimaCCDs                       | id10/limaccds/eiger500k                       |
++----------------------------------------------------------+-----------------------------------------------+
+| id10/limaccds/eiger500k->LimaCameraType                  | SlsDetector                                   |
++----------------------------------------------------------+-----------------------------------------------+
+| id10/limaccds/eiger500k->NbProcessingThread              | 23                                            |
++----------------------------------------------------------+-----------------------------------------------+
+| id10/limaccds/eiger500k->BufferMaxMemory                 | 30                                            |
++----------------------------------------------------------+-----------------------------------------------+
+| LimaCCDs/eiger500k/DEVICE/SlsDetector                    | id10/slsdetector/eiger500k                    |
++----------------------------------------------------------+-----------------------------------------------+
+| id10/slsdetector/eiger500k->config_fname                 | /users/opid00/eiger/eiger_v3.1.1/config/      |
+|                                                          | beb-021-020-direct-FO-10g.config              |
++----------------------------------------------------------+-----------------------------------------------+
+| id10/slsdetector/eiger500k->pixel_depth_cpu_affinity_map | | { 4: ((((CPU( 6), CPU(18), CPU( 8, 20)),    |
+|                                                          |           (CPU( 7), CPU(19), CPU( 8, 20))),   |
+|                                                          | |        ((CPU( 9), CPU(21), CPU(11, 23)),    |
+|                                                          |           (CPU(10), CPU(22), CPU(11, 23)))),  |
+|                                                          | |       CPU(*(range( 1,  6) +                 |
+|                                                          |               range(12, 18))),                |
+|                                                          | |       CPU(0),                               |
+|                                                          | |       (('eth0,eth1,eth2,eth4,eth6,eth7,     |
+|                                                          |            eth8,eth9',                        |
+|                                                          |           {-1: (CPU(0), CPU(0))}),            |
+|                                                          | |        ('eth3',                             |
+|                                                          |           {-1: (CPU( 8, 20),                  |
+|                                                          |                 CPU( 8, 20))}),               |
+|                                                          | |        ('eth5',                             |
+|                                                          |           {-1: (CPU(11, 23),                  |
+|                                                          |                 CPU(11, 23))}))),             |
+|                                                          | |   8: '@4',                                  |
+|                                                          | |  16: '@4',                                  |
+|                                                          | |  32: '@4'}                                  |
++----------------------------------------------------------+-----------------------------------------------+
 
 .. note:: in order to perform high frame rate acquisitions, the CPU affinity must be fixed for 
    the following tasks:
 
-   * Receiver listeners
-   * Receiver writers
+   * Receivers ports (2x2=4): listeners, writers, port_threads
    * Lima processing threads
    * OS processes
-   * Net-dev group #0 packet dispatching
-   * Net-dev group #1 packet dispatching
-   * ...
+   * Net-dev group packet dispatching for Rx queues: irq & processing
 
    The previous example is based on a dual 6-core CPUs backend with *Hyper-Threading Technology* (12 cores, 
    24 threads). After the data acquisition finishes the Lima processing threads will run also on the CPUs
    assigned to listeners and writers (0xfffffe), that is 23 cores in total, which is used for setting the
    NbProcessingThreads. Please note that there are three network groups and four pixel_depth->cpu_affinity
-   settings (4-, 8-, 16- and 32-bit), each one represented by a line in a multi-line string array.
+   settings (4-, 8-, 16- and 32-bit). The special global_affinity '@X' is a reference to pixel_depth X.
 
 .. note:: The Intel 10 Gigabit Ethernet Server Adapter has multiple hardware FIFOs per port, called
    queues in the OS terminology. The hardware uses a hash algorithm to dispatch packets into the active
