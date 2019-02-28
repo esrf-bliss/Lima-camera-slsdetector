@@ -95,12 +95,10 @@ class Eiger : public SlsDetector::Model
 
 	virtual bool checkSettings(SlsDetector::Defs::Settings settings);
 
-	virtual int getRecvPorts();
+	virtual int getNbRecvPorts();
+	virtual SlsDetector::Model::RecvPort *getRecvPort(int port_idx);
 
 	virtual void prepareAcq();
-	virtual void processRecvFileStart(int port_idx, unsigned int dsize);
-	virtual void processRecvPort(int port_idx, unsigned long frame, 
-				     char *dptr, unsigned int dsize, char *bptr);
 };
 
 }; // namespace SlsDetector

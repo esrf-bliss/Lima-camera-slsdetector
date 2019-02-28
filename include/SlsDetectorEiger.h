@@ -111,28 +111,26 @@ class Eiger : public Model
 
 	virtual bool checkSettings(Settings settings);
 
-	virtual int getRecvPorts();
+	virtual int getNbRecvPorts();
+	virtual Model::RecvPort *getRecvPort(int port_idx);
 
 	virtual void prepareAcq();
-	virtual void processRecvFileStart(int port_idx, uint32_t dsize);
-	virtual void processRecvPort(int port_idx, FrameType frame, char *dptr,
-				     uint32_t dsize, char *bptr);
 
  private:
 	friend class Correction;
 	friend class CorrBase;
 
-	class RecvPortGeometry
+	class RecvPort : public Model::RecvPort
 	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::RecvPortGeometry", 
+		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::RecvPort",
 				  "SlsDetector");
 	public:
-		RecvPortGeometry(Eiger *eiger, int recv_idx, int port);
+		RecvPort(Eiger *eiger, int recv_idx, int port);
 
 		void prepareAcq();
-		void processRecvFileStart(uint32_t dsize);
-		void processRecvPort(FrameType frame, char *dptr, char *bptr);
-
+		virtual void processRecvFileStart(uint32_t dsize);
+		virtual void processRecvPort(FrameType frame, char *dptr,
+					     uint32_t dsize, char *bptr);
 		void expandPixelDepth4(FrameType frame, char *ptr);
 
 	private:
@@ -149,7 +147,7 @@ class Eiger : public Model
 		int m_pchips;
 	};
 
-	typedef std::vector<AutoPtr<RecvPortGeometry> > PortGeometryList;
+	typedef std::vector<AutoPtr<RecvPort> > RecvPortList;
 
 	class CorrBase
 	{
@@ -209,7 +207,7 @@ class Eiger : public Model
 		virtual void correctFrame(FrameType frame, void *ptr);
 
 	protected:
-		PortGeometryList& m_port_geom_list;
+		RecvPortList& m_recv_port_list;
 	};
 
 	class InterModGapCorr : public CorrBase
@@ -361,7 +359,7 @@ class Eiger : public Model
 	static const int ChipSize;
 	static const int ChipGap;
 	static const int HalfModuleChips;
-	static const int RecvPorts;
+	static const int NbRecvPorts;
 
 	struct LinScale {
 		double factor, offset;
@@ -381,7 +379,7 @@ class Eiger : public Model
 
 	FrameDim m_recv_frame_dim;
 	CorrList m_corr_list;
-	PortGeometryList m_port_geom_list;
+	RecvPortList m_recv_port_list;
 	bool m_fixed_clock_div;
 	ClockDiv m_clock_div;
 };

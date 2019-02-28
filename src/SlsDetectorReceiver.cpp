@@ -94,7 +94,8 @@ void Receiver::Port::prepareAcq()
 void Receiver::Port::processFileStart(uint32_t dsize)
 {
 	DEB_MEMBER_FUNCT();
-	m_model->processRecvFileStart(m_port_idx, dsize);
+	Model::RecvPort *port = m_model->getRecvPort(m_port_idx);
+	port->processRecvFileStart(dsize);
 }
 
 void Receiver::Port::processFrame(FrameType frame, char *dptr, uint32_t dsize)
@@ -105,7 +106,8 @@ void Receiver::Port::processFrame(FrameType frame, char *dptr, uint32_t dsize)
 	bool valid = (dptr != NULL);
 	if (valid) {
 		char *bptr = m_cam->getFrameBufferPtr(frame);
-		m_model->processRecvPort(m_port_idx, frame, dptr, dsize, bptr);
+		Model::RecvPort *port = m_model->getRecvPort(m_port_idx);
+		port->processRecvPort(frame, dptr, dsize, bptr);
 	}
 	Timestamp t0 = Timestamp::now();
 	m_frame_map_item->frameFinished(frame, true, valid);

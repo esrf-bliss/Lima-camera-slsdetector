@@ -27,6 +27,11 @@ using namespace lima;
 using namespace lima::SlsDetector;
 
 
+Model::RecvPort::~RecvPort()
+{
+	DEB_DESTRUCTOR();
+}
+
 Model::Model(Camera *cam, Type type)
 	: m_cam(cam), m_type(type), m_det(m_cam->m_det)
 {

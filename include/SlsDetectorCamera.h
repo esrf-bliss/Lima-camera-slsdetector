@@ -72,14 +72,14 @@ public:
 	{ return m_det->getNMods(); }
 
 	int getTotNbPorts()
-	{ return m_recv_list.size() * m_recv_nb_ports; }
+	{ return m_recv_list.size() * m_nb_recv_ports; }
 
 	int getPortIndex(int recv_idx, int port)
-	{ return recv_idx * m_recv_nb_ports + port; }
+	{ return recv_idx * m_nb_recv_ports + port; }
 
 	std::pair<int, int> splitPortIndex(int port_idx)
-	{ return std::pair<int, int>(port_idx / m_recv_nb_ports, 
-				     port_idx % m_recv_nb_ports); }
+	{ return std::pair<int, int>(port_idx / m_nb_recv_ports,
+				     port_idx % m_nb_recv_ports); }
 
 	void setBufferCtrlObj(NumaSoftBufferCtrlObj *buffer_ctrl_obj)
 	{ m_buffer_ctrl_obj = buffer_ctrl_obj; }
@@ -287,7 +287,7 @@ private:
 	AutoPtr<AppInputData> m_input_data;
 	AutoPtr<slsDetectorUsers> m_det;
 	FrameMap m_frame_map;
-	int m_recv_nb_ports;
+	int m_nb_recv_ports;
 	RecvList m_recv_list;
 	int m_recv_fifo_depth;
 	TrigMode m_trig_mode;

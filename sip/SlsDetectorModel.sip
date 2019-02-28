@@ -31,6 +31,16 @@ class Model
 {
 
 public:
+	class RecvPort
+	{
+	public:
+		virtual ~RecvPort();
+
+		virtual void processRecvFileStart(unsigned int dsize) = 0;
+		virtual void processRecvPort(unsigned long frame, char *dptr,
+					     unsigned int dsize, char *bptr) = 0;
+	};
+
 	Model(SlsDetector::Camera *cam, SlsDetector::Type type);
 	virtual ~Model();
 
@@ -66,13 +76,10 @@ protected:
 	virtual 
 	bool checkSettings(SlsDetector::Defs::Settings settings) = 0;
 
-	virtual int getRecvPorts() = 0;
+	virtual int getNbRecvPorts() = 0;
+	virtual SlsDetector::Model::RecvPort *getRecvPort(int port_idx) = 0;
 
 	virtual void prepareAcq() = 0;
-	virtual void processRecvFileStart(int port_idx, unsigned int dsize) = 0;
-	virtual void processRecvPort(int port_idx, unsigned long frame,
-				     char *dptr, unsigned int dsize,
-				     char *bptr) = 0;
 };
 
 

@@ -42,6 +42,19 @@ class Model
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "Model", "SlsDetector");
  public:
+	class RecvPort
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Model::RecvPort",
+				  "SlsDetector");
+	public:
+		virtual ~RecvPort();
+
+		virtual void processRecvFileStart(uint32_t dsize) = 0;
+		// TODO: add file finished callback
+		virtual void processRecvPort(FrameType frame, char *dptr,
+					     uint32_t dsize, char *bptr) = 0;
+	};
+
 	typedef Defs::Settings Settings;
 
 	Model(Camera *cam, Type type);
@@ -83,13 +96,10 @@ class Model
 
 	virtual bool checkSettings(Settings settings) = 0;
 
-	virtual int getRecvPorts() = 0;
+	virtual int getNbRecvPorts() = 0;
+	virtual RecvPort *getRecvPort(int port_idx) = 0;
 
 	virtual void prepareAcq() = 0;
-	virtual void processRecvFileStart(int port_idx, uint32_t dsize) = 0;
-	// TODO: add file finished callback
-	virtual void processRecvPort(int port_idx, FrameType frame, char *dptr, 
-				     uint32_t dsize, char *bptr) = 0;
 
  private:
 	friend class Camera;

@@ -300,7 +300,7 @@ Camera::Camera(string config_fname)
 	  m_skip_frame_freq(0),
 	  m_last_skipped_frame_timeout(0.5),
 	  m_lat_time(0),
-	  m_recv_nb_ports(0),
+	  m_nb_recv_ports(0),
 	  m_pixel_depth(PixelDepth16), 
 	  m_image_type(Bpp16), 
 	  m_raw_mode(false),
@@ -397,13 +397,13 @@ void Camera::setModel(Model *model)
 	if (!m_model)
 		return;
 
-	m_recv_nb_ports = m_model->getRecvPorts();
+	m_nb_recv_ports = m_model->getNbRecvPorts();
 	int nb_ports = getTotNbPorts();
 	m_frame_map.setNbItems(nb_ports);
 
 	RecvList::iterator it, end = m_recv_list.end();
 	for (it = m_recv_list.begin(); it != end; ++it)
-		(*it)->setNbPorts(m_recv_nb_ports);
+		(*it)->setNbPorts(m_nb_recv_ports);
 
 	setPixelDepth(m_pixel_depth);
 	setSettings(m_settings);
