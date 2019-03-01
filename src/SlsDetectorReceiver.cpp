@@ -26,13 +26,6 @@ using namespace std;
 using namespace lima;
 using namespace lima::SlsDetector;
 
-
-Receiver::Port::Thread::Thread(Port& port)
-	: m_port(port)
-{
-	DEB_CONSTRUCTOR();
-}
-
 Receiver::Port::Thread::~Thread()
 {
 	DEB_DESTRUCTOR();
@@ -41,7 +34,15 @@ Receiver::Port::Thread::~Thread()
 		return;
 
 	m_end = true;
-	m_port.stopPollFrameFinished();
+	m_port->stopPollFrameFinished();
+}
+
+void Receiver::Port::Thread::init(Port *port, int idx)
+{
+	DEB_MEMBER_FUNCT();
+	m_port = port;
+	m_idx = idx;
+	start();
 }
 
 void Receiver::Port::Thread::start()
@@ -67,20 +68,40 @@ void Receiver::Port::Thread::threadFunction()
 
 	m_end = false;
 	while (!m_end)
-		m_port.pollFrameFinished();
+		m_port->pollFrameFinished(m_idx);
 }
 
 Receiver::Port::Port(Receiver& recv, int port)
-	: m_thread(*this)
 {
 	DEB_CONSTRUCTOR();
 
 	m_cam = recv.m_cam;
-	m_model = m_cam->m_model;
 	m_port_idx = m_cam->getPortIndex(recv.m_idx, port);
-	m_frame_map_item = &m_cam->m_frame_map.getItem(m_port_idx);
-	  
-	m_thread.start();
+	m_model_port = m_cam->m_model->getRecvPort(m_port_idx);
+}
+
+void Receiver::Port::setNbThreads(int nb_threads)
+{
+	DEB_MEMBER_FUNCT();
+	int prev_nb_threads = m_thread_list.size();
+	DEB_PARAM() << DEB_VAR2(nb_threads, prev_nb_threads);
+
+	if (nb_threads == prev_nb_threads)
+		return;
+
+	m_frame_map_item_list.resize(nb_threads);
+	int item = m_port_idx * nb_threads;
+	for (int i = 0; i < nb_threads; ++i, ++item)
+		m_frame_map_item_list[i] = &m_cam->m_frame_map.getItem(item);
+
+	m_thread_list.resize(nb_threads);
+	for (int i = prev_nb_threads; i < nb_threads; ++i)
+		m_thread_list[i].init(this, i);
+}
+
+int Receiver::Port::getNbThreads()
+{
+	return m_thread_list.size();
 }
 
 void Receiver::Port::prepareAcq()
@@ -94,44 +115,46 @@ void Receiver::Port::prepareAcq()
 void Receiver::Port::processFileStart(uint32_t dsize)
 {
 	DEB_MEMBER_FUNCT();
-	Model::RecvPort *port = m_model->getRecvPort(m_port_idx);
-	port->processRecvFileStart(dsize);
+	m_model_port->processRecvFileStart(dsize);
 }
 
 void Receiver::Port::processFrame(FrameType frame, char *dptr, uint32_t dsize)
 {
 	DEB_MEMBER_FUNCT();
 
-	m_frame_map_item->checkFinishedFrame(frame);
+	FrameMapItemList::iterator it, end = m_frame_map_item_list.end();
+	for (it = m_frame_map_item_list.begin(); it != end; ++it)
+		(*it)->checkFinishedFrame(frame);
 	bool valid = (dptr != NULL);
 	if (valid) {
 		char *bptr = m_cam->getFrameBufferPtr(frame);
-		Model::RecvPort *port = m_model->getRecvPort(m_port_idx);
-		port->processRecvPort(frame, dptr, dsize, bptr);
+		m_model_port->processRecvPort(frame, dptr, dsize, bptr);
 	}
 	Timestamp t0 = Timestamp::now();
-	m_frame_map_item->frameFinished(frame, true, valid);
+	for (it = m_frame_map_item_list.begin(); it != end; ++it)
+		(*it)->frameFinished(frame, true, valid);
 	Timestamp t1 = Timestamp::now();
 	m_stats.stats.new_finish.add(t1 - t0);
 }
 
-void Receiver::Port::pollFrameFinished()
+void Receiver::Port::pollFrameFinished(int thread_idx)
 {
 	DEB_MEMBER_FUNCT();
 
-	FrameDataList data_list = m_frame_map_item->pollFrameFinished();
-	Model::RecvPort *port = m_model->getRecvPort(m_port_idx);
-	if (port->hasPortThreadProcessing()) {
+	FrameMap::Item *frame_map_item = m_frame_map_item_list[thread_idx];
+	FrameDataList data_list = frame_map_item->pollFrameFinished();
+	if (m_model_port->getNbPortProcessingThreads()) {
 		FrameDataList::const_iterator it, end = data_list.end();
 		for (it = data_list.begin(); it != end; ++it) {
 			FrameType frame = it->first;
 			char *bptr = m_cam->getFrameBufferPtr(frame);
-			port->processPortThread(frame, bptr);
+			m_model_port->processPortThread(frame, bptr, 
+							thread_idx);
 		}
 	}
 
 	FinishInfoList finfo_list;
-	finfo_list = m_frame_map_item->getFrameFinishInfo(data_list);
+	finfo_list = frame_map_item->getFrameFinishInfo(data_list);
 	FinishInfoList::const_iterator it, end = finfo_list.end();
 	for (it = finfo_list.begin(); it != end; ++it) {
 		const FinishInfo& finfo = *it;
@@ -143,7 +166,9 @@ void Receiver::Port::pollFrameFinished()
 void Receiver::Port::stopPollFrameFinished()
 {
 	DEB_MEMBER_FUNCT();
-	m_frame_map_item->stopPollFrameFinished();
+	FrameMapItemList::iterator it, end = m_frame_map_item_list.end();
+	for (it = m_frame_map_item_list.begin(); it != end; ++it)
+		(*it)->stopPollFrameFinished();
 }
 
 void Receiver::Port::processFinishInfo(const FinishInfo& finfo)
@@ -236,21 +261,35 @@ void Receiver::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
 		Listener, Writer, PortThread, NbThreadTypes,
 	};
 
+	Model *model = m_cam->m_model;
+	Model::RecvPort *port = model->getRecvPort(0);
+	int nb_proc_threads = port->getNbPortProcessingThreads();
+
 	class AffinityListHelper
 	{
 	public:
 		AffinityListHelper(const CPUAffinityList& aff_list,
-				   int nb_ports, ThreadType type,
-				   int recv_idx, DebObj *deb_ptr)
+				   int nb_ports, int nb_proc_threads,
+				   ThreadType type, int recv_idx,
+				   DebObj *deb_ptr)
 			: m_aff_list(aff_list), m_nb_ports(nb_ports),
+			  m_nb_proc_threads(nb_proc_threads),
 			  m_type(type), m_recv_idx(recv_idx), m_deb_ptr(deb_ptr)
 		{
 			DEB_FROM_PTR(m_deb_ptr);
 			unsigned int nb_aff = m_aff_list.size();
 			if (!defaultAffinity() && !singleAffinity() &&
-			    (nb_aff != m_nb_ports))
+			    (nb_aff != getNbAffinities()))
 				THROW_HW_ERROR(InvalidValue) <<
-					DEB_VAR2(nb_aff, m_nb_ports);
+					DEB_VAR2(nb_aff, getNbAffinities());
+		}
+
+		int getNbAffinities() const
+		{
+			int nb_aff = m_nb_ports;
+			if (m_type == PortThread)
+				nb_aff *= m_nb_proc_threads;
+			return nb_aff;
 		}
 
 		bool defaultAffinity() const
@@ -284,17 +323,17 @@ void Receiver::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
 		{
 			DEB_FROM_PTR(m_deb_ptr);
 			CPUAffinityList list;
+			int nb_aff = getNbAffinities();
 			if (defaultAffinity())
-				list = CPUAffinityList(m_nb_ports);
-			else if (singleAffinity() && (m_nb_ports > 1))
-				list = CPUAffinityList(m_nb_ports, 
-						       m_aff_list[0]);
+				list = CPUAffinityList(nb_aff);
+			else if (singleAffinity() && (nb_aff > 1))
+				list = CPUAffinityList(nb_aff, m_aff_list[0]);
 			else
 				list = m_aff_list;
 
 			string deb_head = getDebHead();
 			CPUAffinityList::const_iterator it = list.begin();
-			for (int i = 0; i < m_nb_ports; ++i, ++it)
+			for (int i = 0; i < nb_aff; ++i, ++it)
 				DEB_TRACE() << deb_head << i << " "
 					    << "CPU mask to " << *it;
 
@@ -317,6 +356,7 @@ void Receiver::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
 	private:
 		const CPUAffinityList& m_aff_list;
 		int m_nb_ports;
+		int m_nb_proc_threads;
 		ThreadType m_type;
 		int m_recv_idx;
 		DebObj *m_deb_ptr;
@@ -325,7 +365,7 @@ void Receiver::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
 	int nb_ports = m_port_list.size();
 
 #define CreateHelper(n, a, t) \
-	AffinityListHelper n(a, nb_ports, t, m_idx, DEB_PTR());
+	AffinityListHelper n(a, nb_ports, nb_proc_threads, t, m_idx, DEB_PTR());
 
 	CreateHelper(lh, recv_affinity.listeners, Listener);
 	CreateHelper(wh, recv_affinity.writers, Writer);
@@ -346,9 +386,11 @@ void Receiver::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
 	CPUAffinityList port_thread_aff_list = pth.getThreadAffinityList();
 	CPUAffinityList::const_iterator tit = port_thread_aff_list.begin();
 	PortList::iterator pit, pend = m_port_list.end();
-	for (pit = m_port_list.begin(); pit != pend; ++pit, ++tit) {
-		pid_t tid = (*pit)->getThreadID();
-		(*tit).applyToTask(tid, false);
+	for (pit = m_port_list.begin(); pit != pend; ++pit) {
+		for (int i = 0; i < (*pit)->getNbThreads(); ++i, ++tit) {
+			pid_t tid = (*pit)->getThreadID(i);
+			(*tit).applyToTask(tid, false);
+		}
 	}
 }
 

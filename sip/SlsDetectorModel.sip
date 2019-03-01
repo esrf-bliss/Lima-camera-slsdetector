@@ -39,9 +39,9 @@ public:
 		virtual void processRecvFileStart(unsigned int dsize) = 0;
 		virtual void processRecvPort(unsigned long frame, char *dptr,
 					     unsigned int dsize, char *bptr) = 0;
-		virtual bool hasPortThreadProcessing() = 0;
-		virtual void processPortThread(unsigned long frame,
-					       char *bptr) = 0;
+		virtual int getNbPortProcessingThreads() = 0;
+		virtual void processPortThread(unsigned long frame, char *bptr,
+					       int thread_idx) = 0;
 	};
 
 	Model(SlsDetector::Camera *cam, SlsDetector::Type type);

@@ -364,7 +364,7 @@ class SlsDetector(PyTango.Device_4Impl):
                 l, w, pt = zip(*recv_ports)
                 recv.listeners = list(l)
                 recv.writers = list(w)
-                recv.port_threads = list(pt)
+                recv.port_threads = list(chain(*pt))
                 recv_list.append(recv)
             global_aff.recv = recv_list
             global_aff.lima = lima
@@ -393,23 +393,29 @@ class SlsDetector(PyTango.Device_4Impl):
             return 'CPU(%s)' % ', '.join(cpu_list)
         def mask_str(a):
             return 'Mask(0x%x)' % NumAffinity(a)
-        aff_2_str = cpu_str if use_cpu else mask_str
+        def aff_2_str(a):
+            if type(a) in [tuple, list]:
+                str_list = map(aff_2_str, a)
+                if len(str_list) == 1:
+                    str_list.append('')
+                return '(%s)' % ', '.join(str_list)
+            f = cpu_str if use_cpu else mask_str
+            return f(a)
         for pixel_depth, global_aff in sorted(aff_map.items()):
             recv_list = []
             for r in global_aff.recv:
-                p1, p2 = zip(r.listeners, r.writers, r.port_threads)
-                def port_str(p):
-                    return '(%s)' % ', '.join(map(aff_2_str, p))
-                recv_str = '(%s, %s)' % (port_str(p1), port_str(p2))
-                recv_list.append(recv_str)
-            recv_str = '(%s)' % ', '.join(recv_list)
+                n = len(r.port_threads) / len(r.listeners)
+                port_threads = zip(*[r.port_threads[i::n] for i in range(n)])
+                recv_aff = zip(r.listeners, r.writers, port_threads)
+                recv_list.append(recv_aff)
+            recv_str = aff_2_str(recv_list)
             lima_str = aff_2_str(global_aff.lima)
             other_str = aff_2_str(global_aff.other)
             netdev_grp_list = []
             for netdev_grp in global_aff.netdev:
                 name_str = ','.join(netdev_grp.name_list)
-                queue_list = [('%d: (%s, %s)' % (q, aff_2_str(a.irq),
-                                                 aff_2_str(a.processing)))
+                queue_list = [('%d: %s)' % (q, aff_2_str((a.irq, 
+                                                          a.processing))))
                               for q, a in netdev_grp.queue_affinity.items()]
                 queue_str = ','.join(queue_list)
                 netdev_str = '"%s": {%s}' % (name_str, queue_str)
@@ -511,7 +517,8 @@ class SlsDetectorClass(PyTango.DeviceClass):
          "{<pixel_depth>: <global_affinity>}, being global_affinity a tuple: "
          "(<recv_list>, <lima>, <other>, <netdev_grp_list>), where recv_list "
          "is a list of tupples in the form: (<port_1>, <port_2>), where portX "
-         "is a tupple of affinities: (<listener>, <writer>, <port_thread>), "
+         "is a tupple: (<listener>, <writer>, <port_threads>) where listener "
+         "and writer are affinities and port_threads a tuple of affinities, "
          "lima and and other are affinities, and netdev_grp_list is a list of "
          "tuples in the form: "
          "(<comma_separated_netdev_name_list>, <rx_queue_affinity_map>), the "

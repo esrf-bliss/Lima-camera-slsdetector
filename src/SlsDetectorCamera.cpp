@@ -399,11 +399,17 @@ void Camera::setModel(Model *model)
 
 	m_nb_recv_ports = m_model->getNbRecvPorts();
 	int nb_ports = getTotNbPorts();
-	m_frame_map.setNbItems(nb_ports);
+	Model::RecvPort *port = m_model->getRecvPort(0);
+	int nb_port_threads = max(1, port->getNbPortProcessingThreads());
+	m_frame_map.setNbItems(nb_ports * nb_port_threads);
 
 	RecvList::iterator it, end = m_recv_list.end();
 	for (it = m_recv_list.begin(); it != end; ++it)
 		(*it)->setNbPorts(m_nb_recv_ports);
+
+	RecvPortList port_list = getRecvPortList();
+	for (int i = 0; i < getTotNbPorts(); ++i)
+		port_list[i]->setNbThreads(nb_port_threads);
 
 	setPixelDepth(m_pixel_depth);
 	setSettings(m_settings);

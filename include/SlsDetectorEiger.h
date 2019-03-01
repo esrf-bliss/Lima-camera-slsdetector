@@ -131,12 +131,14 @@ class Eiger : public Model
 		virtual void processRecvFileStart(uint32_t dsize);
 		virtual void processRecvPort(FrameType frame, char *dptr,
 					     uint32_t dsize, char *bptr);
-		virtual bool hasPortThreadProcessing();
-		virtual void processPortThread(FrameType frame, char *bptr);
+		virtual int getNbPortProcessingThreads();
+		virtual void processPortThread(FrameType frame, char *bptr,
+					       int thread_idx);
 		void expandPixelDepth4(FrameType frame, char *ptr);
 
 	private:
-		void copy2LimaBuffer(char *dptr, char *bptr);
+		bool hasPortThreadProcessing();
+		void copy2LimaBuffer(char *dptr, char *bptr, int thread_idx);
 
 		Eiger *m_eiger;
 		int m_port;
@@ -145,10 +147,14 @@ class Eiger : public Model
 		bool m_raw;
 		int m_recv_idx;
 		int m_port_offset;
-		int m_ilw;			// image line width
+		int m_slw;			// source line width
+		int m_dlw;			// dest line width
 		int m_scw;			// source chip width
 		int m_dcw;			// dest chip width
 		int m_pchips;
+		int m_copy_lines;
+		int m_sto;			// source thread offset
+		int m_dto;			// dest thread offset
 		int m_nb_buffers;
 		NumaSoftBufferAllocMgr m_buffer_alloc_mgr;
 		StdBufferCbMgr m_buffer_cb_mgr;
@@ -370,6 +376,7 @@ class Eiger : public Model
 	static const int ChipGap;
 	static const int HalfModuleChips;
 	static const int NbRecvPorts;
+	static const int NbPortThreads;
 
 	struct LinScale {
 		double factor, offset;

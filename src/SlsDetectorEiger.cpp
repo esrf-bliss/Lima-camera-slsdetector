@@ -32,6 +32,7 @@ const int Eiger::ChipSize = 256;
 const int Eiger::ChipGap = 2;
 const int Eiger::HalfModuleChips = 4;
 const int Eiger::NbRecvPorts = 2;
+const int Eiger::NbPortThreads = 4;
 
 const int Eiger::BitsPerXfer = 4;
 const int Eiger::SuperColNbCols = 8;
@@ -228,7 +229,7 @@ void Eiger::RecvPort::prepareAcq()
 	const FrameDim& frame_dim = m_eiger->m_recv_frame_dim;
 	const Size& size = frame_dim.getSize();
 	int depth = frame_dim.getDepth();
-	m_ilw = size.getWidth() * depth;
+	m_dlw = size.getWidth() * depth;
 	int recv_size = frame_dim.getMemSize();
 	m_port_offset = recv_size * m_recv_idx;	
 
@@ -237,11 +238,12 @@ void Eiger::RecvPort::prepareAcq()
 	m_dcw = m_scw;
 	if (m_eiger->isPixelDepth4())
 		m_scw /= 2;
+	m_slw = m_pchips * m_scw;
 
 	m_eiger->getCamera()->getRawMode(m_raw);
 	if (m_raw) {
 		// vert. port concat.
-		m_port_offset += ChipSize * m_ilw * m_port;
+		m_port_offset += ChipSize * m_dlw * m_port;
 		return;
 	} else {
 		// inter-chip horz. gap
@@ -252,30 +254,35 @@ void Eiger::RecvPort::prepareAcq()
 
 	int mod_idx = m_recv_idx / 2;
 	for (int i = 0; i < mod_idx; ++i)
-		m_port_offset += m_eiger->getInterModuleGap(i) * m_ilw;
+		m_port_offset += m_eiger->getInterModuleGap(i) * m_dlw;
 
 	if (m_top_half_recv) {
 		// top-half module: vert-flipped data
-		m_port_offset += (ChipSize - 1) * m_ilw;
-		m_ilw *= -1;
+		m_port_offset += (ChipSize - 1) * m_dlw;
+		m_dlw *= -1;
 	} else {
 		// bottom-half module: inter-chip vert. gap
-		m_port_offset += (ChipGap / 2) * m_ilw;
+		m_port_offset += (ChipGap / 2) * m_dlw;
 	}
 
+	m_copy_lines = ChipSize;
 	if (hasPortThreadProcessing()) {
 		CPUAffinity buffer_aff = 0x6c0000;
 		m_buffer_alloc_mgr.setCPUAffinityMask(buffer_aff);
 		int nb_concat_frames = 8;
 		int nb_buffers = m_nb_buffers / nb_concat_frames;
-		FrameDim fdim(m_scw * m_pchips, ChipSize, Bpp8);
+		FrameDim fdim(m_slw, ChipSize, Bpp8);
 		m_buffer_cb_mgr.allocBuffers(nb_buffers, nb_concat_frames, fdim);
+		m_copy_lines /= NbPortThreads;
+		m_sto = m_copy_lines * m_slw;
+		m_dto = m_copy_lines * m_dlw;
+		DEB_TRACE() << DEB_VAR3(m_copy_lines, m_sto, m_dto);
+
 		m_last_recv_frame = m_last_proc_frame = -1;
 		m_overrun = false;
 	} else {
 		m_buffer_cb_mgr.releaseBuffers();
 	}
-
 }
 
 void Eiger::RecvPort::processRecvFileStart(uint32_t dsize)
@@ -291,7 +298,7 @@ void Eiger::RecvPort::processRecvPort(FrameType frame, char *dptr,
 	DEB_PARAM() << DEB_VAR3(frame, m_recv_idx, m_port);
 
 	if (!hasPortThreadProcessing()) {
-		copy2LimaBuffer(dptr, bptr);
+		copy2LimaBuffer(dptr, bptr, 0);
 		return;
 	}
 
@@ -317,12 +324,14 @@ void Eiger::RecvPort::processRecvPort(FrameType frame, char *dptr,
 	m_last_recv_frame = frame;
 }
 
-void Eiger::RecvPort::copy2LimaBuffer(char *dptr, char *bptr)
+void Eiger::RecvPort::copy2LimaBuffer(char *dptr, char *bptr, int thread_idx)
 {
+	DEB_MEMBER_FUNCT();
+
 	bool valid_data = (dptr != NULL);
-	char *src = dptr;
-	char *dest = bptr + m_port_offset;	
-	for (int i = 0; i < ChipSize; ++i, dest += m_ilw) {
+	char *src = dptr + thread_idx * m_sto;
+	char *dest = bptr + m_port_offset + thread_idx * m_dto;
+	for (int i = 0; i < m_copy_lines; ++i, dest += m_dlw) {
 		char *d = dest;
 		for (int j = 0; j < m_pchips; ++j, src += m_scw, d += m_dcw)
 			if (valid_data)
@@ -340,13 +349,25 @@ bool Eiger::RecvPort::hasPortThreadProcessing()
 	return thread_proc;
 }
 
-void Eiger::RecvPort::processPortThread(FrameType frame, char *bptr)
+int Eiger::RecvPort::getNbPortProcessingThreads()
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR3(frame, m_recv_idx, m_port);
+	int nb_proc_threads = NbPortThreads;
+	DEB_RETURN() << DEB_VAR1(nb_proc_threads);
+	return nb_proc_threads;
+}
+
+void Eiger::RecvPort::processPortThread(FrameType frame, char *bptr,
+					int thread_idx)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR4(frame, m_recv_idx, m_port, thread_idx);
+
+	if (!hasPortThreadProcessing())
+		return;
 
 	char *dptr = (char *) m_buffer_cb_mgr.getFrameBufferPtr(frame);
-	copy2LimaBuffer(dptr, bptr);
+	copy2LimaBuffer(dptr, bptr, thread_idx);
 	m_last_proc_frame = frame;
 }
 
@@ -356,7 +377,7 @@ void Eiger::RecvPort::expandPixelDepth4(FrameType frame, char *ptr)
 	DEB_PARAM() << DEB_VAR3(frame, m_recv_idx, m_port);
 
 	ptr += m_port_offset;
-	for (int i = 0; i < ChipSize; ++i, ptr += m_ilw) {
+	for (int i = 0; i < ChipSize; ++i, ptr += m_dlw) {
 		char *chip = ptr;
 		for (int j = 0; j < m_pchips; ++j, chip += m_dcw) {
 			char *src = chip + m_scw;

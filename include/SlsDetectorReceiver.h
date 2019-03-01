@@ -71,8 +71,8 @@ private:
 	
 		Port(Receiver& recv, int port);
 
-		pid_t getThreadID()
-		{ return m_thread.getThreadID(); }
+		pid_t getThreadID(int idx)
+		{ return m_thread_list[idx].getThreadID(); }
 		
 		void prepareAcq();
 
@@ -97,6 +97,9 @@ private:
 		Stats& getStats()
 		{ return m_stats; }
 
+		void setNbThreads(int nb_threads);
+		int getNbThreads();
+
 	private:
 		friend class Receiver;
 
@@ -112,35 +115,39 @@ private:
 					  "Receiver::Port::Thread", 
 					  "SlsDetector");
 		public:
-			Thread(Port& port);
 			virtual ~Thread();
 
-			virtual void start();
+			void init(Port *port, int idx);
 
 		protected:
+			virtual void start();
 			virtual void threadFunction();
 
 		private:
-			Port& m_port;
+			Port *m_port;
+			int m_idx;
 			pid_t m_tid;
 			volatile bool m_end;
 		};
+		typedef std::vector<Thread> ThreadList;
+
+		typedef std::vector<FrameMap::Item *> FrameMapItemList;
 
 		AutoMutex lock()
 		{ return m_mutex; }
 
-		void pollFrameFinished();
+		void pollFrameFinished(int thread_idx);
 		void stopPollFrameFinished();
 		void processFinishInfo(const FinishInfo& finfo);
 		
 		Camera *m_cam;
-		Model *m_model;
 		int m_port_idx;
+		Model::RecvPort *m_model_port;
 		Mutex m_mutex;
-		FrameMap::Item *m_frame_map_item;
+		FrameMapItemList m_frame_map_item_list;
 		IntList m_bad_frame_list;
 		Stats m_stats;
-		Thread m_thread;
+		ThreadList m_thread_list;
 	};
 	typedef std::vector<AutoPtr<Port> > PortList;
 
