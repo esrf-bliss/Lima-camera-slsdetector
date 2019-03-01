@@ -1571,9 +1571,9 @@ void GlobalCPUAffinityMgr::setRecvAffinity(
 	if (!recv_affinity_list.empty()) {
 		const RecvCPUAffinityList& l = recv_affinity_list;
 		RecvCPUAffinityList::const_iterator it = l.begin();
-		buffer_affinity = CPUAffinityList_all(it->writers);
+		buffer_affinity = CPUAffinityList_all(it->port_threads);
 		while (++it != l.end())
-			buffer_affinity |= CPUAffinityList_all(it->writers);
+			buffer_affinity |= CPUAffinityList_all(it->port_threads);
 	}
 	DEB_ALWAYS() << DEB_VAR1(buffer_affinity);
 	m_cam->m_buffer_ctrl_obj->setCPUAffinityMask(buffer_affinity);

@@ -131,9 +131,13 @@ class Eiger : public Model
 		virtual void processRecvFileStart(uint32_t dsize);
 		virtual void processRecvPort(FrameType frame, char *dptr,
 					     uint32_t dsize, char *bptr);
+		virtual bool hasPortThreadProcessing();
+		virtual void processPortThread(FrameType frame, char *bptr);
 		void expandPixelDepth4(FrameType frame, char *ptr);
 
 	private:
+		void copy2LimaBuffer(char *dptr, char *bptr);
+
 		Eiger *m_eiger;
 		int m_port;
 		bool m_top_half_recv;
@@ -145,6 +149,12 @@ class Eiger : public Model
 		int m_scw;			// source chip width
 		int m_dcw;			// dest chip width
 		int m_pchips;
+		int m_nb_buffers;
+		NumaSoftBufferAllocMgr m_buffer_alloc_mgr;
+		StdBufferCbMgr m_buffer_cb_mgr;
+		FrameType m_last_recv_frame;
+		FrameType m_last_proc_frame;
+		bool m_overrun;
 	};
 
 	typedef std::vector<AutoPtr<RecvPort> > RecvPortList;

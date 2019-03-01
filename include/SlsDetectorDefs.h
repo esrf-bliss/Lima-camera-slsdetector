@@ -439,6 +439,9 @@ class FrameMap
 		DEB_CLASS_NAMESPC(DebModCamera, "Item", "SlsDetector");
 	
 	public:
+		typedef std::pair<int, bool> FrameData;
+		typedef std::vector<FrameData> FrameDataList;
+
 		struct FinishInfo {
 			FrameType first_lost;
 			int nb_lost;
@@ -451,14 +454,13 @@ class FrameMap
 	
 		void checkFinishedFrame(FrameType frame);
 		void frameFinished(FrameType frame, bool no_check, bool valid);
-		FinishInfoList pollFrameFinished();
+		FrameDataList pollFrameFinished();
+		FinishInfoList getFrameFinishInfo(const FrameDataList&
+								  data_list);
 		void stopPollFrameFinished();
 	
 	private:
 		friend class FrameMap;
-	
-		typedef std::pair<int, bool> FrameData;
-		typedef std::vector<FrameData> FrameDataList;
 	
 		class FrameQueue 
 		{

@@ -119,8 +119,19 @@ void Receiver::Port::pollFrameFinished()
 {
 	DEB_MEMBER_FUNCT();
 
+	FrameDataList data_list = m_frame_map_item->pollFrameFinished();
+	Model::RecvPort *port = m_model->getRecvPort(m_port_idx);
+	if (port->hasPortThreadProcessing()) {
+		FrameDataList::const_iterator it, end = data_list.end();
+		for (it = data_list.begin(); it != end; ++it) {
+			FrameType frame = it->first;
+			char *bptr = m_cam->getFrameBufferPtr(frame);
+			port->processPortThread(frame, bptr);
+		}
+	}
+
 	FinishInfoList finfo_list;
-	finfo_list = m_frame_map_item->pollFrameFinished();
+	finfo_list = m_frame_map_item->getFrameFinishInfo(data_list);
 	FinishInfoList::const_iterator it, end = finfo_list.end();
 	for (it = finfo_list.begin(); it != end; ++it) {
 		const FinishInfo& finfo = *it;

@@ -212,7 +212,8 @@ Data Eiger::Correction::process(Data& data)
 }
 
 Eiger::RecvPort::RecvPort(Eiger *eiger, int recv_idx, int port)
-	: m_eiger(eiger), m_port(port), m_recv_idx(recv_idx)
+	: m_eiger(eiger), m_port(port), m_recv_idx(recv_idx),
+	  m_nb_buffers(1024), m_buffer_cb_mgr(m_buffer_alloc_mgr)
 {
 	DEB_CONSTRUCTOR();
 	DEB_PARAM() << DEB_VAR1(m_recv_idx);
@@ -261,6 +262,20 @@ void Eiger::RecvPort::prepareAcq()
 		// bottom-half module: inter-chip vert. gap
 		m_port_offset += (ChipGap / 2) * m_ilw;
 	}
+
+	if (hasPortThreadProcessing()) {
+		CPUAffinity buffer_aff = 0x6c0000;
+		m_buffer_alloc_mgr.setCPUAffinityMask(buffer_aff);
+		int nb_concat_frames = 8;
+		int nb_buffers = m_nb_buffers / nb_concat_frames;
+		FrameDim fdim(m_scw * m_pchips, ChipSize, Bpp8);
+		m_buffer_cb_mgr.allocBuffers(nb_buffers, nb_concat_frames, fdim);
+		m_last_recv_frame = m_last_proc_frame = -1;
+		m_overrun = false;
+	} else {
+		m_buffer_cb_mgr.releaseBuffers();
+	}
+
 }
 
 void Eiger::RecvPort::processRecvFileStart(uint32_t dsize)
@@ -275,6 +290,35 @@ void Eiger::RecvPort::processRecvPort(FrameType frame, char *dptr,
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR3(frame, m_recv_idx, m_port);
 
+	if (!hasPortThreadProcessing()) {
+		copy2LimaBuffer(dptr, bptr);
+		return;
+	}
+
+	if (frame - m_last_proc_frame > m_nb_buffers) {
+		if (!m_overrun) {
+			DEB_ERROR() << "OVERRUN: " 
+				    << DEB_VAR5(m_last_proc_frame, frame,
+						m_recv_idx, m_port,
+						m_nb_buffers);
+			m_overrun = true;
+		}
+	}
+
+	void *dest = m_buffer_cb_mgr.getFrameBufferPtr(frame);
+	bool valid_data = (dptr != NULL);
+	const FrameDim& fdim = m_buffer_cb_mgr.getFrameDim();
+	int size = fdim.getMemSize();
+	if (valid_data)
+		memcpy(dest, dptr, size);
+	else
+		memset(dest, 0xff, size);
+
+	m_last_recv_frame = frame;
+}
+
+void Eiger::RecvPort::copy2LimaBuffer(char *dptr, char *bptr)
+{
 	bool valid_data = (dptr != NULL);
 	char *src = dptr;
 	char *dest = bptr + m_port_offset;	
@@ -286,6 +330,24 @@ void Eiger::RecvPort::processRecvPort(FrameType frame, char *dptr,
 			else
 				memset(d, 0xff, m_scw);
 	}
+}
+
+bool Eiger::RecvPort::hasPortThreadProcessing()
+{
+	DEB_MEMBER_FUNCT();
+	bool thread_proc = (m_eiger->isPixelDepth4() && !m_raw);
+	DEB_RETURN() << DEB_VAR1(thread_proc);
+	return thread_proc;
+}
+
+void Eiger::RecvPort::processPortThread(FrameType frame, char *bptr)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR3(frame, m_recv_idx, m_port);
+
+	char *dptr = (char *) m_buffer_cb_mgr.getFrameBufferPtr(frame);
+	copy2LimaBuffer(dptr, bptr);
+	m_last_proc_frame = frame;
 }
 
 void Eiger::RecvPort::expandPixelDepth4(FrameType frame, char *ptr)

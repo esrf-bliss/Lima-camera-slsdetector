@@ -53,6 +53,8 @@ class Model
 		// TODO: add file finished callback
 		virtual void processRecvPort(FrameType frame, char *dptr,
 					     uint32_t dsize, char *bptr) = 0;
+		virtual bool hasPortThreadProcessing() = 0;
+		virtual void processPortThread(FrameType frame, char *bptr) = 0;
 	};
 
 	typedef Defs::Settings Settings;

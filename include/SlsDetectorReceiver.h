@@ -100,6 +100,8 @@ private:
 	private:
 		friend class Receiver;
 
+		typedef FrameMap::Item::FrameData FrameData;
+		typedef FrameMap::Item::FrameDataList FrameDataList;
 		typedef FrameMap::Item::FinishInfo FinishInfo;
 		typedef FrameMap::Item::FinishInfoList FinishInfoList;
 		typedef std::vector<FinishInfo> FinishInfoArray;

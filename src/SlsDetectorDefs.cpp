@@ -675,11 +675,16 @@ void FrameMap::Item::frameFinished(FrameType frame, bool no_check, bool valid)
 	m_last_pushed_frame = frame;
 }
 
-FrameMap::Item::FinishInfoList FrameMap::Item::pollFrameFinished()
+FrameMap::Item::FrameDataList FrameMap::Item::pollFrameFinished()
 {
 	DEB_MEMBER_FUNCT();
+	return m_frame_queue.pop_all();
+}
 
-	FrameDataList data_list = m_frame_queue.pop_all();
+FrameMap::Item::FinishInfoList
+FrameMap::Item::getFrameFinishInfo(const FrameDataList& data_list)
+{
+	DEB_MEMBER_FUNCT();
 
 	FinishInfoList finfo_list;
 	FrameMap& m = *m_map;
