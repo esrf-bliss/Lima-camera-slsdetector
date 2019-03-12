@@ -1567,14 +1567,9 @@ void GlobalCPUAffinityMgr::setRecvAffinity(
 
 	m_cam->setRecvCPUAffinity(recv_affinity_list);
 
-	CPUAffinity buffer_affinity;
-	if (!recv_affinity_list.empty()) {
-		const RecvCPUAffinityList& l = recv_affinity_list;
-		RecvCPUAffinityList::const_iterator it = l.begin();
-		buffer_affinity = CPUAffinityList_all(it->port_threads);
-		while (++it != l.end())
-			buffer_affinity |= CPUAffinityList_all(it->port_threads);
-	}
+	const RecvCPUAffinityList& l = recv_affinity_list;
+	RecvCPUAffinity::Selector s = &RecvCPUAffinity::PortThreads;
+	CPUAffinity buffer_affinity = RecvCPUAffinityList_all(l, s);
 	DEB_ALWAYS() << DEB_VAR1(buffer_affinity);
 	m_cam->m_buffer_ctrl_obj->setCPUAffinityMask(buffer_affinity);
 

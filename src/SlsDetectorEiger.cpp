@@ -267,7 +267,15 @@ void Eiger::RecvPort::prepareAcq()
 
 	m_copy_lines = ChipSize;
 	if (hasPortThreadProcessing()) {
-		CPUAffinity buffer_aff = 0x6c0000;
+		Camera *cam = m_eiger->getCamera();
+		PixelDepthCPUAffinityMap aff_map;
+		cam->getPixelDepthCPUAffinityMap(aff_map);
+		PixelDepth pixel_depth;
+		cam->getPixelDepth(pixel_depth);
+		const RecvCPUAffinityList& l = aff_map[pixel_depth].recv;
+		RecvCPUAffinity::Selector s = &RecvCPUAffinity::Writers;
+		CPUAffinity buffer_aff = RecvCPUAffinityList_all(l, s);
+		DEB_TRACE() << DEB_VAR1(buffer_aff);
 		m_buffer_alloc_mgr.setCPUAffinityMask(buffer_aff);
 		int nb_concat_frames = 8;
 		int nb_buffers = m_nb_buffers / nb_concat_frames;

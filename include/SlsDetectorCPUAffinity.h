@@ -490,7 +490,17 @@ struct RecvCPUAffinity {
 	RecvCPUAffinity();
 	CPUAffinity all() const;
 	RecvCPUAffinity& operator =(CPUAffinity a);
+
+	const CPUAffinityList& Listeners() const
+	{ return listeners; }
+	const CPUAffinityList& Writers() const
+	{ return writers; }
+	const CPUAffinityList& PortThreads() const
+	{ return port_threads; }
+
+	typedef const CPUAffinityList& (RecvCPUAffinity::*Selector)() const;
 };
+
 
 inline CPUAffinity RecvCPUAffinity::all() const
 {
@@ -522,6 +532,18 @@ inline CPUAffinity RecvCPUAffinityList_all(const RecvCPUAffinityList& l)
 	return CPUAffinityList_all(recv_aff_list);
 }
 
+inline CPUAffinity RecvCPUAffinityList_all(const RecvCPUAffinityList& l,
+					   RecvCPUAffinity::Selector s)
+{
+	CPUAffinityList recv_aff_list;
+	RecvCPUAffinityList::const_iterator it, end = l.end();
+	for (it = l.begin(); it != end; ++it) {
+		const CPUAffinityList& l = ((*it).*s)();
+		recv_aff_list.push_back(CPUAffinityList_all(l));
+	}
+	return CPUAffinityList_all(recv_aff_list);
+}
+					       
 struct GlobalCPUAffinity {
 	RecvCPUAffinityList recv;
 	CPUAffinity lima;
