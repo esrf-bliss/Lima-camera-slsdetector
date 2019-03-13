@@ -134,17 +134,19 @@ class Eiger : public Model
 		virtual int getNbPortProcessingThreads();
 		virtual void processPortThread(FrameType frame, char *bptr,
 					       int thread_idx);
-		void expandPixelDepth4(FrameType frame, char *ptr);
 
 	private:
 		bool hasPortThreadProcessing();
-		void copy2LimaBuffer(char *dptr, char *bptr, int thread_idx);
+		void copy2LimaBuffer(char *dest, char *src, int thread_idx);
+		void expandPixelDepth4(char *dest, char *src, int len4,
+				       bool dest_multi_ports);
 
 		Eiger *m_eiger;
 		int m_port;
 		bool m_top_half_recv;
 		bool m_port_idx;
 		bool m_raw;
+		bool m_pixel_depth_4;
 		int m_recv_idx;
 		int m_port_offset;
 		int m_slw;			// source line width
@@ -211,19 +213,6 @@ class Eiger : public Model
 		Camera *m_cam;
 		int m_nb_ports;
 		std::vector<BadFrameData> m_bfd_list;
-	};
-
-	class PixelDepth4Corr : public CorrBase
-	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::PixelDepth4Corr", 
-				  "SlsDetector");
-	public:
-		PixelDepth4Corr(Eiger *eiger);
-
-		virtual void correctFrame(FrameType frame, void *ptr);
-
-	protected:
-		RecvPortList& m_recv_port_list;
 	};
 
 	class InterModGapCorr : public CorrBase
@@ -361,7 +350,6 @@ class Eiger : public Model
 	void getRecvFrameDim(FrameDim& frame_dim, bool raw, bool geom);
 
 	CorrBase *createBadRecvFrameCorr();
-	CorrBase *createPixelDepth4Corr();
 	CorrBase *createChipBorderCorr(ImageType image_type);
 	CorrBase *createInterModGapCorr();
 

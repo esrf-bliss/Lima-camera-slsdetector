@@ -23,6 +23,8 @@
 #include "SlsDetectorEiger.h"
 #include "lima/MiscUtils.h"
 
+#include <emmintrin.h>
+
 using namespace std;
 using namespace lima;
 using namespace lima::SlsDetector;
@@ -126,21 +128,6 @@ void Eiger::BadRecvFrameCorr::correctFrame(FrameType frame, void *ptr)
 	}
 }
 
-Eiger::PixelDepth4Corr::PixelDepth4Corr(Eiger *eiger)
-	: CorrBase(eiger), m_recv_port_list(eiger->m_recv_port_list)
-{
-	DEB_CONSTRUCTOR();
-}
-
-void Eiger::PixelDepth4Corr::correctFrame(FrameType frame, void *ptr)
-{
-	DEB_MEMBER_FUNCT();
-
-	RecvPortList::iterator it, end = m_recv_port_list.end();
-	for (it = m_recv_port_list.begin(); it != end; ++it)
-		(*it)->expandPixelDepth4(frame, (char *) ptr);
-}
-
 Eiger::InterModGapCorr::InterModGapCorr(Eiger *eiger)
 	: CorrBase(eiger)
 {
@@ -233,11 +220,10 @@ void Eiger::RecvPort::prepareAcq()
 	int recv_size = frame_dim.getMemSize();
 	m_port_offset = recv_size * m_recv_idx;	
 
+	m_pixel_depth_4 = m_eiger->isPixelDepth4();
 	m_pchips = HalfModuleChips / NbRecvPorts;
 	m_scw = ChipSize * depth;
 	m_dcw = m_scw;
-	if (m_eiger->isPixelDepth4())
-		m_scw /= 2;
 	m_slw = m_pchips * m_scw;
 
 	m_eiger->getCamera()->getRawMode(m_raw);
@@ -306,7 +292,10 @@ void Eiger::RecvPort::processRecvPort(FrameType frame, char *dptr,
 	DEB_PARAM() << DEB_VAR3(frame, m_recv_idx, m_port);
 
 	if (!hasPortThreadProcessing()) {
-		copy2LimaBuffer(dptr, bptr, 0);
+		if (m_pixel_depth_4)
+			expandPixelDepth4(bptr, dptr, dsize, true);
+		else
+			copy2LimaBuffer(bptr, dptr, 0);
 		return;
 	}
 
@@ -320,25 +309,62 @@ void Eiger::RecvPort::processRecvPort(FrameType frame, char *dptr,
 		}
 	}
 
-	void *dest = m_buffer_cb_mgr.getFrameBufferPtr(frame);
+	char *dest = (char *) m_buffer_cb_mgr.getFrameBufferPtr(frame);
 	bool valid_data = (dptr != NULL);
 	const FrameDim& fdim = m_buffer_cb_mgr.getFrameDim();
 	int size = fdim.getMemSize();
-	if (valid_data)
-		memcpy(dest, dptr, size);
-	else
+	if (valid_data) {
+		if (m_pixel_depth_4)
+			expandPixelDepth4(dest, dptr, size / 2, false);
+		else
+			memcpy(dest, dptr, size);
+	} else {
 		memset(dest, 0xff, size);
+	}
 
 	m_last_recv_frame = frame;
 }
 
-void Eiger::RecvPort::copy2LimaBuffer(char *dptr, char *bptr, int thread_idx)
+void Eiger::RecvPort::expandPixelDepth4(char *dest, char *src, int len4,
+					bool dest_multi_ports)
 {
 	DEB_MEMBER_FUNCT();
 
-	bool valid_data = (dptr != NULL);
-	char *src = dptr + thread_idx * m_sto;
-	char *dest = bptr + m_port_offset + thread_idx * m_dto;
+	if (dest_multi_ports)
+		dest += m_port_offset;
+
+	unsigned long s = (unsigned long) src;
+	unsigned long d = (unsigned long) dest;
+	if (((s & 15) != 0) || ((d & 15) != 0))
+		THROW_HW_ERROR(Error) << "Missaligned src/dest: "
+				      << DEB_VAR2(DEB_HEX(s), DEB_HEX(d));
+
+	int blk = sizeof(__m128i);
+	if ((len4 % blk) != 0)
+		DEB_WARNING() << "len misalignment: " << DEB_VAR2(len4, blk);
+	int nb_blocks = len4 / blk;
+	const __m128i *src128 = (const __m128i *) src;
+	__m128i *dest128 = (__m128i *) dest;
+	__m128i mask = _mm_set1_epi8(0xf);
+	for (int i = 0; i < nb_blocks; ++i) {
+		__m128i pack4_raw = _mm_load_si128(src128++);
+		__m128i pack4_shr = _mm_srli_epi16(pack4_raw, 4);
+		__m128i ilace8_0 = _mm_and_si128(pack4_raw, mask);
+		__m128i ilace8_1 = _mm_and_si128(pack4_shr, mask);
+		__m128i pack8_0 = _mm_unpacklo_epi8(ilace8_0, ilace8_1);
+		__m128i pack8_1 = _mm_unpackhi_epi8(ilace8_0, ilace8_1);
+		_mm_store_si128(dest128++, pack8_0);
+		_mm_store_si128(dest128++, pack8_1);
+	}
+}
+
+void Eiger::RecvPort::copy2LimaBuffer(char *dest, char *src, int thread_idx)
+{
+	DEB_MEMBER_FUNCT();
+
+	bool valid_data = (src != NULL);
+	src += thread_idx * m_sto;
+	dest += m_port_offset + thread_idx * m_dto;
 	for (int i = 0; i < m_copy_lines; ++i, dest += m_dlw) {
 		char *d = dest;
 		for (int j = 0; j < m_pchips; ++j, src += m_scw, d += m_dcw)
@@ -375,28 +401,8 @@ void Eiger::RecvPort::processPortThread(FrameType frame, char *bptr,
 		return;
 
 	char *dptr = (char *) m_buffer_cb_mgr.getFrameBufferPtr(frame);
-	copy2LimaBuffer(dptr, bptr, thread_idx);
+	copy2LimaBuffer(bptr, dptr, thread_idx);
 	m_last_proc_frame = frame;
-}
-
-void Eiger::RecvPort::expandPixelDepth4(FrameType frame, char *ptr)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR3(frame, m_recv_idx, m_port);
-
-	ptr += m_port_offset;
-	for (int i = 0; i < ChipSize; ++i, ptr += m_dlw) {
-		char *chip = ptr;
-		for (int j = 0; j < m_pchips; ++j, chip += m_dcw) {
-			char *src = chip + m_scw;
-			char *dest = chip + 2 * m_scw;
-			for (int k = 0; k < ChipSize / 2; ++k) {
-				unsigned char b = *--src;
-				*--dest = b >> 4;
-				*--dest = b & 0xf;
-			}
-		}
-	}
 }
 
 Eiger::Eiger(Camera *cam)
@@ -656,9 +662,6 @@ void Eiger::updateImageSize()
 
 	createBadRecvFrameCorr();
 
-	if (isPixelDepth4())
-		createPixelDepth4Corr();
-
 	Camera *cam = getCamera();
 
 	bool raw;
@@ -896,15 +899,6 @@ Eiger::CorrBase *Eiger::createBadRecvFrameCorr()
 	addCorr(brf_corr);
 	DEB_RETURN() << DEB_VAR1(brf_corr);
 	return brf_corr;
-}
-
-Eiger::CorrBase *Eiger::createPixelDepth4Corr()
-{
-	DEB_MEMBER_FUNCT();
-	CorrBase *pd4_corr = new PixelDepth4Corr(this);
-	addCorr(pd4_corr);
-	DEB_RETURN() << DEB_VAR1(pd4_corr);
-	return pd4_corr;
 }
 
 Eiger::CorrBase *Eiger::createChipBorderCorr(ImageType image_type)
