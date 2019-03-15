@@ -90,6 +90,9 @@ class Eiger : public SlsDetector::Model
 	void setThresholdEnergy(int  thres);
 	void getThresholdEnergy(int& thres /Out/);
 
+	void setExpand4InThreads(bool  expand_4_in_threads);
+	void getExpand4InThreads(bool& expand_4_in_threads /Out/);
+
  protected:
 	virtual void updateImageSize();
 

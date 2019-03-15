@@ -124,6 +124,8 @@ class SlsDetector(PyTango.Device_4Impl):
             self.model.setThresholdEnergy(self.threshold_energy)
 
         self.cam.setTolerateLostPackets(self.tolerate_lost_packets)
+        self.model.setExpand4InThreads(self.expand_4_in_threads)
+        deb.Always("expand_4_in_threads: %s" % self.model.getExpand4InThreads())
         aff_arr = self.pixel_depth_cpu_affinity_map
         if aff_arr:
             aff_str = ' '.join(aff_arr)
@@ -525,6 +527,9 @@ class SlsDetectorClass(PyTango.DeviceClass):
          "latter in the form of: {<queue>: (<irq>, <processing>)}. "
          "Each affinity can be expressed by one of the functions: Mask(mask) "
          "or CPU(<cpu1>[, ..., <cpuN>]) for independent CPU enumeration", []],
+        'expand_4_in_threads':
+        [PyTango.DevBoolean,
+         "Expand 4-to-8 bit in threads", True],
         }
 
     cmd_list = {

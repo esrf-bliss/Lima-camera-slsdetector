@@ -34,7 +34,6 @@ const int Eiger::ChipSize = 256;
 const int Eiger::ChipGap = 2;
 const int Eiger::HalfModuleChips = 4;
 const int Eiger::NbRecvPorts = 2;
-const int Eiger::NbPortThreads = 4;
 
 const int Eiger::BitsPerXfer = 4;
 const int Eiger::SuperColNbCols = 8;
@@ -200,7 +199,7 @@ Data Eiger::Correction::process(Data& data)
 }
 
 Eiger::RecvPort::RecvPort(Eiger *eiger, int recv_idx, int port)
-	: m_eiger(eiger), m_port(port), m_recv_idx(recv_idx),
+	: m_eiger(eiger), m_port(port), m_recv_idx(recv_idx), m_nb_threads(2),
 	  m_nb_buffers(1024), m_buffer_cb_mgr(m_buffer_alloc_mgr)
 {
 	DEB_CONSTRUCTOR();
@@ -213,6 +212,11 @@ void Eiger::RecvPort::prepareAcq()
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(m_recv_idx);
 
+	m_pixel_depth_4 = m_eiger->isPixelDepth4();
+	m_eiger->getCamera()->getRawMode(m_raw);
+	m_expand_4_in_threads = m_eiger->m_expand_4_in_threads;
+	m_thread_proc = (m_pixel_depth_4 && (m_expand_4_in_threads || !m_raw));
+
 	const FrameDim& frame_dim = m_eiger->m_recv_frame_dim;
 	const Size& size = frame_dim.getSize();
 	int depth = frame_dim.getDepth();
@@ -220,13 +224,53 @@ void Eiger::RecvPort::prepareAcq()
 	int recv_size = frame_dim.getMemSize();
 	m_port_offset = recv_size * m_recv_idx;	
 
-	m_pixel_depth_4 = m_eiger->isPixelDepth4();
 	m_pchips = HalfModuleChips / NbRecvPorts;
 	m_scw = ChipSize * depth;
 	m_dcw = m_scw;
 	m_slw = m_pchips * m_scw;
 
-	m_eiger->getCamera()->getRawMode(m_raw);
+	m_copy_lines = ChipSize;
+	if (m_thread_proc) {
+		Camera *cam = m_eiger->getCamera();
+		PixelDepthCPUAffinityMap aff_map;
+		cam->getPixelDepthCPUAffinityMap(aff_map);
+		PixelDepth pixel_depth;
+		cam->getPixelDepth(pixel_depth);
+		const RecvCPUAffinity& r = aff_map[pixel_depth].recv[m_recv_idx];
+		CPUAffinity buffer_aff = r.writers[m_port];
+		m_buffer_alloc_mgr.setCPUAffinityMask(buffer_aff);
+		int nb_concat_frames = 8;
+		int nb_buffers = m_nb_buffers / nb_concat_frames;
+		int buff_slw = m_slw / (m_expand_4_in_threads ? 2 : 1);
+		FrameDim fdim(buff_slw, ChipSize, Bpp8);
+		DEB_ALWAYS() << "Aux: " << DEB_VAR2(buffer_aff, fdim);
+		m_buffer_cb_mgr.allocBuffers(nb_buffers, nb_concat_frames, fdim);
+		m_copy_lines /= m_nb_threads;
+		m_sto = m_copy_lines * m_slw;
+		m_dto = m_copy_lines * m_dlw;
+		DEB_TRACE() << DEB_VAR3(m_copy_lines, m_sto, m_dto);
+
+		if (m_expand_4_in_threads && !m_raw) {
+			CPUAffinityList::const_iterator it;
+			it = r.port_threads.begin() + m_port * m_nb_threads;
+			CPUAffinityList l(it, it + m_nb_threads);
+			buffer_aff = CPUAffinityList_all(l);
+			m_expand_buffer.setCPUAffinityMask(buffer_aff);
+			int expand_len = fdim.getMemSize() * 2;
+			m_expand_buffer.alloc(expand_len);
+			DEB_ALWAYS() << "Expand: " << DEB_VAR2(buffer_aff,
+							      expand_len);
+		} else {
+			m_expand_buffer.release();
+		}
+
+		m_last_recv_frame = m_last_proc_frame = -1;
+		m_overrun = false;
+	} else {
+		m_buffer_cb_mgr.releaseBuffers();
+		m_expand_buffer.release();
+	}
+
 	if (m_raw) {
 		// vert. port concat.
 		m_port_offset += ChipSize * m_dlw * m_port;
@@ -246,36 +290,10 @@ void Eiger::RecvPort::prepareAcq()
 		// top-half module: vert-flipped data
 		m_port_offset += (ChipSize - 1) * m_dlw;
 		m_dlw *= -1;
+		m_dto *= -1;
 	} else {
 		// bottom-half module: inter-chip vert. gap
 		m_port_offset += (ChipGap / 2) * m_dlw;
-	}
-
-	m_copy_lines = ChipSize;
-	if (hasPortThreadProcessing()) {
-		Camera *cam = m_eiger->getCamera();
-		PixelDepthCPUAffinityMap aff_map;
-		cam->getPixelDepthCPUAffinityMap(aff_map);
-		PixelDepth pixel_depth;
-		cam->getPixelDepth(pixel_depth);
-		const RecvCPUAffinityList& l = aff_map[pixel_depth].recv;
-		RecvCPUAffinity::Selector s = &RecvCPUAffinity::Writers;
-		CPUAffinity buffer_aff = RecvCPUAffinityList_all(l, s);
-		DEB_TRACE() << DEB_VAR1(buffer_aff);
-		m_buffer_alloc_mgr.setCPUAffinityMask(buffer_aff);
-		int nb_concat_frames = 8;
-		int nb_buffers = m_nb_buffers / nb_concat_frames;
-		FrameDim fdim(m_slw, ChipSize, Bpp8);
-		m_buffer_cb_mgr.allocBuffers(nb_buffers, nb_concat_frames, fdim);
-		m_copy_lines /= NbPortThreads;
-		m_sto = m_copy_lines * m_slw;
-		m_dto = m_copy_lines * m_dlw;
-		DEB_TRACE() << DEB_VAR3(m_copy_lines, m_sto, m_dto);
-
-		m_last_recv_frame = m_last_proc_frame = -1;
-		m_overrun = false;
-	} else {
-		m_buffer_cb_mgr.releaseBuffers();
 	}
 }
 
@@ -291,9 +309,10 @@ void Eiger::RecvPort::processRecvPort(FrameType frame, char *dptr,
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR3(frame, m_recv_idx, m_port);
 
-	if (!hasPortThreadProcessing()) {
-		if (m_pixel_depth_4)
-			expandPixelDepth4(bptr, dptr, dsize, true);
+	bool valid_data = (dptr != NULL);
+	if (!m_thread_proc || !valid_data) {
+		if (m_pixel_depth_4 && valid_data)
+			expandPixelDepth4(bptr, dptr, dsize, true, 0);
 		else
 			copy2LimaBuffer(bptr, dptr, 0);
 		return;
@@ -310,28 +329,25 @@ void Eiger::RecvPort::processRecvPort(FrameType frame, char *dptr,
 	}
 
 	char *dest = (char *) m_buffer_cb_mgr.getFrameBufferPtr(frame);
-	bool valid_data = (dptr != NULL);
 	const FrameDim& fdim = m_buffer_cb_mgr.getFrameDim();
 	int size = fdim.getMemSize();
-	if (valid_data) {
-		if (m_pixel_depth_4)
-			expandPixelDepth4(dest, dptr, size / 2, false);
-		else
-			memcpy(dest, dptr, size);
-	} else {
-		memset(dest, 0xff, size);
-	}
+	if (!m_expand_4_in_threads)
+		expandPixelDepth4(dest, dptr, size / 2, false, 0);
+	else
+		memcpy(dest, dptr, size);
 
 	m_last_recv_frame = frame;
 }
 
 void Eiger::RecvPort::expandPixelDepth4(char *dest, char *src, int len4,
-					bool dest_multi_ports)
+					bool dest_multi_ports, int thread_idx)
 {
 	DEB_MEMBER_FUNCT();
 
 	if (dest_multi_ports)
 		dest += m_port_offset;
+	src += m_sto / 2 * thread_idx;
+	dest += m_sto * thread_idx;
 
 	unsigned long s = (unsigned long) src;
 	unsigned long d = (unsigned long) dest;
@@ -340,8 +356,6 @@ void Eiger::RecvPort::expandPixelDepth4(char *dest, char *src, int len4,
 				      << DEB_VAR2(DEB_HEX(s), DEB_HEX(d));
 
 	int blk = sizeof(__m128i);
-	if ((len4 % blk) != 0)
-		DEB_WARNING() << "len misalignment: " << DEB_VAR2(len4, blk);
 	int nb_blocks = len4 / blk;
 	const __m128i *src128 = (const __m128i *) src;
 	__m128i *dest128 = (__m128i *) dest;
@@ -355,6 +369,16 @@ void Eiger::RecvPort::expandPixelDepth4(char *dest, char *src, int len4,
 		__m128i pack8_1 = _mm_unpackhi_epi8(ilace8_0, ilace8_1);
 		_mm_store_si128(dest128++, pack8_0);
 		_mm_store_si128(dest128++, pack8_1);
+	}
+
+	int read = nb_blocks * blk;
+	len4 -= read;
+	src += read;
+	dest += 2 * read;
+	while (len4-- > 0) {
+		unsigned char b = *src++;
+		*dest++ = b & 0xf;
+		*dest++ = b >> 4;
 	}
 }
 
@@ -375,18 +399,10 @@ void Eiger::RecvPort::copy2LimaBuffer(char *dest, char *src, int thread_idx)
 	}
 }
 
-bool Eiger::RecvPort::hasPortThreadProcessing()
-{
-	DEB_MEMBER_FUNCT();
-	bool thread_proc = (m_eiger->isPixelDepth4() && !m_raw);
-	DEB_RETURN() << DEB_VAR1(thread_proc);
-	return thread_proc;
-}
-
 int Eiger::RecvPort::getNbPortProcessingThreads()
 {
 	DEB_MEMBER_FUNCT();
-	int nb_proc_threads = NbPortThreads;
+	int nb_proc_threads = m_nb_threads;
 	DEB_RETURN() << DEB_VAR1(nb_proc_threads);
 	return nb_proc_threads;
 }
@@ -397,16 +413,28 @@ void Eiger::RecvPort::processPortThread(FrameType frame, char *bptr,
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR4(frame, m_recv_idx, m_port, thread_idx);
 
-	if (!hasPortThreadProcessing())
+	if (!m_thread_proc)
 		return;
 
 	char *dptr = (char *) m_buffer_cb_mgr.getFrameBufferPtr(frame);
+	if (m_expand_4_in_threads) {
+		const FrameDim& fdim = m_buffer_cb_mgr.getFrameDim();
+		int size = fdim.getMemSize() / m_nb_threads;
+		char *dest = m_raw ? bptr : (char *) m_expand_buffer.getPtr();
+		expandPixelDepth4(dest, dptr, size, m_raw, thread_idx);
+		if (m_raw)
+			return;
+		dptr = dest;
+	}
+
 	copy2LimaBuffer(bptr, dptr, thread_idx);
+	// This is not perfect, but should more or less work
 	m_last_proc_frame = frame;
 }
 
 Eiger::Eiger(Camera *cam)
-	: Model(cam, EigerDet), m_fixed_clock_div(false)
+	: Model(cam, EigerDet), m_fixed_clock_div(false),
+	  m_expand_4_in_threads(true)
 {
 	DEB_CONSTRUCTOR();
 
@@ -852,6 +880,20 @@ void Eiger::getThresholdEnergy(int& thres)
 	DEB_MEMBER_FUNCT();
 	thres = m_det->getThresholdEnergy();
 	DEB_RETURN() << DEB_VAR1(thres);
+}
+
+void Eiger::setExpand4InThreads(bool expand_4_in_threads)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(expand_4_in_threads);
+	m_expand_4_in_threads = expand_4_in_threads;
+}
+
+void Eiger::getExpand4InThreads(bool& expand_4_in_threads)
+{
+	DEB_MEMBER_FUNCT();
+	expand_4_in_threads = m_expand_4_in_threads;
+	DEB_RETURN() << DEB_VAR1(expand_4_in_threads);
 }
 
 int Eiger::getNbRecvPorts()

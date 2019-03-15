@@ -106,6 +106,9 @@ class Eiger : public Model
 	void setThresholdEnergy(int  thres);
 	void getThresholdEnergy(int& thres);
 
+	void setExpand4InThreads(bool  expand_4_in_threads);
+	void getExpand4InThreads(bool& expand_4_in_threads);
+
  protected:
 	virtual void updateImageSize();
 
@@ -136,10 +139,9 @@ class Eiger : public Model
 					       int thread_idx);
 
 	private:
-		bool hasPortThreadProcessing();
 		void copy2LimaBuffer(char *dest, char *src, int thread_idx);
 		void expandPixelDepth4(char *dest, char *src, int len4,
-				       bool dest_multi_ports);
+				       bool dest_multi_ports, int thread_idx);
 
 		Eiger *m_eiger;
 		int m_port;
@@ -147,8 +149,11 @@ class Eiger : public Model
 		bool m_port_idx;
 		bool m_raw;
 		bool m_pixel_depth_4;
+		bool m_thread_proc;
+		bool m_expand_4_in_threads;
 		int m_recv_idx;
 		int m_port_offset;
+		int m_nb_threads;
 		int m_slw;			// source line width
 		int m_dlw;			// dest line width
 		int m_scw;			// source chip width
@@ -159,6 +164,7 @@ class Eiger : public Model
 		int m_dto;			// dest thread offset
 		int m_nb_buffers;
 		NumaSoftBufferAllocMgr m_buffer_alloc_mgr;
+		MemBuffer m_expand_buffer;
 		StdBufferCbMgr m_buffer_cb_mgr;
 		FrameType m_last_recv_frame;
 		FrameType m_last_proc_frame;
@@ -364,7 +370,6 @@ class Eiger : public Model
 	static const int ChipGap;
 	static const int HalfModuleChips;
 	static const int NbRecvPorts;
-	static const int NbPortThreads;
 
 	struct LinScale {
 		double factor, offset;
@@ -387,6 +392,7 @@ class Eiger : public Model
 	RecvPortList m_recv_port_list;
 	bool m_fixed_clock_div;
 	ClockDiv m_clock_div;
+	bool m_expand_4_in_threads;
 };
 
 std::ostream& operator <<(std::ostream& os, Eiger::ParallelMode mode);
