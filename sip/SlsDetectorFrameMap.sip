@@ -30,15 +30,33 @@ namespace SlsDetector
 class FrameMap
 {
 public:
+	struct FrameData {
+		int frame;
+		int valid
+		{
+		        %GetCode
+				sipPy = PyInt_FromLong(sipCpp->valid.to_ulong());
+		        %End
+		
+		        %SetCode
+			        sipCpp->valid = lima::SlsDetector::FrameMap::Mask(PyInt_AsLong(sipPy));
+		        %End
+		};
+
+		FrameData();
+		FrameData(int f, int v);
+	};
+
 	void setNbItems(int nb_items);
 	void setBufferSize(int buffer_size);
 	void clear();
 
-	unsigned long getLastItemFrame() const;
+	unsigned long getLastGroupFrame() const;
 	unsigned long getLastFinishedFrame() const;
 
 private:
 	FrameMap();
+	FrameMap(const FrameMap& o);
 };
 
 

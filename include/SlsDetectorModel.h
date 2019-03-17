@@ -42,23 +42,37 @@ class Model
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "Model", "SlsDetector");
  public:
-	class RecvPort
-	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Model::RecvPort",
-				  "SlsDetector");
-	public:
-		virtual ~RecvPort();
-
-		virtual void processRecvFileStart(uint32_t dsize) = 0;
-		// TODO: add file finished callback
-		virtual void processRecvPort(FrameType frame, char *dptr,
-					     uint32_t dsize, char *bptr) = 0;
-		virtual int getNbPortProcessingThreads() = 0;
-		virtual void processPortThread(FrameType frame, char *bptr,
-					       int thread_idx) = 0;
-	};
-
 	typedef Defs::Settings Settings;
+
+	typedef FrameMap::FrameData FrameData;
+
+	class Recv
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Model::Recv", "SlsDetector");
+	public:
+		class Port
+		{
+			DEB_CLASS_NAMESPC(DebModCamera, "Model::Recv::Port",
+					  "SlsDetector");
+		public:
+			virtual ~Port();
+
+			// TODO: add file finished callback
+			virtual void processFrame(FrameType frame, char *dptr,
+						  uint32_t dsize, char *bptr) = 0;
+		};
+
+		virtual ~Recv();
+
+		virtual int getNbPorts() = 0;
+		virtual Port *getPort(int port_idx) = 0;
+
+		virtual void processFileStart(uint32_t dsize) = 0;
+
+		virtual int getNbProcessingThreads() = 0;
+		virtual void processThread(const FrameData &frame, char *bptr,
+					   int thread_idx) = 0;
+	};
 
 	Model(Camera *cam, Type type);
 	virtual ~Model();
@@ -99,8 +113,10 @@ class Model
 
 	virtual bool checkSettings(Settings settings) = 0;
 
-	virtual int getNbRecvPorts() = 0;
-	virtual RecvPort *getRecvPort(int port_idx) = 0;
+	virtual int getNbRecvs() = 0;
+	virtual Recv *getRecv(int recv_idx) = 0;
+
+	int getNbRecvPorts();
 
 	virtual void prepareAcq() = 0;
 

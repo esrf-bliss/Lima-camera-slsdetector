@@ -143,10 +143,10 @@ public:
 	void setTolerateLostPackets(bool  tol_lost_packets);
 	void getTolerateLostPackets(bool& tol_lost_packets);
 
-	int getNbBadFrames(int port_idx);
-	void getBadFrameList(int port_idx, int first_idx, int last_idx,
+	int getNbBadFrames(int recv_idx);
+	void getBadFrameList(int recv_idx, int first_idx, int last_idx,
 			     IntList& bad_frame_list);
-	void getBadFrameList(int port_idx, IntList& bad_frame_list);
+	void getBadFrameList(int recv_idx, IntList& bad_frame_list);
 
 	void prepareAcq();
 	void startAcq();
@@ -308,7 +308,7 @@ private:
 	double m_new_frame_timeout;
 	double m_abort_sleep_time;
 	bool m_tol_lost_packets;
-	FrameArray m_prev_ifa;
+	FrameArray m_prev_gfa;
 	TimeRangesChangedCallback *m_time_ranges_cb;
 	PixelDepthCPUAffinityMap m_cpu_affinity_map;
 	GlobalCPUAffinityMgr m_global_cpu_affinity_mgr;

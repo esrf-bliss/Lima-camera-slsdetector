@@ -27,7 +27,12 @@ using namespace lima;
 using namespace lima::SlsDetector;
 
 
-Model::RecvPort::~RecvPort()
+Model::Recv::~Recv()
+{
+	DEB_DESTRUCTOR();
+}
+
+Model::Recv::Port::~Port()
 {
 	DEB_DESTRUCTOR();
 }
@@ -74,3 +79,8 @@ string Model::getCmd(const string& s, int idx)
 	return m_cam->getCmd(s, idx);
 }
 
+int Model::getNbRecvPorts()
+{
+	DEB_MEMBER_FUNCT();
+	return getNbRecvs() ? getRecv(0)->getNbPorts() : 0;
+}

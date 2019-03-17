@@ -31,17 +31,30 @@ class Model
 {
 
 public:
-	class RecvPort
+	class Recv
 	{
 	public:
-		virtual ~RecvPort();
+		class Port
+		{
+		public:
+			virtual ~Port();
+	
+			virtual void processFrame(unsigned long frame, char *dptr,
+						  unsigned int dsize,
+						  char *bptr) = 0;
+		};
 
-		virtual void processRecvFileStart(unsigned int dsize) = 0;
-		virtual void processRecvPort(unsigned long frame, char *dptr,
-					     unsigned int dsize, char *bptr) = 0;
-		virtual int getNbPortProcessingThreads() = 0;
-		virtual void processPortThread(unsigned long frame, char *bptr,
-					       int thread_idx) = 0;
+		virtual ~Recv();
+
+		virtual int getNbPorts() = 0;
+		virtual SlsDetector::Model::Recv::Port *getPort(int port_idx) = 0;
+
+		virtual void processFileStart(unsigned int dsize) = 0;
+
+		virtual int getNbProcessingThreads() = 0;
+		virtual void processThread(
+			const SlsDetector::FrameMap::FrameData& data,
+			char *bptr, int thread_idx) = 0;
 	};
 
 	Model(SlsDetector::Camera *cam, SlsDetector::Type type);
@@ -79,8 +92,10 @@ protected:
 	virtual 
 	bool checkSettings(SlsDetector::Defs::Settings settings) = 0;
 
-	virtual int getNbRecvPorts() = 0;
-	virtual SlsDetector::Model::RecvPort *getRecvPort(int port_idx) = 0;
+	virtual int getNbRecvs() = 0;
+	virtual SlsDetector::Model::Recv *getRecv(int recv_idx) = 0;
+
+	int getNbRecvPorts();
 
 	virtual void prepareAcq() = 0;
 };

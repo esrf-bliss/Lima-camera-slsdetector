@@ -399,17 +399,12 @@ void Camera::setModel(Model *model)
 
 	m_nb_recv_ports = m_model->getNbRecvPorts();
 	int nb_ports = getTotNbPorts();
-	Model::RecvPort *port = m_model->getRecvPort(0);
-	int nb_port_threads = max(1, port->getNbPortProcessingThreads());
-	m_frame_map.setNbItems(nb_ports * nb_port_threads);
+	m_frame_map.setNbItems(nb_ports);
 
+	int idx = 0;
 	RecvList::iterator it, end = m_recv_list.end();
-	for (it = m_recv_list.begin(); it != end; ++it)
-		(*it)->setNbPorts(m_nb_recv_ports);
-
-	RecvPortList port_list = getRecvPortList();
-	for (int i = 0; i < getTotNbPorts(); ++i)
-		port_list[i]->setNbThreads(nb_port_threads);
+	for (it = m_recv_list.begin(); it != end; ++it, ++idx)
+		(*it)->setModelRecv(m_model->getRecv(idx));
 
 	setPixelDepth(m_pixel_depth);
 	setSettings(m_settings);
@@ -798,7 +793,7 @@ void Camera::prepareAcq()
 		AutoMutex l = lock();
 		m_frame_map.setBufferSize(nb_buffers);
 		m_frame_map.clear();
-		m_prev_ifa.clear();
+		m_prev_gfa.clear();
 		RecvList::iterator it, end = m_recv_list.end();
 		for (it = m_recv_list.begin(); it != end; ++it)
 			(*it)->prepareAcq();
@@ -850,14 +845,14 @@ bool Camera::checkLostPackets()
 {
 	DEB_MEMBER_FUNCT();
 
-	FrameArray ifa = m_frame_map.getItemFrameArray();
-	if (ifa != m_prev_ifa) {
-		m_prev_ifa = ifa;
+	FrameArray gfa = m_frame_map.getGroupFrameArray();
+	if (gfa != m_prev_gfa) {
+		m_prev_gfa = gfa;
 		return false;
 	}
 
-	FrameType last_frame = getLatestFrame(ifa);
-	if (getOldestFrame(ifa) == last_frame) {
+	FrameType last_frame = getLatestFrame(gfa);
+	if (getOldestFrame(gfa) == last_frame) {
 		DEB_RETURN() << DEB_VAR1(false);
 		return false;
 	}
@@ -874,21 +869,24 @@ bool Camera::checkLostPackets()
 		return true;
 	}
 
-	RecvPortList port_list = getRecvPortList();
-	int nb_ports = port_list.size();
-	IntList first_bad(nb_ports);
+	int nb_recv = m_recv_list.size();
+	IntList first_bad(nb_recv);
 	if (DEB_CHECK_ANY(DebTypeWarning)) {
-		for (int i = 0; i < nb_ports; ++i) 
-			first_bad[i] = port_list[i]->getNbBadFrames();
+		for (int i = 0; i < nb_recv; ++i) 
+			first_bad[i] = m_recv_list[i]->getNbBadFrames();
 	}
-	for (int i = 0; i < nb_ports; ++i) {
-		if (ifa[i] != last_frame)
-			port_list[i]->processFrame(last_frame, NULL, 0);
+	for (int i = 0; i < nb_recv; ++i) {
+		if (gfa[i] != last_frame) {
+			Receiver::PortList& l = m_recv_list[i]->m_port_list;
+			Receiver::PortList::iterator it, end = l.end();
+			for (it = l.begin(); it != end; ++it)
+				(*it)->processFrame(last_frame, NULL, 0);
+		}
 	}
 	if (DEB_CHECK_ANY(DebTypeWarning)) {
-		IntList last_bad(nb_ports);
-		for (int i = 0; i < nb_ports; ++i)
-			last_bad[i] = port_list[i]->getNbBadFrames();
+		IntList last_bad(nb_recv);
+		for (int i = 0; i < nb_recv; ++i)
+			last_bad[i] = m_recv_list[i]->getNbBadFrames();
 		IntList bfl;
 		getSortedBadFrameList(first_bad, last_bad, bfl);
 		DEB_WARNING() << "bad_frames=" << bfl.size() << ": " 
@@ -902,7 +900,7 @@ bool Camera::checkLostPackets()
 FrameType Camera::getLastReceivedFrame()
 {
 	DEB_MEMBER_FUNCT();
-	FrameType last_frame = m_frame_map.getLastItemFrame();
+	FrameType last_frame = m_frame_map.getLastGroupFrame();
 	DEB_RETURN() << DEB_VAR1(last_frame);
 	return last_frame;
 }
@@ -1102,20 +1100,20 @@ void Camera::getTolerateLostPackets(bool& tol_lost_packets)
 	DEB_RETURN() << DEB_VAR1(tol_lost_packets);
 }
 
-int Camera::getNbBadFrames(int port_idx)
+int Camera::getNbBadFrames(int recv_idx)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(port_idx);
-	if ((port_idx < -1) || (port_idx >= getTotNbPorts()))
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(port_idx);
+	DEB_PARAM() << DEB_VAR1(recv_idx);
+	if ((recv_idx < -1) || (recv_idx >= m_recv_list.size()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(recv_idx);
 	int nb_bad_frames;
-	if (port_idx == -1) {
+	if (recv_idx == -1) {
 		IntList bfl;
-		getBadFrameList(port_idx, bfl);
+		getBadFrameList(recv_idx, bfl);
 		nb_bad_frames = bfl.size();
 	} else {
-		Receiver::Port *port = getRecvPort(port_idx);
-		nb_bad_frames = port->getNbBadFrames();
+		Receiver *recv = m_recv_list[recv_idx];
+		nb_bad_frames = recv->getNbBadFrames();
 	}
 	DEB_RETURN() << DEB_VAR1(nb_bad_frames);
 	return nb_bad_frames;
@@ -1126,15 +1124,14 @@ void Camera::getSortedBadFrameList(IntList first_idx, IntList last_idx,
 {
 	bool all = first_idx.empty();
 	IntList bfl;
-	RecvPortList port_list = getRecvPortList();
-	RecvPortList::iterator it = port_list.begin();
-	int nb_ports = port_list.size();
-	for (int i = 0; i < nb_ports; ++i, ++it) {
-		Receiver::Port *port = *it;
+	RecvList::iterator it = m_recv_list.begin();
+	int nb_recvs = m_recv_list.size();
+	for (int i = 0; i < nb_recvs; ++i, ++it) {
+		Receiver *recv = *it;
 		int first = all ? 0 : first_idx[i];
-		int last = all ? port->getNbBadFrames() : last_idx[i];
+		int last = all ? recv->getNbBadFrames() : last_idx[i];
 		IntList l;
-		port->getBadFrameList(first, last, l);
+		recv->getBadFrameList(first, last, l);
 		bfl.insert(bfl.end(), l.begin(), l.end());
 	}
 	IntList::iterator first = bfl.begin();
@@ -1146,28 +1143,28 @@ void Camera::getSortedBadFrameList(IntList first_idx, IntList last_idx,
 	bad_frame_list.resize(bfl_end - bfl_begin);
 }
 
-void Camera::getBadFrameList(int port_idx, int first_idx, int last_idx, 
+void Camera::getBadFrameList(int recv_idx, int first_idx, int last_idx, 
 			     IntList& bad_frame_list)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR3(port_idx, first_idx, last_idx);
-	if ((port_idx < 0) || (port_idx >= getTotNbPorts()))
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(port_idx);
+	DEB_PARAM() << DEB_VAR3(recv_idx, first_idx, last_idx);
+	if ((recv_idx < 0) || (recv_idx >= m_recv_list.size()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(recv_idx);
 
-	Receiver::Port *port = getRecvPort(port_idx);
-	port->getBadFrameList(first_idx, last_idx, bad_frame_list);
+	Receiver *recv = m_recv_list[recv_idx];
+	recv->getBadFrameList(first_idx, last_idx, bad_frame_list);
 
 	DEB_RETURN() << DEB_VAR1(PrettyIntList(bad_frame_list));
 }
 
-void Camera::getBadFrameList(int port_idx, IntList& bad_frame_list)
+void Camera::getBadFrameList(int recv_idx, IntList& bad_frame_list)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(port_idx);
-	if (port_idx == -1)
+	DEB_PARAM() << DEB_VAR1(recv_idx);
+	if (recv_idx == -1)
 		getSortedBadFrameList(bad_frame_list);
 	else
-		getBadFrameList(port_idx, 0, getNbBadFrames(port_idx), 
+		getBadFrameList(recv_idx, 0, getNbBadFrames(recv_idx), 
 				bad_frame_list);
 }
 

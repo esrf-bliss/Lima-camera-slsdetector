@@ -65,7 +65,7 @@ class Eiger : public Model
 
 	Eiger(Camera *cam);
 	~Eiger();
-	
+
 	virtual void getFrameDim(FrameDim& frame_dim, bool raw = false);
 
 	virtual std::string getName();
@@ -114,8 +114,8 @@ class Eiger : public Model
 
 	virtual bool checkSettings(Settings settings);
 
-	virtual int getNbRecvPorts();
-	virtual Model::RecvPort *getRecvPort(int port_idx);
+	virtual int getNbRecvs();
+	virtual Model::Recv *getRecv(int recv_idx);
 
 	virtual void prepareAcq();
 
@@ -123,54 +123,86 @@ class Eiger : public Model
 	friend class Correction;
 	friend class CorrBase;
 
-	class RecvPort : public Model::RecvPort
+	typedef FrameMap::Mask Mask;
+
+	class Recv : public Model::Recv
 	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::RecvPort",
-				  "SlsDetector");
+		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Recv", "SlsDetector");
 	public:
-		RecvPort(Eiger *eiger, int recv_idx, int port);
+		class Port : public Model::Recv::Port
+		{
+			DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Recv::Port",
+					  "SlsDetector");
+		public:
+			Port(Recv *recv, int port);
+
+			void prepareAcq();
+			virtual void processFrame(FrameType frame, char *dptr,
+						  uint32_t dsize, char *bptr);
+
+		private:
+			friend class Recv;
+
+			void copy2LimaBuffer(char *dst, char *src,
+					     int thread_idx);
+
+			Recv *m_recv;
+			int m_recv_idx;
+			int m_port;
+			bool m_top_half_recv;
+			bool m_port_idx;
+			bool m_raw;
+			bool m_pixel_depth_4;
+			int m_slw;			// source line width
+			int m_dlw;			// dest line width
+			int m_scw;			// source chip width
+			int m_dcw;			// dest chip width
+			int m_pchips;
+			int m_copy_lines;
+			int m_spo;			// source port offset
+			int m_dpo;			// dest port offset
+			int m_sto;			// source thread offset
+			int m_dto;			// dest thread offset
+			int m_nb_buffers;
+			NumaSoftBufferAllocMgr m_buffer_alloc_mgr;
+			StdBufferCbMgr m_buffer_cb_mgr;
+		};
+		typedef std::vector<AutoPtr<Port> > PortList;
+
+		Recv(Eiger *eiger, int idx);
+
+		virtual int getNbPorts();
+		virtual Port *getPort(int port_idx);
 
 		void prepareAcq();
-		virtual void processRecvFileStart(uint32_t dsize);
-		virtual void processRecvPort(FrameType frame, char *dptr,
-					     uint32_t dsize, char *bptr);
-		virtual int getNbPortProcessingThreads();
-		virtual void processPortThread(FrameType frame, char *bptr,
-					       int thread_idx);
+		virtual void processFileStart(uint32_t dsize);
+
+		virtual int getNbProcessingThreads();
+		virtual void processThread(const FrameData& frame_data,
+					   char *bptr, int thread_idx);
 
 	private:
-		void copy2LimaBuffer(char *dst, char *src, int thread_idx);
-		void expandPixelDepth4(char *dst, char *src, int len4,
-				       int thread_idx);
+		struct ExpandData {
+			int nb_ports;
+			char *src[MaxFrameMapItemGroupSize];
+			char *dst;
+			int len4;
+			Mask valid;
+		};
+		void expandPixelDepth4(ExpandData& data, int thread_idx);
 
 		Eiger *m_eiger;
-		int m_port;
-		bool m_top_half_recv;
-		bool m_port_idx;
-		bool m_raw;
-		bool m_pixel_depth_4;
-		bool m_thread_proc;
-		int m_recv_idx;
+		int m_idx;
 		int m_nb_threads;
-		int m_slw;			// source line width
-		int m_dlw;			// dest line width
-		int m_scw;			// source chip width
-		int m_dcw;			// dest chip width
-		int m_pchips;
-		int m_copy_lines;
-		int m_spo;			// source port offset
-		int m_dpo;			// dest port offset
-		int m_sto;			// source thread offset
-		int m_dto;			// dest thread offset
-		int m_nb_buffers;
-		NumaSoftBufferAllocMgr m_buffer_alloc_mgr;
-		StdBufferCbMgr m_buffer_cb_mgr;
-		FrameType m_last_recv_frame;
-		FrameType m_last_proc_frame;
+		bool m_thread_proc;
+		volatile FrameType m_last_recv_frame;
+		volatile FrameType m_last_proc_frame;
 		bool m_overrun;
+		PortList m_port_list;
 	};
 
-	typedef std::vector<AutoPtr<RecvPort> > RecvPortList;
+	typedef std::vector<AutoPtr<Recv> > RecvList;
+
 
 	class CorrBase
 	{
@@ -216,7 +248,7 @@ class Eiger : public Model
 		};
 
 		Camera *m_cam;
-		int m_nb_ports;
+		int m_nb_recvs;
 		std::vector<BadFrameData> m_bfd_list;
 	};
 
@@ -243,7 +275,7 @@ class Eiger : public Model
 		ChipBorderCorr(Eiger *eiger)
 			: CorrBase(eiger)
 		{}
-		
+
 		virtual void prepareAcq()
 		{
 			CorrBase::prepareAcq();
@@ -388,7 +420,7 @@ class Eiger : public Model
 
 	FrameDim m_recv_frame_dim;
 	CorrList m_corr_list;
-	RecvPortList m_recv_port_list;
+	RecvList m_recv_list;
 	bool m_fixed_clock_div;
 	ClockDiv m_clock_div;
 	bool m_expand_4_in_threads;

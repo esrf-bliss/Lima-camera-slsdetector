@@ -98,8 +98,8 @@ class Eiger : public SlsDetector::Model
 
 	virtual bool checkSettings(SlsDetector::Defs::Settings settings);
 
-	virtual int getNbRecvPorts();
-	virtual SlsDetector::Model::RecvPort *getRecvPort(int port_idx);
+	virtual int getNbRecvs();
+	virtual SlsDetector::Model::Recv *getRecv(int recv_idx);
 
 	virtual void prepareAcq();
 };

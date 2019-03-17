@@ -25,80 +25,173 @@
 
 #include "SlsDetectorDefs.h"
 
-namespace lima 
+#include <queue>
+
+namespace lima
 {
 
 namespace SlsDetector
 {
+
+#define MaxFrameMapItemGroupSize	32
 
 class FrameMap
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "FrameMap", "SlsDetector");
 
  public:
+	typedef std::bitset<MaxFrameMapItemGroupSize> Mask;
+	struct FrameData {
+		int frame;
+		Mask valid;
+		FrameData()
+		{}
+		FrameData(int f, Mask v) : frame(f), valid(v)
+		{}
+	};
+	typedef std::vector<FrameData> FrameDataList;
+
+	struct FinishInfo {
+		FrameType first_lost;
+		int nb_lost;
+		SortedIntList finished;
+	};
+	typedef std::vector<FinishInfo> FinishInfoList;
+
 	class Item
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Item", "SlsDetector");
-	
-	public:
-		typedef std::pair<int, bool> FrameData;
-		typedef std::vector<FrameData> FrameDataList;
 
-		struct FinishInfo {
-			FrameType first_lost;
-			int nb_lost;
-			SortedIntList finished;
+	private:
+		class Follower;
+
+	public:
+		class Group
+		{
+			DEB_CLASS_NAMESPC(DebModCamera, "Item::Group",
+					  "SlsDetector");
+		public:
+			typedef std::vector<Item *> ItemList;
+
+			Group();
+			Group(Group&& o);
+			~Group();
+
+			void setItemList(const ItemList& item_list);
+
+			void clear();
+
+			FrameDataList pollFrameFinished();
+			FinishInfoList
+			getFrameFinishInfo(const FrameDataList& data_list);
+			void stopPollFrameFinished();
+
+			FrameType getLastFrame() const
+			{ return m_last_frame; }
+
+		private:
+			typedef std::vector<AutoPtr<Follower> > FollowerList;
+
+			void setFrameMap(FrameMap *map);
+
+			FrameMap *m_map;
+			volatile bool m_stopped;
+			FollowerList m_follower_list;
+			FrameType m_last_frame;
 		};
-		typedef std::vector<FinishInfo> FinishInfoList;
-	
+
 		Item();
+		Item(Item&& o);
 		~Item();
-	
+
 		void checkFinishedFrame(FrameType frame);
 		void frameFinished(FrameType frame, bool no_check, bool valid);
-		FrameDataList pollFrameFinished();
-		FinishInfoList getFrameFinishInfo(const FrameDataList&
-								  data_list);
-		void stopPollFrameFinished();
-	
+
+		FrameMap *getFrameMap()
+		{ return m_map; }
+
+		int getIndex()
+		{ return m_idx; }
+
 	private:
+		friend class Group;
 		friend class FrameMap;
-	
-		class FrameQueue 
+
+		class FrameQueue;
+
+		class Follower
+		{
+			DEB_CLASS_NAMESPC(DebModCamera, "Item::Follower",
+					  "SlsDetector");
+		public:
+			Follower();
+			Follower(Follower&& o);
+			~Follower();
+
+			void setGroup(Group *group, int idx);
+			void setItem(Item *item);
+
+			int getIndex()
+			{ return m_idx; }
+
+			bool empty()
+			{ return m_data_queue.empty(); }
+
+			void update();
+			void pop();
+			void clear();
+
+			FrameData& front()
+			{ return *m_next_data; }
+
+		private:
+			friend class FrameQueue;
+
+			typedef std::queue<FrameDataList> FrameDataQueue;
+
+			Group *m_group;
+			int m_idx;
+			Mask m_mask;
+			Item *m_item;
+			volatile int m_read_idx;
+			FrameDataQueue m_data_queue;
+			FrameDataList::iterator m_next_data;
+		};
+		typedef std::vector<Follower *> FollowerList;
+
+		class FrameQueue
 		{
 		public:
-			FrameQueue(int size = 1000);
+			FrameQueue(Item *item, int size = 1000);
 			void clear();
 			void push(FrameData data);
-			FrameDataList pop_all();
-			void stop();
-	
+			FrameDataList popAll(Follower *f);
+
 		private:
 			int index(int i)
 			{ return i % m_size; }
-	
+
 			FrameDataList m_array;
 			int m_size;
 			volatile int m_write_idx;
-			volatile int m_read_idx;
-			volatile bool m_stopped;
+			FollowerList *m_follower_list;
 		};
-	
+
 		friend bool SlsDetector::operator <(FrameData a, FrameData b);
-	
-		void setFrameMap(FrameMap *map);
+
+		void init(FrameMap *map, int idx);
 		void clear();
-	
+
 		FrameMap *m_map;
+		int m_idx;
+		FollowerList m_follower_list;
 		FrameQueue m_frame_queue;
 		FrameType m_last_pushed_frame;
-		FrameType m_last_frame;
 	};
 	typedef std::vector<Item> ItemList;
 
-	
 	FrameMap();
-		
+
 	void setNbItems(int nb_items);
 	void setBufferSize(int buffer_size);
 	void clear();
@@ -106,24 +199,29 @@ class FrameMap
 	Item& getItem(int item)
 	{ return m_item_list[item]; }
 
-	FrameArray getItemFrameArray() const;
+	FrameArray getGroupFrameArray() const;
 
-	FrameType getLastItemFrame() const
-	{ return getLatestFrame(getItemFrameArray()); }
+	FrameType getLastGroupFrame() const
+	{ return getLatestFrame(getGroupFrameArray()); }
 
 	FrameType getLastFinishedFrame() const
-	{ return getOldestFrame(getItemFrameArray()); }
+	{ return getOldestFrame(getGroupFrameArray()); }
+
+	int getNbItemGroups()
+	{ return m_group_list.size(); }
 
  private:
 	friend class Item;
 
+	typedef std::vector<Item::Group *> GroupList;
+
 	struct AtomicCounter {
 		int count;
 		Mutex mutex;
-	
+
 		void set(int reset)
 		{ count = reset; }
-	
+
 		bool dec_test_and_reset(int reset)
 		{
 			mutex.lock();
@@ -135,14 +233,16 @@ class FrameMap
 		}
 	};
 	typedef std::vector<AtomicCounter> CounterList;
-	
+
 	int m_nb_items;
 	int m_buffer_size;
 	CounterList m_frame_item_count_list;
 	ItemList m_item_list;
+	GroupList m_group_list;
 };
 
 std::ostream& operator <<(std::ostream& os, const FrameMap& m);
+
 
 } // namespace SlsDetector
 
