@@ -214,19 +214,21 @@ void Eiger::RecvPort::prepareAcq()
 
 	m_pixel_depth_4 = m_eiger->isPixelDepth4();
 	m_eiger->getCamera()->getRawMode(m_raw);
-	m_expand_4_in_threads = m_eiger->m_expand_4_in_threads;
-	m_thread_proc = (m_pixel_depth_4 && (m_expand_4_in_threads || !m_raw));
+	m_thread_proc = (m_pixel_depth_4 && m_eiger->m_expand_4_in_threads);
 
 	const FrameDim& frame_dim = m_eiger->m_recv_frame_dim;
 	const Size& size = frame_dim.getSize();
 	int depth = frame_dim.getDepth();
 	m_dlw = size.getWidth() * depth;
 	int recv_size = frame_dim.getMemSize();
-	m_port_offset = recv_size * m_recv_idx;	
+	m_spo = 0;
+	m_dpo = recv_size * m_recv_idx;	
 
 	m_pchips = HalfModuleChips / NbRecvPorts;
 	m_scw = ChipSize * depth;
 	m_dcw = m_scw;
+	if (m_pixel_depth_4)
+		m_scw /= 2;
 	m_slw = m_pchips * m_scw;
 
 	m_copy_lines = ChipSize;
@@ -241,59 +243,43 @@ void Eiger::RecvPort::prepareAcq()
 		m_buffer_alloc_mgr.setCPUAffinityMask(buffer_aff);
 		int nb_concat_frames = 8;
 		int nb_buffers = m_nb_buffers / nb_concat_frames;
-		int buff_slw = m_slw / (m_expand_4_in_threads ? 2 : 1);
-		FrameDim fdim(buff_slw, ChipSize, Bpp8);
+		FrameDim fdim(m_slw, ChipSize, Bpp8);
 		DEB_ALWAYS() << "Aux: " << DEB_VAR2(buffer_aff, fdim);
 		m_buffer_cb_mgr.allocBuffers(nb_buffers, nb_concat_frames, fdim);
 		m_copy_lines /= m_nb_threads;
 		m_sto = m_copy_lines * m_slw;
 		m_dto = m_copy_lines * m_dlw;
-		DEB_TRACE() << DEB_VAR3(m_copy_lines, m_sto, m_dto);
-
-		if (m_expand_4_in_threads && !m_raw) {
-			CPUAffinityList::const_iterator it;
-			it = r.port_threads.begin() + m_port * m_nb_threads;
-			CPUAffinityList l(it, it + m_nb_threads);
-			buffer_aff = CPUAffinityList_all(l);
-			m_expand_buffer.setCPUAffinityMask(buffer_aff);
-			int expand_len = fdim.getMemSize() * 2;
-			m_expand_buffer.alloc(expand_len);
-			DEB_ALWAYS() << "Expand: " << DEB_VAR2(buffer_aff,
-							      expand_len);
-		} else {
-			m_expand_buffer.release();
-		}
+		DEB_ALWAYS() << DEB_VAR3(m_copy_lines, m_sto, m_dto);
 
 		m_last_recv_frame = m_last_proc_frame = -1;
 		m_overrun = false;
 	} else {
 		m_buffer_cb_mgr.releaseBuffers();
-		m_expand_buffer.release();
 	}
 
 	if (m_raw) {
 		// vert. port concat.
-		m_port_offset += ChipSize * m_dlw * m_port;
+		m_dpo += ChipSize * m_dlw * m_port;
 		return;
 	} else {
 		// inter-chip horz. gap
 		m_dcw += ChipGap * depth;
 		// horz. port concat.
-		m_port_offset += m_pchips * m_dcw * m_port;
+		m_dpo += m_pchips * m_dcw * m_port;
 	}
 
 	int mod_idx = m_recv_idx / 2;
 	for (int i = 0; i < mod_idx; ++i)
-		m_port_offset += m_eiger->getInterModuleGap(i) * m_dlw;
+		m_dpo += m_eiger->getInterModuleGap(i) * m_dlw;
 
 	if (m_top_half_recv) {
 		// top-half module: vert-flipped data
-		m_port_offset += (ChipSize - 1) * m_dlw;
-		m_dlw *= -1;
-		m_dto *= -1;
+		m_spo += (ChipSize - 1) * m_slw;
+		m_slw *= -1;
+		m_sto *= -1;
 	} else {
 		// bottom-half module: inter-chip vert. gap
-		m_port_offset += (ChipGap / 2) * m_dlw;
+		m_dpo += (ChipGap / 2) * m_dlw;
 	}
 }
 
@@ -312,7 +298,7 @@ void Eiger::RecvPort::processRecvPort(FrameType frame, char *dptr,
 	bool valid_data = (dptr != NULL);
 	if (!m_thread_proc || !valid_data) {
 		if (m_pixel_depth_4 && valid_data)
-			expandPixelDepth4(bptr, dptr, dsize, true, 0);
+			expandPixelDepth4(bptr, dptr, dsize, 0);
 		else
 			copy2LimaBuffer(bptr, dptr, 0);
 		return;
@@ -331,69 +317,173 @@ void Eiger::RecvPort::processRecvPort(FrameType frame, char *dptr,
 	char *dest = (char *) m_buffer_cb_mgr.getFrameBufferPtr(frame);
 	const FrameDim& fdim = m_buffer_cb_mgr.getFrameDim();
 	int size = fdim.getMemSize();
-	if (!m_expand_4_in_threads)
-		expandPixelDepth4(dest, dptr, size / 2, false, 0);
-	else
-		memcpy(dest, dptr, size);
+	memcpy(dest, dptr, size);
 
 	m_last_recv_frame = frame;
 }
 
-void Eiger::RecvPort::expandPixelDepth4(char *dest, char *src, int len4,
-					bool dest_multi_ports, int thread_idx)
-{
-	DEB_MEMBER_FUNCT();
-
-	if (dest_multi_ports)
-		dest += m_port_offset;
-	src += m_sto / 2 * thread_idx;
-	dest += m_sto * thread_idx;
-
-	unsigned long s = (unsigned long) src;
-	unsigned long d = (unsigned long) dest;
-	if (((s & 15) != 0) || ((d & 15) != 0))
-		THROW_HW_ERROR(Error) << "Missaligned src/dest: "
-				      << DEB_VAR2(DEB_HEX(s), DEB_HEX(d));
-
-	int blk = sizeof(__m128i);
-	int nb_blocks = len4 / blk;
-	const __m128i *src128 = (const __m128i *) src;
-	__m128i *dest128 = (__m128i *) dest;
-	__m128i mask = _mm_set1_epi8(0xf);
-	for (int i = 0; i < nb_blocks; ++i) {
-		__m128i pack4_raw = _mm_load_si128(src128++);
-		__m128i pack4_shr = _mm_srli_epi16(pack4_raw, 4);
-		__m128i ilace8_0 = _mm_and_si128(pack4_raw, mask);
-		__m128i ilace8_1 = _mm_and_si128(pack4_shr, mask);
-		__m128i pack8_0 = _mm_unpacklo_epi8(ilace8_0, ilace8_1);
-		__m128i pack8_1 = _mm_unpackhi_epi8(ilace8_0, ilace8_1);
-		_mm_store_si128(dest128++, pack8_0);
-		_mm_store_si128(dest128++, pack8_1);
-	}
-
-	int read = nb_blocks * blk;
-	len4 -= read;
-	src += read;
-	dest += 2 * read;
-	while (len4-- > 0) {
-		unsigned char b = *src++;
-		*dest++ = b & 0xf;
-		*dest++ = b >> 4;
-	}
-}
-
-void Eiger::RecvPort::copy2LimaBuffer(char *dest, char *src, int thread_idx)
+void Eiger::RecvPort::expandPixelDepth4(char *dst, char *src, int len4,
+					int thread_idx)
 {
 	DEB_MEMBER_FUNCT();
 
 	bool valid_data = (src != NULL);
-	src += thread_idx * m_sto;
-	dest += m_port_offset + thread_idx * m_dto;
-	for (int i = 0; i < m_copy_lines; ++i, dest += m_dlw) {
-		char *d = dest;
-		for (int j = 0; j < m_pchips; ++j, src += m_scw, d += m_dcw)
+	src += m_spo + m_sto * thread_idx;
+	unsigned long s = (unsigned long) src;
+	if ((s & 15) != 0)
+		THROW_HW_ERROR(Error) << "Missaligned src: "
+				      << DEB_VAR1(DEB_HEX(s));
+	dst += m_dpo + m_dto * thread_idx;
+	unsigned long d = (unsigned long) dst;
+	int dest_misalign = (d & 15);
+	if (m_raw && dest_misalign)
+		THROW_HW_ERROR(Error) << "Missaligned dest: "
+				      << DEB_VAR1(DEB_HEX(d));
+ 	const int block_len = sizeof(__m128i);
+	int nb_blocks = len4 / block_len;
+	const int chip_blocks = ChipSize / 2 / block_len;
+	const int xfer_lines = m_raw ? ChipSize : 1;
+	const int port_blocks = chip_blocks * m_pchips * xfer_lines;
+	DEB_TRACE() << DEB_VAR3(nb_blocks, chip_blocks, port_blocks);
+	const __m128i *src128 = (const __m128i *) src;
+	__m128i *dst128 = (__m128i *) dst;
+	const __m128i m = _mm_set1_epi8(0xf);
+	int block_bits = block_len * 8;
+	int gap_bits = ChipGap * 8;
+	const __m128i block64_bits128 = _mm_set_epi64x(0, 64);
+	const __m128i gap_bits128 = _mm_set_epi64x(0, gap_bits);
+	int shift_l;
+	__m128i shift_l128, shift_r128;
+	__m128i m64_0 = _mm_set_epi64x(0, -1);
+	__m128i m64_1 = _mm_set_epi64x(-1, 0);
+ 	bool reverse = (m_slw < 0);
+	__m128i m0, prev;
+	int chip_count = 0;
+
+#define load_dst128()							\
+	do {								\
+		dest_misalign = ((unsigned long) dst & 15);		\
+		dst128 = (__m128i *) (dst - dest_misalign);		\
+		shift_l = dest_misalign * 8;				\
+		shift_l128 = _mm_set_epi64x(0, shift_l % 64);		\
+		shift_r128 = _mm_sub_epi64(block64_bits128, shift_l128); \
+		if (shift_l != 0) {					\
+			m0 = _mm_srl_epi64(_mm_set1_epi8(0xff), shift_r128); \
+			if (shift_l < 64)				\
+				m0 = _mm_and_si128(m0, m64_0);		\
+			prev = _mm_and_si128(_mm_load_si128(dst128), m0); \
+		} else {						\
+			prev = _mm_setzero_si128();			\
+		}							\
+	} while (0)
+
+#define pad_dst128()							\
+	do {								\
+		shift_l += gap_bits;					\
+		if (shift_l % 64 == 0)					\
+			shift_l128 = _mm_setzero_si128();		\
+		else							\
+			shift_l128 = _mm_add_epi64(shift_l128, gap_bits128); \
+		shift_r128 = _mm_sub_epi64(block64_bits128, shift_l128); \
+		if (shift_l == block_bits) {				\
+			_mm_store_si128(dst128++, prev);		\
+			prev = _mm_setzero_si128();			\
+			shift_l = 0;					\
+		}							\
+	} while (0)
+
+#define sync_dst128()							\
+	do {								\
+		if (shift_l != 0) {					\
+			m0 = _mm_sll_epi64(_mm_set1_epi8(0xff), shift_l128); \
+			if (shift_l >= 64)				\
+				m0 = _mm_and_si128(m0, m64_1);		\
+			__m128i a = _mm_and_si128(_mm_load_si128(dst128), m0); \
+			_mm_store_si128(dst128, _mm_or_si128(prev, a));	\
+		}							\
+	} while (0)
+
+	if (!m_raw)
+		load_dst128();
+	for (int i = 0; i < nb_blocks; ++i) {
+		if (i == 0)
+			DEB_TRACE() << DEB_VAR2(DEB_HEX((unsigned long) src128),
+						DEB_HEX((unsigned long) dst128));
+		if (!m_raw && i && (i % chip_blocks == 0) &&
+		    ((m_port == 0) || (++chip_count % m_pchips > 0)))
+			pad_dst128();
+		if (i && (i % port_blocks == 0)) {
+			if (reverse)
+				src128 -= 2 * port_blocks;
+			if (!m_raw)
+				sync_dst128();
+			dst += m_dlw;
+			if (!m_raw)
+				load_dst128();
+			else
+				dst128 = (__m128i *) dst;
+		}
+		__m128i p4_raw;
+		if (valid_data)
+			p4_raw = _mm_load_si128(src128);
+		else
+			p4_raw = _mm_set1_epi8(0xff);
+		++src128;
+		__m128i p4_shr = _mm_srli_epi16(p4_raw, 4);
+		__m128i i8_0 = _mm_and_si128(p4_raw, m);
+		__m128i i8_1 = _mm_and_si128(p4_shr, m);
+		__m128i p8_0 = _mm_unpacklo_epi8(i8_0, i8_1);
+		__m128i p8_1 = _mm_unpackhi_epi8(i8_0, i8_1);
+		if (m_raw) {
+			_mm_store_si128(dst128++, p8_0);
+			_mm_store_si128(dst128++, p8_1);
+			continue;
+		}
+		__m128i p8_0l = _mm_sll_epi64(p8_0, shift_l128);
+		__m128i p8_0r = _mm_srl_epi64(p8_0, shift_r128);
+		__m128i p8_1l = _mm_sll_epi64(p8_1, shift_l128);
+		__m128i p8_1r = _mm_srl_epi64(p8_1, shift_r128);
+		__m128i d0, d1, d2, d3, d4;
+		if (shift_l < 64) {
+			d0 = p8_0l;
+			d1 = p8_0r;
+			d2 = p8_1l;
+			d3 = p8_1r;
+			d4 = _mm_setzero_si128();
+		} else {
+			d0 = _mm_setzero_si128();
+			d1 = p8_0l;
+			d2 = p8_0r;
+			d3 = p8_1l;
+			d4 = p8_1r;
+		}
+		__m128i d10 = _mm_slli_si128(d1, 8);
+		__m128i d11 = _mm_srli_si128(d1, 8);
+		__m128i d30 = _mm_slli_si128(d3, 8);
+		__m128i d31 = _mm_srli_si128(d3, 8);
+		prev = _mm_or_si128(prev, d0);
+		_mm_store_si128(dst128++, _mm_or_si128(prev, d10));
+		prev = _mm_or_si128(d11, d2);
+		_mm_store_si128(dst128++, _mm_or_si128(prev, d30));
+		prev = _mm_or_si128(d31, d4);
+	}
+	if (!m_raw)
+		sync_dst128();
+}
+
+void Eiger::RecvPort::copy2LimaBuffer(char *dst, char *src, int thread_idx)
+{
+	DEB_MEMBER_FUNCT();
+
+	bool valid_data = (src != NULL);
+	src += m_spo + thread_idx * m_sto;
+	dst += m_dpo + thread_idx * m_dto;
+	for (int i = 0; i < m_copy_lines; ++i, src += m_slw, dst += m_dlw) {
+		char *s = src;
+		char *d = dst;
+		for (int j = 0; j < m_pchips; ++j, s += m_scw, d += m_dcw)
 			if (valid_data)
-				memcpy(d, src, m_scw);
+				memcpy(d, s, m_scw);
 			else
 				memset(d, 0xff, m_scw);
 	}
@@ -417,17 +507,10 @@ void Eiger::RecvPort::processPortThread(FrameType frame, char *bptr,
 		return;
 
 	char *dptr = (char *) m_buffer_cb_mgr.getFrameBufferPtr(frame);
-	if (m_expand_4_in_threads) {
-		const FrameDim& fdim = m_buffer_cb_mgr.getFrameDim();
-		int size = fdim.getMemSize() / m_nb_threads;
-		char *dest = m_raw ? bptr : (char *) m_expand_buffer.getPtr();
-		expandPixelDepth4(dest, dptr, size, m_raw, thread_idx);
-		if (m_raw)
-			return;
-		dptr = dest;
-	}
+	const FrameDim& fdim = m_buffer_cb_mgr.getFrameDim();
+	int size = fdim.getMemSize() / m_nb_threads;
+	expandPixelDepth4(bptr, dptr, size, thread_idx);
 
-	copy2LimaBuffer(bptr, dptr, thread_idx);
 	// This is not perfect, but should more or less work
 	m_last_proc_frame = frame;
 }

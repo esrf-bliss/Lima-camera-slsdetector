@@ -139,9 +139,9 @@ class Eiger : public Model
 					       int thread_idx);
 
 	private:
-		void copy2LimaBuffer(char *dest, char *src, int thread_idx);
-		void expandPixelDepth4(char *dest, char *src, int len4,
-				       bool dest_multi_ports, int thread_idx);
+		void copy2LimaBuffer(char *dst, char *src, int thread_idx);
+		void expandPixelDepth4(char *dst, char *src, int len4,
+				       int thread_idx);
 
 		Eiger *m_eiger;
 		int m_port;
@@ -150,9 +150,7 @@ class Eiger : public Model
 		bool m_raw;
 		bool m_pixel_depth_4;
 		bool m_thread_proc;
-		bool m_expand_4_in_threads;
 		int m_recv_idx;
-		int m_port_offset;
 		int m_nb_threads;
 		int m_slw;			// source line width
 		int m_dlw;			// dest line width
@@ -160,11 +158,12 @@ class Eiger : public Model
 		int m_dcw;			// dest chip width
 		int m_pchips;
 		int m_copy_lines;
+		int m_spo;			// source port offset
+		int m_dpo;			// dest port offset
 		int m_sto;			// source thread offset
 		int m_dto;			// dest thread offset
 		int m_nb_buffers;
 		NumaSoftBufferAllocMgr m_buffer_alloc_mgr;
-		MemBuffer m_expand_buffer;
 		StdBufferCbMgr m_buffer_cb_mgr;
 		FrameType m_last_recv_frame;
 		FrameType m_last_proc_frame;
