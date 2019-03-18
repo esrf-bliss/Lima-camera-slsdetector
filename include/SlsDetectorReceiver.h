@@ -23,6 +23,7 @@
 #ifndef __SLS_DETECTOR_RECEIVER_H
 #define __SLS_DETECTOR_RECEIVER_H
 
+#include "SlsDetectorFrameMap.h"
 #include "SlsDetectorModel.h"
 #include "SlsDetectorCPUAffinity.h"
 #include "slsReceiverUsers.h"

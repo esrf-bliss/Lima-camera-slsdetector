@@ -359,21 +359,6 @@ struct SimpleStat {
 };
 
 
-class FrameMap
-{
-public:
-	void setNbItems(int nb_items);
-	void setBufferSize(int buffer_size);
-	void clear();
-
-	unsigned long getLastItemFrame() const;
-	unsigned long getLastFinishedFrame() const;
-
-private:
-	FrameMap();
-};
-
-
 struct Stats {
 	SlsDetector::SimpleStat cb_period;
 	SlsDetector::SimpleStat new_finish;
