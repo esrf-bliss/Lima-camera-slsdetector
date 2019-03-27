@@ -160,9 +160,11 @@ void TestApp::run()
 
 		FrameDim frame_dim;
 		m_cam->getFrameDim(frame_dim);
-		int max_buffers = m_buffer_mgr->getMaxNbBuffers(frame_dim, 1);
+		m_buffer_ctrl_obj->setFrameDim(frame_dim);
+		int max_buffers;
+		m_buffer_ctrl_obj->getMaxNbBuffers(max_buffers);
 		int nb_buffers = min(m_pars.nb_frames, max_buffers);
-		m_buffer_mgr->allocBuffers(nb_buffers, 1, frame_dim);
+		m_buffer_ctrl_obj->setNbBuffers(nb_buffers);
 
 		m_cam->prepareAcq();
 		m_last_msg_timestamp = Timestamp::now();
@@ -211,14 +213,15 @@ bool TestApp::newFrameReady(const HwFrameInfoType& frame_info)
 void TestApp::save_raw_data(int start_frame, int nb_frames)
 {
 	DEB_MEMBER_FUNCT();
-	FrameDim frame_dim = m_buffer_mgr->getFrameDim();
+	FrameDim frame_dim;
+	m_buffer_ctrl_obj->getFrameDim(frame_dim);
 
 	for (int i = 0; i < nb_frames; ++i) {
 		ostringstream os;
 		os << m_pars.out_dir << "/eiger.bin." << i;
 		DEB_TRACE() << "Saving raw to " << os.str();
 		ofstream of(os.str().c_str());
-		void *buffer = m_buffer_mgr->getFrameBufferPtr(start_frame + i);
+		void *buffer = m_buffer_ctrl_obj->getFramePtr(start_frame + i);
 		of.write(static_cast<char *>(buffer), frame_dim.getMemSize());
 	}
 }
@@ -237,7 +240,8 @@ void TestApp::save_edf_data(int start_frame, int nb_frames)
 void TestApp::save_edf_frame(ofstream& of, int acq_idx, int edf_idx)
 {
 	DEB_MEMBER_FUNCT();
-	FrameDim frame_dim = m_buffer_mgr->getFrameDim();
+	FrameDim frame_dim;
+	m_buffer_ctrl_obj->getFrameDim(frame_dim);
 	Size frame_size = frame_dim.getSize();
 	int image_bytes = frame_dim.getMemSize();
 	
@@ -262,7 +266,7 @@ void TestApp::save_edf_frame(ofstream& of, int acq_idx, int edf_idx)
 	os << string(rem, '\n') << "}" << endl;
 	of << os.str();
 
-	void *buffer = m_buffer_mgr->getFrameBufferPtr(acq_idx);
+	void *buffer = m_buffer_ctrl_obj->getFramePtr(acq_idx);
 	of.write(static_cast<char *>(buffer), image_bytes);
 }
 

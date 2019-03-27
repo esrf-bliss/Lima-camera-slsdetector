@@ -1104,7 +1104,7 @@ int Camera::getNbBadFrames(int recv_idx)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(recv_idx);
-	if ((recv_idx < -1) || (recv_idx >= m_recv_list.size()))
+	if ((recv_idx < -1) || (recv_idx >= int(m_recv_list.size())))
 		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(recv_idx);
 	int nb_bad_frames;
 	if (recv_idx == -1) {
