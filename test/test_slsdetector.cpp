@@ -137,10 +137,9 @@ TestApp::TestApp(int argc, char *argv[])
 	DebParams::enableTypeFlags(m_pars.debug_type_flags);
 
 	m_cam = new Camera(m_pars.config_fname);
-	m_alloc_mgr = new SoftBufferAllocMgr();
-	m_buffer_mgr = new StdBufferCbMgr(*m_alloc_mgr);
-	m_buffer_mgr->registerFrameCallback(m_cb);
-	m_cam->setBufferCbMgr(m_buffer_mgr);
+	m_buffer_ctrl_obj = new NumaSoftBufferCtrlObj();
+	m_buffer_ctrl_obj->registerFrameCallback(m_cb);
+	m_cam->setBufferCtrlObj(m_buffer_ctrl_obj);
 
 	Type det_type = m_cam->getType();
 	if (det_type != EigerDet)

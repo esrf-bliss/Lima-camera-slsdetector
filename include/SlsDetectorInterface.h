@@ -183,7 +183,7 @@ class Interface : public HwInterface
 
 	CapList m_cap_list;
 	DetInfoCtrlObj m_det_info;
-	SoftBufferCtrlObj  m_buffer;
+	NumaSoftBufferCtrlObj  m_buffer;
 	SyncCtrlObj m_sync;
 	EventCtrlObj m_event;
 
