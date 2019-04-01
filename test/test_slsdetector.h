@@ -156,8 +156,7 @@ class TestApp
 	void save_edf_frame(ofstream& of, int acq_idx, int edf_idx);
 
 	Pars m_pars;
-	AutoPtr<SoftBufferAllocMgr> m_alloc_mgr;
-	AutoPtr<StdBufferCbMgr> m_buffer_mgr;
+	AutoPtr<NumaSoftBufferCtrlObj> m_buffer_ctrl_obj;
 	AutoPtr<Camera> m_cam;
 	AutoPtr<Model> m_model;
 	AcqState m_state;
