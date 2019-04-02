@@ -651,7 +651,7 @@ void Eiger::Recv::Port::processFrame(FrameType frame, char *dptr,
 }
 
 Eiger::Recv::Recv(Eiger *eiger, int idx)
-	: m_eiger(eiger), m_idx(idx), m_nb_proc_threads(2)
+	: m_eiger(eiger), m_idx(idx), m_nb_proc_threads(4)
 {
 	DEB_CONSTRUCTOR();
 	DEB_PARAM() << DEB_VAR1(m_idx);
