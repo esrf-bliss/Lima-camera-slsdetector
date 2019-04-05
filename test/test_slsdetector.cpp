@@ -199,11 +199,11 @@ bool TestApp::newFrameReady(const HwFrameInfoType& frame_info)
 	Timestamp timestamp = Timestamp::now();
 	if (timestamp - m_last_msg_timestamp > WAIT_SLEEP_TIME) {
 		int frames_caught = m_cam->getFramesCaught();
-		const FrameMap& frame_map = m_cam->getFrameMap();
-		int finished_frames = frame_map.getLastFinishedFrame() + 1;
+		FrameMap *frame_map = m_cam->getFrameMap();
+		int finished_frames = frame_map->getLastFinishedFrame() + 1;
 		DEB_ALWAYS() << DEB_VAR3(frame_info.acq_frame_nb, 
 					 frames_caught, finished_frames);
-		DEB_PARAM() << DEB_VAR1(frame_map);
+		DEB_PARAM() << DEB_VAR1(*frame_map);
 		m_last_msg_timestamp = timestamp;
 	}
 

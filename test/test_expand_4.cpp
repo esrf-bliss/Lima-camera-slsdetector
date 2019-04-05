@@ -78,7 +78,6 @@ void test_expand_4(bool raw)
 			data.valid.set(j);
 		}
 		data.dst = (char *) dst_buffer.getPtr();
-		data.len4 = nb_recv_ports * src_size;
 		recv->expandPixelDepth4(data, thread_idx);
 		cout << "Recv #" << i << endl;
 		cout << setfill('0') << setbase(16);

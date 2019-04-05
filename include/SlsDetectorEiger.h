@@ -36,7 +36,8 @@ namespace SlsDetector
 
 #define EIGER_PACKET_DATA_LEN	(4 * 1024)
 
-#define MaxEigerNbPorts MaxFrameMapItemGroupSize
+#define MaxEigerNbPorts		32
+#define MaxEigerNbThreads	32
 
 class Eiger : public Model
 {
@@ -48,6 +49,8 @@ class Eiger : public Model
 	typedef unsigned int Long;
 
 	typedef Defs::ClockDiv ClockDiv;
+
+	typedef std::vector<int> ThreadBalance;
 
 	enum ParallelMode {
 		NonParallel, Parallel, Safe,
@@ -70,7 +73,7 @@ class Eiger : public Model
 		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Geometry",
 				  "SlsDetector");
 	public:
-		typedef FrameMap::Mask Mask;
+		typedef std::bitset<MaxEigerNbPorts> Mask;
 
 		class Recv
 		{
@@ -82,7 +85,6 @@ class Eiger : public Model
 			struct Expand4Data {
 				char *src[MaxEigerNbPorts];
 				char *dst;
-				int len4;
 				Mask valid;
 			};
 
@@ -107,7 +109,8 @@ class Eiger : public Model
 					int cw;		// chip width
 					int lw;		// line width
 					int po;		// port offset
-					int to;		// thread offset
+							// thread offset
+					int to[MaxEigerNbThreads];
 				};
 
 				Recv *m_recv;
@@ -121,6 +124,10 @@ class Eiger : public Model
 				CalcData m_dst;
 				int m_pchips;
 				int m_copy_lines;
+				int m_raw_port_blocks;
+				int m_port_blocks[MaxEigerNbThreads];
+				int m_first_port[MaxEigerNbThreads];
+				int m_len4[MaxEigerNbThreads];
 			};
 			typedef std::vector<AutoPtr<Port> > PortList;
 
@@ -132,11 +139,17 @@ class Eiger : public Model
 			void setThreadProcessing(bool thread_proc)
 			{ m_thread_proc = thread_proc; }
 			void setNbProcessingThreads(int nb_proc_threads)
-			{ m_nb_proc_threads = nb_proc_threads; }
-			
+			{
+				if (nb_proc_threads != m_nb_proc_threads)
+					m_thread_bal.clear();
+				m_nb_proc_threads = nb_proc_threads;
+			}
+			void setThreadBalance(const ThreadBalance& thread_bal)
+			{ m_thread_bal = thread_bal; }
+
 			void prepareAcq();
 
-			void expandPixelDepth4(Expand4Data& data,
+			void expandPixelDepth4(const Expand4Data& data,
 					       int thread_idx);
 		private:
 			friend class Port;
@@ -147,6 +160,7 @@ class Eiger : public Model
 			PortList m_port_list;
 			int m_nb_proc_threads;
 			bool m_thread_proc;
+			ThreadBalance m_thread_bal;
 		};
 		typedef std::vector<AutoPtr<Recv> > RecvList;
 
@@ -241,10 +255,12 @@ class Eiger : public Model
 	void setThresholdEnergy(int  thres);
 	void getThresholdEnergy(int& thres);
 
-	void setExpand4InThreads(bool  expand_4_in_threads);
-	void getExpand4InThreads(bool& expand_4_in_threads);
-
  protected:
+	virtual int getNbFrameMapItems();
+	virtual void updateFrameMapItems(FrameMap *map);
+	virtual void processBadItemFrame(FrameType frame, int item,
+					 char *bptr);
+
 	virtual void updateImageSize();
 
 	virtual bool checkSettings(Settings settings);
@@ -253,6 +269,8 @@ class Eiger : public Model
 	virtual Model::Recv *getRecv(int recv_idx);
 
 	virtual void prepareAcq();
+	virtual void startAcq();
+	virtual void stopAcq();
 
  private:
 	friend class Correction;
@@ -262,6 +280,8 @@ class Eiger : public Model
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Recv", "SlsDetector");
 	public:
+		typedef Geometry::Recv::Expand4Data Expand4Data;
+
 		class Port : public Model::Recv::Port
 		{
 			DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Recv::Port",
@@ -269,7 +289,45 @@ class Eiger : public Model
 		public:
 			Port(Recv *recv, int port);
 
+			struct Sync {
+				Recv *recv;
+				int port;
+				FrameType frame;
+				char *src;
+				char *dst;
+				bool waiting, stopped;
+
+				Sync(Recv *r, int p) : recv(r), port(p)
+				{}
+
+				void prepareAcq()
+				{
+					waiting = stopped = false;
+					frame = -1;
+				}
+
+				void processFrame(FrameType f, char *s, char *d)
+				{
+					frame = f;
+					src = s;
+					dst = d;
+					waiting = true;
+					AutoMutex l = recv->lockPort(false);
+					recv->updatePortFrame(this, l);
+					while (waiting && !stopped)
+						recv->waitPort();
+				}
+
+				void stopAcq()
+				{
+					AutoMutex l = recv->lockPort();
+					stopped = true;
+					recv->broadcastPort();
+				}
+			};
+
 			void prepareAcq();
+			void stopAcq();
 			virtual void processFrame(FrameType frame, char *dptr,
 						  uint32_t dsize, char *bptr);
 
@@ -278,10 +336,8 @@ class Eiger : public Model
 
 			Recv *m_recv;
 			int m_port;
+			Sync m_sync;
 			Geometry::Recv::Port *m_geom;
-			int m_nb_buffers;
-			NumaSoftBufferAllocMgr m_buffer_alloc_mgr;
-			StdBufferCbMgr m_buffer_cb_mgr;
 		};
 		typedef std::vector<AutoPtr<Port> > PortList;
 
@@ -291,22 +347,80 @@ class Eiger : public Model
 		virtual Port *getPort(int port_idx);
 
 		void prepareAcq();
+		void startAcq();
+		void stopAcq();
+
 		virtual void processFileStart(uint32_t dsize);
 
 		virtual int getNbProcessingThreads();
-		virtual void processThread(const FrameData& frame_data,
-					   char *bptr, int thread_idx);
+		virtual void setNbProcessingThreads(int nb_proc_threads);
+		virtual pid_t getThreadID(int thread_idx)
+		{ return m_thread_list[thread_idx]->getThreadID(); }
+
+		void updateFrameMapItem(FrameMap::Item *item)
+		{ m_frame_map_item = item; }
 
 	private:
+		friend class Port::Sync;
+
+		class Thread : public lima::Thread
+		{
+			DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Recv::Thread",
+					  "SlsDetector");
+		public:
+			virtual ~Thread();
+
+			void init(Recv *recv, int idx);
+
+			void addNewFrame(const Expand4Data& data)
+			{
+				AutoMutex l = lockThread();
+				m_data = &data;
+				signalThread();
+			}
+
+		protected:
+			virtual void start();
+			virtual void threadFunction();
+
+		private:
+			AutoMutex lockThread()
+			{ return AutoMutex(m_cond.mutex()); }
+			void waitThread()
+			{ m_cond.wait(); }
+			void signalThread()
+			{ m_cond.signal(); }
+
+			Recv *m_recv;
+			int m_idx;
+			bool m_end;
+			Cond m_cond;
+			const Expand4Data *m_data;
+		};
+		typedef std::vector<AutoPtr<Thread> > ThreadList;
+
+		AutoMutex lockPort(bool locked=true)
+		{ return AutoMutex(m_cond.mutex(), (locked ? AutoMutex::Locked :
+						    AutoMutex::UnLocked)); }
+		void broadcastPort()
+		{ m_cond.broadcast(); }
+		void waitPort()
+		{ m_cond.wait(); }
+
+		void updatePortFrame(Port::Sync *sync, AutoMutex& pl);
+		void updateProcessingFrame(AutoMutex& tl);
+
 		Eiger *m_eiger;
 		int m_idx;
+		Cond m_cond;
 		Geometry::Recv *m_geom;
-		int m_nb_proc_threads;
+		FrameType m_frame;
+		int m_nb_ready_threads;
+		Geometry::Recv::Expand4Data m_expand_data;
 		bool m_thread_proc;
-		volatile FrameType m_last_recv_frame;
-		volatile FrameType m_last_proc_frame;
-		bool m_overrun;
+		ThreadList m_thread_list;
 		PortList m_port_list;
+		FrameMap::Item *m_frame_map_item;
 	};
 
 	typedef std::vector<AutoPtr<Recv> > RecvList;
@@ -526,7 +640,6 @@ class Eiger : public Model
 	RecvList m_recv_list;
 	bool m_fixed_clock_div;
 	ClockDiv m_clock_div;
-	bool m_expand_4_in_threads;
 };
 
 std::ostream& operator <<(std::ostream& os, Eiger::ParallelMode mode);

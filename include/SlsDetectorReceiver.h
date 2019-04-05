@@ -52,32 +52,8 @@ public:
 
 	void setCPUAffinity(const RecvCPUAffinity& recv_affinity);
 
-	void setNbThreads(int nb_threads);
-	int getNbThreads();
-
-	pid_t getThreadID(int thread_idx)
-	{ return m_thread_list[thread_idx]->getThreadID(); }
-
-	bool isBadFrame(FrameType frame)
-	{ return m_thread_list[0]->isBadFrame(frame); }
-
-	int getNbBadFrames()
-	{ return m_thread_list[0]->getNbBadFrames(); }
-	
-	void getBadFrameList(int first_idx, int last_idx, IntList& bfl)
-	{ return m_thread_list[0]->getBadFrameList(first_idx, last_idx, bfl); }
-
 private:
 	friend class Camera;
-
-	typedef FrameMap::Item::Group ItemGroup;
-	typedef ItemGroup::ItemList ItemList;
-
-	typedef FrameMap::FrameData FrameData;
-	typedef FrameMap::FrameDataList FrameDataList;
-	typedef FrameMap::FinishInfo FinishInfo;
-	typedef FrameMap::FinishInfoList FinishInfoList;
-	typedef std::vector<FinishInfo> FinishInfoArray;
 
 	class Port 
 	{
@@ -99,8 +75,6 @@ private:
 
 		void prepareAcq();
 
-		void processFrame(FrameType frame, char *dptr, uint32_t dsize);
-
 		Stats& getStats()
 		{ return m_stats; }
 
@@ -113,45 +87,9 @@ private:
 		Camera *m_cam;
 		int m_port_idx;
 		Model::Recv::Port *m_model_port;
-		FrameMap::Item *m_frame_map_item;
 		Stats m_stats;
 	};
 	typedef std::vector<AutoPtr<Port> > PortList;
-
-	class Thread : public lima::Thread
-	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Receiver::Thread", 
-				  "SlsDetector");
-	public:
-		virtual ~Thread();
-
-		void init(Receiver *recv, int idx, const ItemList& item_list);
-
-		bool isBadFrame(FrameType frame);
-		int getNbBadFrames();
-		void getBadFrameList(int first_idx, int last_idx, IntList& bfl);
-
-	protected:
-		virtual void start();
-		virtual void threadFunction();
-
-	private:
-		void pollFrameFinished();
-		void processFinishInfo(const FinishInfo& finfo);
-
-		AutoMutex lock()
-		{ return m_mutex; }
-
-		void reportException(Exception& e, string msg);
-
-		Receiver *m_recv;
-		int m_idx;
-		Mutex m_mutex;
-		volatile bool m_end;
-		ItemGroup m_item_group;
-		IntList m_bad_frame_list;
-	};
-	typedef std::vector<AutoPtr<Thread> > ThreadList;
 
 	static int fileStartCallback(char *fpath, char *fname, 
 				     FrameType fidx, uint32_t dsize, 
@@ -186,29 +124,7 @@ private:
 	AutoPtr<slsReceiverUsers> m_recv;
 	Model::Recv *m_model_recv;
 	PortList m_port_list;
-	ThreadList m_thread_list;
 }; 
-
-inline bool Receiver::Thread::isBadFrame(FrameType frame)
-{ 
-	AutoMutex l = lock();
-	IntList::iterator end = m_bad_frame_list.end();
-	return (find(m_bad_frame_list.begin(), end, frame) != end); 
-}
-
-inline int Receiver::Thread::getNbBadFrames()
-{
-	AutoMutex l = lock();
-	return m_bad_frame_list.size();
-}
-	
-inline void Receiver::Thread::getBadFrameList(int first_idx, int last_idx,
-					      IntList& bfl)
-{
-	AutoMutex l = lock();
-	IntList::const_iterator b = m_bad_frame_list.begin();
-	bfl.assign(b + first_idx, b + last_idx);
-}
 
 
 } // namespace SlsDetector

@@ -124,8 +124,6 @@ class SlsDetector(PyTango.Device_4Impl):
             self.model.setThresholdEnergy(self.threshold_energy)
 
         self.cam.setTolerateLostPackets(self.tolerate_lost_packets)
-        self.model.setExpand4InThreads(self.expand_4_in_threads)
-        deb.Always("expand_4_in_threads: %s" % self.model.getExpand4InThreads())
         aff_arr = self.pixel_depth_cpu_affinity_map
         if aff_arr:
             aff_str = ' '.join(aff_arr)
@@ -516,18 +514,15 @@ class SlsDetectorClass(PyTango.DeviceClass):
          "Default PixelDepthCPUAffinityMap as Python string(s) defining a dict: "
          "{<pixel_depth>: <global_affinity>}, being global_affinity a tuple: "
          "(<recv_list>, <lima>, <other>, <netdev_grp_list>), where recv_list "
-         "is a list of tupples in the form: (<port_1>, <port_2>), where portX "
-         "is a tupple: (<listener>, <writer>, <recv_threads>) where listener "
-         "and writer are affinities and recv_threads a tuple of affinities, "
-         "lima and and other are affinities, and netdev_grp_list is a list of "
-         "tuples in the form: "
+         "is a list of tupples in the form: "
+         "((<port_1>, <port_2>), <recv_threads>), where portX is a tupple: "
+         "(<listener>, <writer>), being listener and writer are affinities, "
+         "recv_threads a tuple of affinities, lima and other are "
+         "affinities, and netdev_grp_list is a list of tuples in the form: "
          "(<comma_separated_netdev_name_list>, <rx_queue_affinity_map>), the "
          "latter in the form of: {<queue>: (<irq>, <processing>)}. "
          "Each affinity can be expressed by one of the functions: Mask(mask) "
          "or CPU(<cpu1>[, ..., <cpuN>]) for independent CPU enumeration", []],
-        'expand_4_in_threads':
-        [PyTango.DevBoolean,
-         "Expand 4-to-8 bit in threads", True],
         }
 
     cmd_list = {

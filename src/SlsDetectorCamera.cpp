@@ -256,9 +256,11 @@ void Camera::AcqThread::cleanUp()
 void Camera::AcqThread::startAcq()
 {
 	DEB_MEMBER_FUNCT();
-	DEB_TRACE() << "calling startReceiver";
 	slsDetectorUsers *det = m_cam->m_det;
+	DEB_TRACE() << "calling startReceiver";
 	det->startReceiver();
+	DEB_TRACE() << "calling Model::startAcq";
+	m_cam->m_model->startAcq();
 	DEB_TRACE() << "calling startAcquisition";
 	det->startAcquisition();
 }
@@ -276,6 +278,8 @@ void Camera::AcqThread::stopAcq()
 		double milli_sec = (Timestamp::now() - t0) * 1e3;
 		DEB_TRACE() << "Abort -> Idle: " << DEB_VAR1(milli_sec);
 	}
+	DEB_TRACE() << "calling Model::stopAcq";
+	m_cam->m_model->stopAcq();
 	DEB_TRACE() << "calling stopReceiver";
 	det->stopReceiver();
 }
@@ -294,6 +298,7 @@ Camera::AcqThread::Status Camera::AcqThread::newFrameReady(FrameType frame)
 
 Camera::Camera(string config_fname) 
 	: m_model(NULL),
+	  m_frame_map(this),
 	  m_recv_fifo_depth(1000),
 	  m_lima_nb_frames(1),
 	  m_det_nb_frames(1),
@@ -398,8 +403,9 @@ void Camera::setModel(Model *model)
 		return;
 
 	m_nb_recv_ports = m_model->getNbRecvPorts();
-	int nb_ports = getTotNbPorts();
-	m_frame_map.setNbItems(nb_ports);
+	int nb_items = m_model->getNbFrameMapItems();
+	m_frame_map.setNbItems(nb_items);
+	m_model->updateFrameMapItems(&m_frame_map);
 
 	int idx = 0;
 	RecvList::iterator it, end = m_recv_list.end();
@@ -793,7 +799,7 @@ void Camera::prepareAcq()
 		AutoMutex l = lock();
 		m_frame_map.setBufferSize(nb_buffers);
 		m_frame_map.clear();
-		m_prev_gfa.clear();
+		m_prev_ifa.clear();
 		RecvList::iterator it, end = m_recv_list.end();
 		for (it = m_recv_list.begin(); it != end; ++it)
 			(*it)->prepareAcq();
@@ -845,14 +851,14 @@ bool Camera::checkLostPackets()
 {
 	DEB_MEMBER_FUNCT();
 
-	FrameArray gfa = m_frame_map.getGroupFrameArray();
-	if (gfa != m_prev_gfa) {
-		m_prev_gfa = gfa;
+	FrameArray ifa = m_frame_map.getItemFrameArray();
+	if (ifa != m_prev_ifa) {
+		m_prev_ifa = ifa;
 		return false;
 	}
 
-	FrameType last_frame = getLatestFrame(gfa);
-	if (getOldestFrame(gfa) == last_frame) {
+	FrameType last_frame = getLatestFrame(ifa);
+	if (getOldestFrame(ifa) == last_frame) {
 		DEB_RETURN() << DEB_VAR1(false);
 		return false;
 	}
@@ -869,24 +875,24 @@ bool Camera::checkLostPackets()
 		return true;
 	}
 
-	int nb_recv = m_recv_list.size();
-	IntList first_bad(nb_recv);
+	int nb_items = m_model->getNbFrameMapItems();
+	IntList first_bad(nb_items);
 	if (DEB_CHECK_ANY(DebTypeWarning)) {
-		for (int i = 0; i < nb_recv; ++i) 
-			first_bad[i] = m_recv_list[i]->getNbBadFrames();
+		for (int i = 0; i < nb_items; ++i) {
+			FrameMap::Item *item = m_frame_map.getItem(i);
+			first_bad[i] = item->getNbBadFrames();
+		}
 	}
-	for (int i = 0; i < nb_recv; ++i) {
-		if (gfa[i] != last_frame) {
-			Receiver::PortList& l = m_recv_list[i]->m_port_list;
-			Receiver::PortList::iterator it, end = l.end();
-			for (it = l.begin(); it != end; ++it)
-				(*it)->processFrame(last_frame, NULL, 0);
+	for (int i = 0; i < nb_items; ++i) {
+		if (ifa[i] != last_frame) {
+			char *bptr = getFrameBufferPtr(last_frame);
+			m_model->processBadItemFrame(last_frame, i, bptr);
 		}
 	}
 	if (DEB_CHECK_ANY(DebTypeWarning)) {
-		IntList last_bad(nb_recv);
-		for (int i = 0; i < nb_recv; ++i)
-			last_bad[i] = m_recv_list[i]->getNbBadFrames();
+		IntList last_bad(nb_items);
+		for (int i = 0; i < nb_items; ++i)
+			last_bad[i] = m_frame_map.getItem(i)->getNbBadFrames();
 		IntList bfl;
 		getSortedBadFrameList(first_bad, last_bad, bfl);
 		DEB_WARNING() << "bad_frames=" << bfl.size() << ": " 
@@ -900,7 +906,7 @@ bool Camera::checkLostPackets()
 FrameType Camera::getLastReceivedFrame()
 {
 	DEB_MEMBER_FUNCT();
-	FrameType last_frame = m_frame_map.getLastGroupFrame();
+	FrameType last_frame = m_frame_map.getLastItemFrame();
 	DEB_RETURN() << DEB_VAR1(last_frame);
 	return last_frame;
 }
@@ -1100,20 +1106,20 @@ void Camera::getTolerateLostPackets(bool& tol_lost_packets)
 	DEB_RETURN() << DEB_VAR1(tol_lost_packets);
 }
 
-int Camera::getNbBadFrames(int recv_idx)
+int Camera::getNbBadFrames(int item_idx)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(recv_idx);
-	if ((recv_idx < -1) || (recv_idx >= int(m_recv_list.size())))
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(recv_idx);
+	DEB_PARAM() << DEB_VAR1(item_idx);
+	if ((item_idx < -1) || (item_idx >= m_model->getNbFrameMapItems()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(item_idx);
 	int nb_bad_frames;
-	if (recv_idx == -1) {
+	if (item_idx == -1) {
 		IntList bfl;
-		getBadFrameList(recv_idx, bfl);
+		getBadFrameList(item_idx, bfl);
 		nb_bad_frames = bfl.size();
 	} else {
-		Receiver *recv = m_recv_list[recv_idx];
-		nb_bad_frames = recv->getNbBadFrames();
+		FrameMap::Item *item = m_frame_map.getItem(item_idx);
+		nb_bad_frames = item->getNbBadFrames();
 	}
 	DEB_RETURN() << DEB_VAR1(nb_bad_frames);
 	return nb_bad_frames;
@@ -1124,14 +1130,13 @@ void Camera::getSortedBadFrameList(IntList first_idx, IntList last_idx,
 {
 	bool all = first_idx.empty();
 	IntList bfl;
-	RecvList::iterator it = m_recv_list.begin();
 	int nb_recvs = m_recv_list.size();
-	for (int i = 0; i < nb_recvs; ++i, ++it) {
-		Receiver *recv = *it;
+	for (int i = 0; i < nb_recvs; ++i) {
+		FrameMap::Item *item = m_frame_map.getItem(i);
 		int first = all ? 0 : first_idx[i];
-		int last = all ? recv->getNbBadFrames() : last_idx[i];
+		int last = all ? item->getNbBadFrames() : last_idx[i];
 		IntList l;
-		recv->getBadFrameList(first, last, l);
+		item->getBadFrameList(first, last, l);
 		bfl.insert(bfl.end(), l.begin(), l.end());
 	}
 	IntList::iterator first = bfl.begin();
@@ -1143,28 +1148,28 @@ void Camera::getSortedBadFrameList(IntList first_idx, IntList last_idx,
 	bad_frame_list.resize(bfl_end - bfl_begin);
 }
 
-void Camera::getBadFrameList(int recv_idx, int first_idx, int last_idx, 
+void Camera::getBadFrameList(int item_idx, int first_idx, int last_idx, 
 			     IntList& bad_frame_list)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR3(recv_idx, first_idx, last_idx);
-	if ((recv_idx < 0) || (recv_idx >= m_recv_list.size()))
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(recv_idx);
+	DEB_PARAM() << DEB_VAR3(item_idx, first_idx, last_idx);
+	if ((item_idx < 0) || (item_idx >= m_model->getNbFrameMapItems()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(item_idx);
 
-	Receiver *recv = m_recv_list[recv_idx];
-	recv->getBadFrameList(first_idx, last_idx, bad_frame_list);
+	FrameMap::Item *item = m_frame_map.getItem(item_idx);
+	item->getBadFrameList(first_idx, last_idx, bad_frame_list);
 
 	DEB_RETURN() << DEB_VAR1(PrettyIntList(bad_frame_list));
 }
 
-void Camera::getBadFrameList(int recv_idx, IntList& bad_frame_list)
+void Camera::getBadFrameList(int item_idx, IntList& bad_frame_list)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(recv_idx);
-	if (recv_idx == -1)
+	DEB_PARAM() << DEB_VAR1(item_idx);
+	if (item_idx == -1)
 		getSortedBadFrameList(bad_frame_list);
 	else
-		getBadFrameList(recv_idx, 0, getNbBadFrames(recv_idx), 
+		getBadFrameList(item_idx, 0, getNbBadFrames(item_idx), 
 				bad_frame_list);
 }
 
@@ -1259,4 +1264,17 @@ void Camera::resetFramesCaught()
 	DEB_MEMBER_FUNCT();
 	// recv->resetAcquisitionCount()
 	putCmd("resetframescaught");
+}
+
+void Camera::reportException(Exception& e, string name)
+{
+	DEB_MEMBER_FUNCT();
+
+	ostringstream err_msg;
+	err_msg << name << " failed: " << e;
+	Event::Code err_code = Event::CamCommError;
+	Event *event = new Event(Hardware, Event::Error, Event::Camera, 
+				 err_code, err_msg.str());
+	DEB_EVENT(*event) << DEB_VAR1(*event);
+	reportEvent(event);
 }

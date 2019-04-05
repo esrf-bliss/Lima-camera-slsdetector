@@ -55,7 +55,7 @@ public:
 
 	void getFrameDim(FrameDim& frame_dim /Out/, bool raw = false);
 
-	const SlsDetector::FrameMap& getFrameMap();
+	SlsDetector::FrameMap *getFrameMap();
 
 	void putCmd(const std::string& s, int idx = -1);
 	std::string getCmd(const std::string& s, int idx = -1);

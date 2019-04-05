@@ -90,10 +90,12 @@ class Eiger : public SlsDetector::Model
 	void setThresholdEnergy(int  thres);
 	void getThresholdEnergy(int& thres /Out/);
 
-	void setExpand4InThreads(bool  expand_4_in_threads);
-	void getExpand4InThreads(bool& expand_4_in_threads /Out/);
-
  protected:
+	virtual int getNbFrameMapItems();
+	virtual void updateFrameMapItems(FrameMap *map);
+	virtual void processBadItemFrame(unsigned long frame, int item,
+					 char *bptr);
+
 	virtual void updateImageSize();
 
 	virtual bool checkSettings(SlsDetector::Defs::Settings settings);
@@ -102,6 +104,8 @@ class Eiger : public SlsDetector::Model
 	virtual SlsDetector::Model::Recv *getRecv(int recv_idx);
 
 	virtual void prepareAcq();
+	virtual void startAcq();
+	virtual void stopAcq();
 };
 
 }; // namespace SlsDetector

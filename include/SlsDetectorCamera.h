@@ -100,8 +100,8 @@ public:
 	void getFrameDim(FrameDim& frame_dim, bool raw = false)
 	{ m_model->getFrameDim(frame_dim, raw); }
 
-	const FrameMap& getFrameMap()
-	{ return m_frame_map; }
+	FrameMap *getFrameMap()
+	{ return &m_frame_map; }
 
 	void putCmd(const std::string& s, int idx = -1);
 	std::string getCmd(const std::string& s, int idx = -1);
@@ -143,10 +143,10 @@ public:
 	void setTolerateLostPackets(bool  tol_lost_packets);
 	void getTolerateLostPackets(bool& tol_lost_packets);
 
-	int getNbBadFrames(int recv_idx);
-	void getBadFrameList(int recv_idx, int first_idx, int last_idx,
+	int getNbBadFrames(int item_idx);
+	void getBadFrameList(int item_idx, int first_idx, int last_idx,
 			     IntList& bad_frame_list);
-	void getBadFrameList(int recv_idx, IntList& bad_frame_list);
+	void getBadFrameList(int item_idx, IntList& bad_frame_list);
 
 	void prepareAcq();
 	void startAcq();
@@ -162,6 +162,8 @@ public:
 
 	GlobalCPUAffinityMgr::ProcessingFinishedEvent *
 		getProcessingFinishedEvent();
+
+	void reportException(Exception& e, string name);
 
 private:
 	typedef std::map<int, int> RecvPortMap;
@@ -308,7 +310,7 @@ private:
 	double m_new_frame_timeout;
 	double m_abort_sleep_time;
 	bool m_tol_lost_packets;
-	FrameArray m_prev_gfa;
+	FrameArray m_prev_ifa;
 	TimeRangesChangedCallback *m_time_ranges_cb;
 	PixelDepthCPUAffinityMap m_cpu_affinity_map;
 	GlobalCPUAffinityMgr m_global_cpu_affinity_mgr;

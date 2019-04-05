@@ -44,7 +44,7 @@ class Model
  public:
 	typedef Defs::Settings Settings;
 
-	typedef FrameMap::FrameData FrameData;
+	typedef FrameMap::FinishInfo FinishInfo;
 
 	class Recv
 	{
@@ -70,8 +70,8 @@ class Model
 		virtual void processFileStart(uint32_t dsize) = 0;
 
 		virtual int getNbProcessingThreads() = 0;
-		virtual void processThread(const FrameData &frame, char *bptr,
-					   int thread_idx) = 0;
+		virtual void setNbProcessingThreads(int nb_proc_threads) = 0;
+		virtual pid_t getThreadID(int thread_idx) = 0;
 	};
 
 	Model(Camera *cam, Type type);
@@ -102,6 +102,11 @@ class Model
 
 	virtual void getTimeRanges(TimeRanges& time_ranges) = 0;
 
+	virtual int getNbFrameMapItems() = 0;
+	virtual void updateFrameMapItems(FrameMap *map) = 0;
+	virtual void processBadItemFrame(FrameType frame, int item,
+					 char *bptr) = 0;
+
  protected:
 	void updateCameraModel();
 	void updateTimeRanges();
@@ -119,6 +124,10 @@ class Model
 	int getNbRecvPorts();
 
 	virtual void prepareAcq() = 0;
+	virtual void startAcq() = 0;
+	virtual void stopAcq() = 0;
+
+	void processFinishInfo(const FinishInfo& finfo);
 
  private:
 	friend class Camera;

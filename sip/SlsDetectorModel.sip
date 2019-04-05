@@ -52,9 +52,8 @@ public:
 		virtual void processFileStart(unsigned int dsize) = 0;
 
 		virtual int getNbProcessingThreads() = 0;
-		virtual void processThread(
-			const SlsDetector::FrameMap::FrameData& data,
-			char *bptr, int thread_idx) = 0;
+		virtual void setNbProcessingThreads(int nb_proc_threads) = 0;
+		virtual int getThreadID(int thread_idx) = 0;
 	};
 
 	Model(SlsDetector::Camera *cam, SlsDetector::Type type);
@@ -81,6 +80,11 @@ public:
 	virtual void getTimeRanges(SlsDetector::TimeRanges& 
 		     		   time_ranges /Out/) = 0;
 
+	virtual int getNbFrameMapItems() = 0;
+	virtual void updateFrameMapItems(FrameMap *map) = 0;
+	virtual void processBadItemFrame(unsigned long frame, int item,
+					 char *bptr) = 0;
+
 protected:
 	void updateCameraModel();
 
@@ -98,6 +102,8 @@ protected:
 	int getNbRecvPorts();
 
 	virtual void prepareAcq() = 0;
+	virtual void startAcq() = 0;
+	virtual void stopAcq() = 0;
 };
 
 
