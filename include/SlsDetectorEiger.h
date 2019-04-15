@@ -82,7 +82,7 @@ class Eiger : public Model
 		public:
 			class Port;
 
-			struct Expand4Data {
+			struct FrameData {
 				char *src[MaxEigerNbPorts];
 				char *dst;
 				Mask valid;
@@ -100,7 +100,7 @@ class Eiger : public Model
 
 				FrameDim getSrcFrameDim();
 
-				void copy(char *dst, char *src);
+				void copy(char *dst, char *src, int thread_idx);
 
 			private:
 				friend class Recv;
@@ -108,9 +108,15 @@ class Eiger : public Model
 				struct CalcData {
 					int cw;		// chip width
 					int lw;		// line width
-					int po;		// port offset
-							// thread offset
-					int to[MaxEigerNbThreads];
+				};
+
+				struct ThreadData {
+					int src_offset;
+					int dst_offset;
+					int xfer_lines;
+					int port_blocks;
+					int first_port;
+					int src_len;
 				};
 
 				Recv *m_recv;
@@ -119,15 +125,11 @@ class Eiger : public Model
 				bool m_top_half_recv;
 				bool m_port_idx;
 				bool m_raw;
-				bool m_pixel_depth_4;
 				CalcData m_src;
 				CalcData m_dst;
 				int m_pchips;
-				int m_copy_lines;
 				int m_raw_port_blocks;
-				int m_port_blocks[MaxEigerNbThreads];
-				int m_first_port[MaxEigerNbThreads];
-				int m_len4[MaxEigerNbThreads];
+				ThreadData m_td[MaxEigerNbThreads];
 			};
 			typedef std::vector<AutoPtr<Port> > PortList;
 
@@ -136,21 +138,35 @@ class Eiger : public Model
 			int getNbPorts();
 			Port *getPort(int idx);
 
-			void setThreadProcessing(bool thread_proc)
-			{ m_thread_proc = thread_proc; }
 			void setNbProcessingThreads(int nb_proc_threads)
 			{
 				if (nb_proc_threads != m_nb_proc_threads)
 					m_thread_bal.clear();
 				m_nb_proc_threads = nb_proc_threads;
 			}
+
 			void setThreadBalance(const ThreadBalance& thread_bal)
 			{ m_thread_bal = thread_bal; }
 
+			static
+			ThreadBalance getDefaultThreadBalance(int nb_threads);
+
 			void prepareAcq();
 
-			void expandPixelDepth4(const Expand4Data& data,
+			void processFrame(const FrameData& data, int thread_idx)
+			{
+				if (m_pixel_depth_4)
+					expandPixelDepth4(data, thread_idx);
+				else
+					copy(data, thread_idx);
+			}
+
+			void expandPixelDepth4(const FrameData& data,
 					       int thread_idx);
+			void copy(const FrameData& data, int thread_idx);
+
+			void fillBadFrame(FrameType frame, char *bptr);
+
 		private:
 			friend class Port;
 			friend class Geometry;
@@ -159,8 +175,8 @@ class Eiger : public Model
 			int m_idx;
 			PortList m_port_list;
 			int m_nb_proc_threads;
-			bool m_thread_proc;
 			ThreadBalance m_thread_bal;
+			bool m_pixel_depth_4;
 		};
 		typedef std::vector<AutoPtr<Recv> > RecvList;
 
@@ -255,6 +271,9 @@ class Eiger : public Model
 	void setThresholdEnergy(int  thres);
 	void getThresholdEnergy(int& thres);
 
+	Geometry *getGeometry()
+	{ return &m_geom; }
+
  protected:
 	virtual int getNbFrameMapItems();
 	virtual void updateFrameMapItems(FrameMap *map);
@@ -280,15 +299,13 @@ class Eiger : public Model
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Recv", "SlsDetector");
 	public:
-		typedef Geometry::Recv::Expand4Data Expand4Data;
+		typedef Geometry::Recv::FrameData FrameData;
 
 		class Port : public Model::Recv::Port
 		{
 			DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Recv::Port",
 					  "SlsDetector");
 		public:
-			Port(Recv *recv, int port);
-
 			struct Sync {
 				Recv *recv;
 				int port;
@@ -306,16 +323,31 @@ class Eiger : public Model
 					frame = -1;
 				}
 
-				void processFrame(FrameType f, char *s, char *d)
+				bool triggerProcess(FrameType f, char *s,
+						    char *d)
 				{
+					AutoMutex l = recv->lockPort();
+					if (waiting)
+						return false;
 					frame = f;
 					src = s;
 					dst = d;
 					waiting = true;
-					AutoMutex l = recv->lockPort(false);
-					recv->updatePortFrame(this, l);
+					recv->updatePortFrame(this);
+					return true;
+				}
+
+				void waitProcess()
+				{
+					AutoMutex l = recv->lockPort();
 					while (waiting && !stopped)
 						recv->waitPort();
+				}
+
+				void triggerProcessCleanUp()
+				{
+					AutoMutex l = recv->lockPort();
+					waiting = false;
 				}
 
 				void stopAcq()
@@ -326,10 +358,20 @@ class Eiger : public Model
 				}
 			};
 
+			Port(Recv *recv, int port);
+
 			void prepareAcq();
 			void stopAcq();
 			virtual void processFrame(FrameType frame, char *dptr,
 						  uint32_t dsize, char *bptr);
+
+			bool triggerProcess(FrameType frame, char *dptr,
+					    uint32_t dsize, char *bptr)
+			{ return m_sync.triggerProcess(frame, dptr, bptr); }
+			void waitProcess()
+			{ m_sync.waitProcess(); }
+			void triggerProcessCleanUp()
+			{ m_sync.triggerProcessCleanUp(); }
 
 		private:
 			friend class Recv;
@@ -360,6 +402,8 @@ class Eiger : public Model
 		void updateFrameMapItem(FrameMap::Item *item)
 		{ m_frame_map_item = item; }
 
+		void processBadFrame(FrameType frame, char *bptr);
+
 	private:
 		friend class Port::Sync;
 
@@ -372,7 +416,7 @@ class Eiger : public Model
 
 			void init(Recv *recv, int idx);
 
-			void addNewFrame(const Expand4Data& data)
+			void addNewFrame(const FrameData& data)
 			{
 				AutoMutex l = lockThread();
 				m_data = &data;
@@ -395,29 +439,28 @@ class Eiger : public Model
 			int m_idx;
 			bool m_end;
 			Cond m_cond;
-			const Expand4Data *m_data;
+			const FrameData *m_data;
 		};
 		typedef std::vector<AutoPtr<Thread> > ThreadList;
 
-		AutoMutex lockPort(bool locked=true)
-		{ return AutoMutex(m_cond.mutex(), (locked ? AutoMutex::Locked :
-						    AutoMutex::UnLocked)); }
+		AutoMutex lockPort()
+		{ return m_cond.mutex(); }
 		void broadcastPort()
 		{ m_cond.broadcast(); }
 		void waitPort()
 		{ m_cond.wait(); }
 
-		void updatePortFrame(Port::Sync *sync, AutoMutex& pl);
-		void updateProcessingFrame(AutoMutex& tl);
+		void updatePortFrame(Port::Sync *sync);
+		void updateProcessingFrame();
 
 		Eiger *m_eiger;
 		int m_idx;
 		Cond m_cond;
 		Geometry::Recv *m_geom;
 		FrameType m_frame;
+		FrameType m_candidate;
 		int m_nb_ready_threads;
-		Geometry::Recv::Expand4Data m_expand_data;
-		bool m_thread_proc;
+		Geometry::Recv::FrameData m_frame_data;
 		ThreadList m_thread_list;
 		PortList m_port_list;
 		FrameMap::Item *m_frame_map_item;

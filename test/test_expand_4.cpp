@@ -72,7 +72,7 @@ void test_expand_4(bool raw)
 	sit = src_buffer_list.begin();
 	for (int i = 0; i < nb_recvs; ++i) {
 		recv = geom.getRecv(i);
-		Eiger::Geometry::Recv::Expand4Data data;
+		Eiger::Geometry::Recv::FrameData data;
 		for (int j = 0; j < nb_recv_ports; ++j, ++sit) {
 			data.src[j] = (char *) sit->getPtr();
 			data.valid.set(j);

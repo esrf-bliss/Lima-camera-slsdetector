@@ -118,11 +118,9 @@ void Eiger::BadRecvFrameCorr::correctFrame(FrameType frame, void *ptr)
 		}
 		IntList::iterator end = bfl.end();
 		if (find(bfl.begin(), end, frame) != end) {
-			Model::Recv *recv = m_eiger->getRecv(i);
-			for (int j = 0; j < nb_recv_ports; ++j) {
-				Model::Recv::Port *port = recv->getPort(j);
-				port->processFrame(frame, NULL, 0, bptr);
-			}
+			Eiger::Geometry *geom = m_eiger->getGeometry();
+			Eiger::Geometry::Recv *recv = geom->getRecv(i);
+			recv->fillBadFrame(frame, bptr);
 		}
 		if (*(end - 1) > int(frame))
 			continue;
@@ -216,120 +214,94 @@ void Eiger::Geometry::Recv::Port::prepareAcq()
 	DEB_PARAM() << DEB_VAR1(m_recv_idx);
 
 	Geometry *geom = m_recv->m_eiger_geom;
-
-	m_pixel_depth_4 = (geom->m_pixel_depth == PixelDepth4);
 	m_raw = geom->m_raw;
-
 	const FrameDim& frame_dim = geom->m_recv_frame_dim;
 	const Size& size = frame_dim.getSize();
 	int depth = frame_dim.getDepth();
 	m_dst.lw = size.getWidth() * depth;
 	int recv_size = frame_dim.getMemSize();
-	m_src.po = 0;
-	m_dst.po = recv_size * m_recv_idx;	
+	int src_port_offset = 0;
+	int dst_port_offset = recv_size * m_recv_idx;
 
 	m_pchips = HalfModuleChips / NbRecvPorts;
 	m_src.cw = ChipSize * depth;
 	m_dst.cw = m_src.cw;
-	if (m_pixel_depth_4)
+	if (m_recv->m_pixel_depth_4)
 		m_src.cw /= 2;
 	m_src.lw = m_pchips * m_src.cw;
 
-	m_copy_lines = ChipSize;
-	int nb_threads = m_recv->m_nb_proc_threads;
-	if (nb_threads > 0) {
-		int copy_lines = m_copy_lines;
-		if (m_raw)
-			copy_lines *= NbRecvPorts;
-
-		ThreadBalance& thread_bal = m_recv->m_thread_bal;
-		if (thread_bal.empty()) {
-			int b3[3] = {6, 6, 4};
-			switch (nb_threads) {
-			case 1:
-			case 2:
-			case 4:
-			case 8:
-				thread_bal.insert(thread_bal.begin(),
-						  nb_threads, 1);
-				break;
-
-			case 3:
-				thread_bal.insert(thread_bal.begin(),
-						  b3, b3 + 3);
-				break;
-
-			default:
-				THROW_HW_ERROR(NotSupported)
-					<< DEB_VAR1(nb_threads);
-			}
-			DEB_ALWAYS() << PrettyIntList(thread_bal);
-		}
-		if (thread_bal.size() != nb_threads)
-			THROW_HW_ERROR(InvalidValue) <<
-				DEB_VAR2(thread_bal.size(), nb_threads);
-		int tot_thread_bal = 0;
-		for (int i = 0; i < nb_threads; ++i)
-			tot_thread_bal += thread_bal[i];
-		if (copy_lines % tot_thread_bal != 0)
-			THROW_HW_ERROR(InvalidValue) << "tot_thread_bal";
-		copy_lines /= tot_thread_bal;
-		DEB_TRACE() << DEB_VAR1(copy_lines);
-
-		const int block_len = sizeof(__m128i);
-		const int chip_blocks = ChipSize / 2 / block_len;
-		m_raw_port_blocks = chip_blocks * m_pchips * ChipSize;
-
-		int first_port = 0;
-		int first_src_line = 0;
-		int first_dst_line = 0;
-		for (int i = 0; i < nb_threads; ++i) {
-			const int remaining_lines = ChipSize - first_src_line;
-			const int port_lines = m_raw ? remaining_lines : 1;
-			m_port_blocks[i] = chip_blocks * m_pchips * port_lines;
-			DEB_TRACE() << DEB_VAR2(port_lines, m_port_blocks[i]);
-			const int xfer_lines = copy_lines * thread_bal[i];
-			const int xfer_ports = m_raw ? 1 : NbRecvPorts;
-			DEB_TRACE() << DEB_VAR2(thread_bal[i], xfer_lines);
-			m_len4[i] = xfer_lines * m_src.lw * xfer_ports;
-			m_first_port[i] = first_port;
-			m_src.to[i] = first_src_line * m_src.lw;
-			m_dst.to[i] = first_dst_line * m_dst.lw;
-			DEB_TRACE() << DEB_VAR4(m_len4[i], m_first_port[i],
-						m_src.to[i], m_dst.to[i]);
-			first_src_line += xfer_lines;
-			if (m_raw) {
-				first_port += first_src_line / ChipSize;
-				first_src_line %= ChipSize;
-			}
-			first_dst_line += xfer_lines;
-		}
-	}
-
 	if (m_raw) {
 		// vert. port concat.
-		m_dst.po += ChipSize * m_dst.lw * m_port;
-		return;
+		dst_port_offset += ChipSize * m_dst.lw * m_port;
 	} else {
 		// inter-chip horz. gap
 		m_dst.cw += ChipGap * depth;
 		// horz. port concat.
-		m_dst.po += m_pchips * m_dst.cw * m_port;
+		dst_port_offset += m_pchips * m_dst.cw * m_port;
+
+		int mod_idx = m_recv_idx / 2;
+		for (int i = 0; i < mod_idx; ++i)
+			dst_port_offset += (geom->getInterModuleGap(i) *
+					    m_dst.lw);
+		if (m_top_half_recv) {
+			// top-half module: vert-flipped data
+			src_port_offset += (ChipSize - 1) * m_src.lw;
+			m_src.lw *= -1;
+		} else {
+			// bottom-half module: inter-chip vert. gap
+			dst_port_offset += (ChipGap / 2) * m_dst.lw;
+		}
 	}
 
-	int mod_idx = m_recv_idx / 2;
-	for (int i = 0; i < mod_idx; ++i)
-		m_dst.po += geom->getInterModuleGap(i) * m_dst.lw;
+	int copy_lines = ChipSize;
+	if (m_raw)
+		copy_lines *= NbRecvPorts;
 
-	if (m_top_half_recv) {
-		// top-half module: vert-flipped data
-		m_src.po += (ChipSize - 1) * m_src.lw;
-		m_src.lw *= -1;
-		for (int i = 0; i < m_recv->m_nb_proc_threads; ++i)
-			m_src.to[i] *= -1;
-	} else {
-		// bottom-half module: inter-chip vert. gap
-		m_dst.po += (ChipGap / 2) * m_dst.lw;
+	int nb_threads = m_recv->m_nb_proc_threads;
+	ThreadBalance& thread_bal = m_recv->m_thread_bal;
+	if (thread_bal.empty()) {
+		thread_bal = m_recv->getDefaultThreadBalance(nb_threads);
+		DEB_ALWAYS() << PrettyIntList(thread_bal);
+	}
+	if (thread_bal.size() != nb_threads)
+		THROW_HW_ERROR(InvalidValue) <<
+			DEB_VAR2(thread_bal.size(), nb_threads);
+	int tot_thread_bal = 0;
+	for (int i = 0; i < nb_threads; ++i)
+		tot_thread_bal += thread_bal[i];
+	if (copy_lines % tot_thread_bal != 0)
+		THROW_HW_ERROR(InvalidValue) << "tot_thread_bal";
+
+	int thread_base_lines = copy_lines / tot_thread_bal;
+	DEB_TRACE() << DEB_VAR2(copy_lines, thread_base_lines);
+
+	const int block_len = sizeof(__m128i);
+	const int chip_blocks = ChipSize / 2 / block_len;
+	m_raw_port_blocks = chip_blocks * m_pchips * ChipSize;
+
+	int first_port = 0;
+	int first_line = 0;
+	ThreadData *td = m_td;
+	for (int i = 0; i < nb_threads; ++i, ++td) {
+		int line = (m_raw && m_port > first_port) ? 0 : first_line;
+		const int remaining_lines = ChipSize - line;
+		const int port_lines = m_raw ? remaining_lines : 1;
+		td->port_blocks = chip_blocks * m_pchips * port_lines;
+		DEB_TRACE() << DEB_VAR2(port_lines, td->port_blocks);
+		td->xfer_lines = thread_base_lines * thread_bal[i];
+		const int xfer_ports = m_raw ? 1 : NbRecvPorts;
+		DEB_TRACE() << DEB_VAR2(thread_bal[i], td->xfer_lines);
+		td->src_len = td->xfer_lines * abs(m_src.lw) * xfer_ports;
+		td->first_port = first_port;
+		td->src_offset = src_port_offset + line * m_src.lw;
+		td->dst_offset = dst_port_offset + line * m_dst.lw;
+		DEB_TRACE() << DEB_VAR4(td->src_len, td->first_port,
+					td->src_offset, td->dst_offset);
+		first_line += td->xfer_lines;
+		if (m_raw) {
+			first_port += first_line / ChipSize;
+			first_line %= ChipSize;
+		}
 	}
 }
 
@@ -341,15 +313,16 @@ FrameDim Eiger::Geometry::Recv::Port::getSrcFrameDim()
 	return fdim;
 }
 
-void Eiger::Geometry::Recv::Port::copy(char *dst, char *src)
+void Eiger::Geometry::Recv::Port::copy(char *dst, char *src, int thread_idx)
 {
 	DEB_MEMBER_FUNCT();
 
 	bool valid_data = (src != NULL);
-	src += m_src.po;
-	dst += m_dst.po;
+	ThreadData *td = &m_td[thread_idx];
+	src += td->src_offset;
+	dst += td->dst_offset;
 
-	const int& lines = m_copy_lines;
+	const int& lines = td->xfer_lines;
 	if (m_raw) {
 		int size = m_src.lw * lines;
 		if (valid_data)
@@ -395,15 +368,80 @@ Eiger::Geometry::Recv::Port *Eiger::Geometry::Recv::getPort(int port_idx)
 	return m_port_list[port_idx];
 }
 
+Eiger::ThreadBalance
+Eiger::Geometry::Recv::getDefaultThreadBalance(int nb_threads)
+{
+	DEB_STATIC_FUNCT();
+
+#define append(d, s) d.insert(d.end(), s.begin(), s.end())
+
+	ThreadBalance thread_bal;
+	static ThreadBalance b3 {5, 5, 6};
+	static ThreadBalance b5 {3, 3, 3, 3, 4};
+	static ThreadBalance b7 {2, 2, 2, 3, 2, 2, 3};
+	static ThreadBalance b9 {4, 3, 4, 3, 4, 3, 4, 3, 4};
+	switch (nb_threads) {
+	case 1:
+	case 2:
+	case 4:
+	case 8:
+		thread_bal = ThreadBalance(nb_threads, 1);
+		break;
+	case 6:
+		append(thread_bal, b3);
+	case 3:
+		append(thread_bal, b3);
+		break;
+	case 10:
+		append(thread_bal, b5);
+	case 5:
+		append(thread_bal, b5);
+		break;
+	case 7:
+		thread_bal = b7;
+		break;
+	case 9:
+		thread_bal = b9;
+		break;
+	default:
+		THROW_HW_ERROR(NotSupported) << DEB_VAR1(nb_threads);
+	}
+
+#undef append
+
+	return thread_bal;
+}
+
 void Eiger::Geometry::Recv::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
+
+	m_pixel_depth_4 = (m_eiger_geom->m_pixel_depth == PixelDepth4);
+
 	PortList::iterator it, end = m_port_list.end();
 	for (it = m_port_list.begin(); it != end; ++it)
 		(*it)->prepareAcq();
 }
 
-void Eiger::Geometry::Recv::expandPixelDepth4(const Expand4Data& data,
+void Eiger::Geometry::Recv::copy(const FrameData& data, int thread_idx)
+{
+	DEB_MEMBER_FUNCT();
+	for (int i = 0; i < getNbPorts(); ++i)
+		m_port_list[i]->copy(data.dst, data.src[i], thread_idx);
+}
+
+void Eiger::Geometry::Recv::fillBadFrame(FrameType frame, char *bptr)
+{
+	DEB_MEMBER_FUNCT();
+	FrameData data;
+	for (int i = 0; i < getNbPorts(); ++i)
+		data.src[i] = NULL;
+	data.dst = bptr;
+	for (int i = 0; i < m_nb_proc_threads; ++i)
+		processFrame(data, i);
+}
+
+void Eiger::Geometry::Recv::expandPixelDepth4(const FrameData& data,
 					      int thread_idx)
 {
 	DEB_MEMBER_FUNCT();
@@ -413,20 +451,22 @@ void Eiger::Geometry::Recv::expandPixelDepth4(const Expand4Data& data,
 
 	const int nb_ports = NbRecvPorts;
 	Port *port = m_port_list[0];
+	Port::ThreadData *td = &port->m_td[thread_idx];
 	const bool raw = port->m_raw;
-	const int first_port = port->m_first_port[thread_idx];
+	const int first_port = td->first_port;
 	int pi;
 	char *src[MaxEigerNbPorts];
 	for (pi = first_port; pi < nb_ports; ++pi) {
-		bool reset_sto = (raw && (pi > first_port));
-		int sto = !reset_sto ? port->m_src.to[thread_idx] : 0;
-		src[pi] = data.src[pi] + port->m_src.po + sto;
+		td = &m_port_list[pi]->m_td[thread_idx];
+		src[pi] = data.src[pi] + td->src_offset;
 		unsigned long s = (unsigned long) src[pi];
 		if ((s & 15) != 0)
 			THROW_HW_ERROR(Error) << "Missaligned src: "
 					      << DEB_VAR1(DEB_HEX(s));
 	}
-	char *dst = data.dst + port->m_dst.po + port->m_dst.to[thread_idx];
+	pi = first_port;
+	td = &m_port_list[pi]->m_td[thread_idx];
+	char *dst = data.dst + td->dst_offset;
 	unsigned long d = (unsigned long) dst;
 	int dest_misalign = (d & 15);
 	if (raw && dest_misalign)
@@ -437,12 +477,11 @@ void Eiger::Geometry::Recv::expandPixelDepth4(const Expand4Data& data,
 	DEB_TRACE() << DEB_VAR3(DEB_HEX((unsigned long) src[0]),
 				DEB_HEX((unsigned long) src[1]),
 				DEB_HEX((unsigned long) dst));
-	pi = first_port;
 	bool valid_data = data.valid.test(pi);
 	const int block_len = sizeof(__m128i);
-	int nb_blocks = port->m_len4[thread_idx] / block_len;
+	int nb_blocks = td->src_len / block_len;
 	const int chip_blocks = ChipSize / 2 / block_len;
-	int port_blocks = port->m_port_blocks[thread_idx];
+	int port_blocks = td->port_blocks;
 	const __m128i *src128 = (const __m128i *) src[pi];
 	__m128i *dst128 = (__m128i *) dst;
 	const __m128i m = _mm_set1_epi8(0xf);
@@ -670,13 +709,11 @@ void Eiger::Recv::Port::processFrame(FrameType frame, char *dptr,
 				     uint32_t dsize, char *bptr)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR3(frame, m_recv->m_idx, m_port);
-
 	bool valid_data = (dptr != NULL);
-	if (m_recv->m_thread_proc && valid_data)
-		m_sync.processFrame(frame, dptr, bptr);
-	else
-		m_geom->copy(bptr, dptr);
+	DEB_PARAM() << DEB_VAR4(frame, m_recv->m_idx, m_port, valid_data);
+	while (!triggerProcess(frame, dptr, dsize, bptr))
+		Sleep(10e-6);
+	waitProcess();
 }
 
 Eiger::Recv::Thread::~Thread()
@@ -730,11 +767,12 @@ void Eiger::Recv::Thread::threadFunction()
 	while (!m_end) {
 		while (!m_data)
 			waitThread();
-		const Expand4Data& data = *m_data;
+		const FrameData& data = *m_data;
 		m_data = NULL;
-		l.unlock();
-		m_recv->m_geom->expandPixelDepth4(data, m_idx);
-		m_recv->updateProcessingFrame(l);
+		AutoMutexUnlock ul(l);
+		Geometry::Recv *geom = m_recv->m_geom;
+		geom->processFrame(data, m_idx);
+		m_recv->updateProcessingFrame();
 	}
 }
 
@@ -774,10 +812,8 @@ void Eiger::Recv::prepareAcq()
 
 	m_frame = 0;
 	m_nb_ready_threads = 0;
-	m_expand_data.valid.reset();
+	m_frame_data.valid.reset();
 
-	m_thread_proc = m_eiger->m_geom.isPixelDepth4();
-	m_geom->setThreadProcessing(m_thread_proc);
 	m_geom->prepareAcq();
 
 	PortList::iterator it, end = m_port_list.end();
@@ -818,6 +854,8 @@ void Eiger::Recv::setNbProcessingThreads(int nb_proc_threads)
 	int curr_nb_proc_threads = m_thread_list.size();
 	DEB_PARAM() << DEB_VAR2(curr_nb_proc_threads, nb_proc_threads);
 
+	if (nb_proc_threads < 1)
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(nb_proc_threads);
 	if (nb_proc_threads == curr_nb_proc_threads)
 		return;
 
@@ -833,59 +871,126 @@ void Eiger::Recv::setNbProcessingThreads(int nb_proc_threads)
 	m_geom->setNbProcessingThreads(nb_proc_threads);
 }
 
-void Eiger::Recv::updatePortFrame(Port::Sync *sync, AutoMutex& pl)
+void Eiger::Recv::updatePortFrame(Port::Sync *sync)
 {
 	DEB_MEMBER_FUNCT();
 
 	int port = sync->port;
 	DEB_TRACE() << DEB_VAR3(m_frame, port, sync->frame);
 
-	bool ok = (sync->frame == m_frame);
-	m_expand_data.src[port] = sync->src;
+	bool ok = ((sync->frame == m_frame) && sync->src);
+	m_frame_data.src[port] = sync->src;
 
-	pl.lock();
-	m_expand_data.valid.set(port, ok);
+	if (m_nb_ready_threads == 0)
+		m_candidate = sync->frame;
+	else
+		m_candidate = min(m_candidate, sync->frame);
+
+	m_frame_data.valid.set(port, ok);
 	if (++m_nb_ready_threads < NbRecvPorts)
 		return;
 
+	if (m_candidate != m_frame) {
+		// next frame is not the expected one
+		m_frame = m_candidate;
+		for (int i = 0; i < NbRecvPorts; ++i) {
+			Port::Sync *sync = &m_port_list[i]->m_sync;
+			bool ok = ((sync->frame == m_frame) && sync->src);
+			m_frame_data.valid.set(i, ok);
+		}
+	}
+
 	m_frame_map_item->checkFinishedFrame(m_frame);
 
-	m_expand_data.dst = sync->dst;
+	m_frame_data.dst = sync->dst;
 	m_nb_ready_threads = 0;
 
 	ThreadList::iterator tit, tend = m_thread_list.end();
 	for (tit = m_thread_list.begin(); tit != tend; ++tit)
-		(*tit)->addNewFrame(m_expand_data);
+		(*tit)->addNewFrame(m_frame_data);
 }
 
-void Eiger::Recv::updateProcessingFrame(AutoMutex& tl)
+void Eiger::Recv::updateProcessingFrame()
 {
 	DEB_MEMBER_FUNCT();
 
-	AutoMutex pl = lockPort();
-	tl.lock();
+	AutoMutex l = lockPort();
 	DEB_TRACE() << DEB_VAR2(m_frame, m_nb_ready_threads);
 	if (++m_nb_ready_threads < m_thread_list.size())
 		return;
 
-	m_expand_data.valid.reset();
+	m_frame_data.valid.reset();
 	m_nb_ready_threads = 0;
 
 	for (int i = 0; i < NbRecvPorts; ++i) {
 		Port::Sync *sync = &m_port_list[i]->m_sync;
 		sync->waiting = (sync->frame > m_frame);
-		if (sync->waiting)
+		if (sync->waiting) {
+			if (m_nb_ready_threads == 0)
+				m_candidate = sync->frame;
+			else
+				m_candidate = min(m_candidate, sync->frame);
 			++m_nb_ready_threads;
-		bool ok = (sync->frame == m_frame + 1);
-		m_expand_data.valid.set(i, ok);
-		m_expand_data.src[i] = sync->src;
+		}
+		bool ok = ((sync->frame == m_frame + 1) && sync->src);
+		m_frame_data.valid.set(i, ok);
+		m_frame_data.src[i] = sync->src;
 	}
 	FrameType frame = m_frame++;
 	broadcastPort();
-	pl.unlock();
+	l.unlock();
 
 	FinishInfo finfo = m_frame_map_item->frameFinished(frame, true, true);
 	m_eiger->processFinishInfo(finfo);
+}
+
+void Eiger::Recv::processBadFrame(FrameType frame, char *bptr)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(m_idx, frame);
+
+	class AutoProcess
+	{
+		DEB_CLASS_NAMESPC(DebModCamera,
+				  "Eiger::Recv::processBadFrame::AutoProcess",
+				  "SlsDetector");
+	public:
+		AutoProcess(Port *port, FrameType frame, char *bptr)
+			: m_port(port), m_waited(false)
+		{
+			DEB_CONSTRUCTOR();
+			if (!m_port->triggerProcess(frame, NULL, 0, bptr))
+				THROW_HW_ERROR(Error)
+					<< "cannot process bad frame: "
+					<< "receiving data";
+		}
+
+		~AutoProcess()
+		{
+			DEB_DESTRUCTOR();
+			if (!m_waited)
+				m_port->triggerProcessCleanUp();
+		}
+
+		void waitProcess()
+		{
+			m_port->waitProcess();
+			m_waited = true;
+		}
+
+	private:
+		Port *m_port;
+		bool m_waited;
+	};
+
+	typedef std::vector<AutoPtr<AutoProcess> > AutoProcessList;
+	AutoProcessList proc_list;
+	PortList::iterator it, end = m_port_list.end();
+	for (it = m_port_list.begin(); it != end; ++it)
+		proc_list.push_back(new AutoProcess(*it, frame, bptr));
+	AutoProcessList::iterator pit, pend = proc_list.end();
+	for (pit = proc_list.begin(); pit != pend; ++pit)
+		(*pit)->waitProcess();
 }
 
 Eiger::Eiger(Camera *cam)
@@ -1134,12 +1239,7 @@ void Eiger::processBadItemFrame(FrameType frame, int item, char *bptr)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR2(frame, item);
-
-	Model::Recv *recv = getRecv(item);
-	for (int i = 0; i < recv->getNbPorts(); ++i) {
-		Model::Recv::Port *port = recv->getPort(i);
-		port->processFrame(frame, NULL, 0, bptr);
-	}
+	m_recv_list[item]->processBadFrame(frame, bptr);
 }
 
 void Eiger::updateImageSize()
