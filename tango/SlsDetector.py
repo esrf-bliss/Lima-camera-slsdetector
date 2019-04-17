@@ -39,17 +39,20 @@
 #         (c) - Bliss - ESRF
 #=============================================================================
 #
+import sys
 import time, string
 import numpy as np
 import PyTango
 from collections import OrderedDict
-from functools import partial
+from functools import partial, reduce
 from itertools import chain
 from multiprocessing import Process
 
 from Lima import Core
 from Lima import SlsDetector as SlsDetectorHw
 from Lima.Server.AttrHelper import get_attr_4u, get_attr_string_value_list
+
+NumAffinity = long if sys.version_info.major == 2 else int
 
 def ConstListAttr(nl, vl=None, namespc=SlsDetectorHw.Defs):
     def g(x):
@@ -124,7 +127,8 @@ class SlsDetector(PyTango.Device_4Impl):
         aff_array = self.pixel_depth_cpu_affinity_map
         if aff_array:
             flat_array = ','.join(aff_array).split(',')
-            aff_array = np.array(map(partial(int, base=0), flat_array))
+            aff_array_map = map(partial(int, base=0), flat_array)
+            aff_array = np.array(list(aff_array_map))
             aff_map = self.getPixelDepthCPUAffinityMapFromArray(aff_array)
             self.cam.setPixelDepthCPUAffinityMap(aff_map)
 
@@ -145,7 +149,7 @@ class SlsDetector(PyTango.Device_4Impl):
         name_list, idx_list, milli_volt_list = self.model.getDACInfo()
         attr_name_list = map(lambda n: 'dac_' + n, name_list)
         data_list = zip(idx_list, milli_volt_list)
-        self.dac_attr_idx_list = zip(attr_name_list, data_list)
+        self.dac_attr_idx_list = list(zip(attr_name_list, data_list))
         for name, data in self.dac_attr_idx_list:
             attr_data_dict = {
                 'name': name, 
@@ -167,7 +171,7 @@ class SlsDetector(PyTango.Device_4Impl):
         name_list, idx_list, factor_list, min_val_list = self.model.getADCInfo()
         attr_name_list = map(lambda n: 'adc_' + n, name_list)
         data_list = zip(idx_list, factor_list, min_val_list)
-        self.adc_attr_idx_list = zip(attr_name_list, data_list)
+        self.adc_attr_idx_list = list(zip(attr_name_list, data_list))
         for name, data in self.adc_attr_idx_list:
             attr_data_dict = {
                 'name': name, 
@@ -283,7 +287,7 @@ class SlsDetector(PyTango.Device_4Impl):
 
     @Core.DEB_MEMBER_FUNCT
     def read_adc_name_list(self, attr):
-        adc_name_list = zip(*self.adc_attr_idx_list)[0]
+        adc_name_list = list(zip(*self.adc_attr_idx_list))[0]
         deb.Return("adc_name_list=%s" % (adc_name_list,))
         attr.set_value(adc_name_list)
 
@@ -363,7 +367,7 @@ class SlsDetector(PyTango.Device_4Impl):
         if len(aff_array.shape) == 1:
             if len(aff_array) % aff_len != 0:
                 raise err
-            aff_array.resize((len(aff_array) / aff_len, aff_len))
+            aff_array.resize((int(len(aff_array) / aff_len), aff_len))
         if aff_array.shape[1] != aff_len:
             raise err
         aff_map = {}
@@ -373,7 +377,7 @@ class SlsDetector(PyTango.Device_4Impl):
         NetDevGroupCPUAffinity = SlsDetectorHw.NetDevGroupCPUAffinity
         GlobalCPUAffinity = SlsDetectorHw.GlobalCPUAffinity
         for aff_data in aff_array:
-            aff_data = map(int, aff_data)
+            aff_data = list(map(int, aff_data))
             pixel_depth, recv_l, recv_w, lima, other = aff_data[:5]
             netdev_aff = aff_data[5:]
             all_cpus = range(CPUAffinity.getNbSystemCPUs())
@@ -381,14 +385,14 @@ class SlsDetector(PyTango.Device_4Impl):
             indep_lw = True
             if indep_lw:
                 recv_l = recv_lw
-                recv_w = [map(lambda x: x + 12, l) for l in recv_l]
+                recv_w = [list(map(lambda x: x + 12, l)) for l in recv_l]
             else:
                 recv_l = [[(x, x + 12) for x in r] for r in recv_lw]
                 recv_w = recv_l
             recv_pt = [(8, 20), (11, 23)]
             recv_pt = zip(*([recv_pt] * 2))
             lima = list(range(6))
-            lima += map(lambda x: x + 12, lima)
+            lima += map(lambda x: x + 12, list(lima))
             lima.remove(0)
             other = [0]
             irq_aff = [0, (8, 20), (11, 23)]
@@ -402,19 +406,19 @@ class SlsDetector(PyTango.Device_4Impl):
             recv_list = []
             for l, w, pt in zip(recv_l, recv_w, recv_pt):
                 recv = RecvCPUAffinity()
-                recv.listeners = map(Affinity, l)
-                recv.writers = map(Affinity, w)
-                recv.port_threads = map(Affinity, pt)
+                recv.listeners = list(map(Affinity, l))
+                recv.writers = list(map(Affinity, w))
+                recv.port_threads = list(map(Affinity, pt))
                 recv_list.append(recv)
             global_affinity.recv = recv_list
             for i, r in enumerate(global_affinity.recv):
                 s = "Recv[%d]:" % i
                 def A(x):
-                    return hex(long(x))
+                    return hex(NumAffinity(x))
                 s += " listeners=%s," % [A(x) for x in r.listeners]
                 s += " writers=%s," % [A(x) for x in r.writers]
                 s += " port_threads=%s" % [A(x) for x in r.port_threads]
-                print(s)
+                deb.Always(s)
             global_affinity.lima = Affinity(*lima)
             global_affinity.other = Affinity(*other)
             ng_aff_list = []
