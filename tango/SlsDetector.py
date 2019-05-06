@@ -124,8 +124,6 @@ class SlsDetector(PyTango.Device_4Impl):
             self.model.setThresholdEnergy(self.threshold_energy)
 
         self.cam.setTolerateLostPackets(self.tolerate_lost_packets)
-        self.model.setExpand4InThreads(self.expand_4_in_threads)
-        deb.Always("expand_4_in_threads: %s" % self.model.getExpand4InThreads())
         aff_arr = self.pixel_depth_cpu_affinity_map
         if aff_arr:
             aff_str = ' '.join(aff_arr)
@@ -308,14 +306,14 @@ class SlsDetector(PyTango.Device_4Impl):
         attr.set_value(max_frame_rate)
 
     @Core.DEB_MEMBER_FUNCT
-    def getNbBadFrames(self, port_idx):
-        nb_bad_frames = self.cam.getNbBadFrames(port_idx);
+    def getNbBadFrames(self, recv_idx):
+        nb_bad_frames = self.cam.getNbBadFrames(recv_idx);
         deb.Return("nb_bad_frames=%s" % nb_bad_frames)
         return nb_bad_frames
 
     @Core.DEB_MEMBER_FUNCT
-    def getBadFrameList(self, port_idx):
-        bad_frame_list = self.cam.getBadFrameList(port_idx);
+    def getBadFrameList(self, recv_idx):
+        bad_frame_list = self.cam.getBadFrameList(recv_idx);
         deb.Return("bad_frame_list=%s" % bad_frame_list)
         return bad_frame_list
 
@@ -361,12 +359,12 @@ class SlsDetector(PyTango.Device_4Impl):
             recv_aff, lima, other, netdev_aff = aff_data
             global_aff = GlobalCPUAffinity()
             recv_list = []
-            for recv_ports in recv_aff:
+            for recv_ports, recv_threads in recv_aff:
                 recv = RecvCPUAffinity()
-                l, w, pt = zip(*recv_ports)
+                l, w = zip(*recv_ports)
                 recv.listeners = list(l)
                 recv.writers = list(w)
-                recv.port_threads = list(chain(*pt))
+                recv.recv_threads = list(recv_threads)
                 recv_list.append(recv)
             global_aff.recv = recv_list
             global_aff.lima = lima
@@ -406,10 +404,8 @@ class SlsDetector(PyTango.Device_4Impl):
         for pixel_depth, global_aff in sorted(aff_map.items()):
             recv_list = []
             for r in global_aff.recv:
-                n = len(r.port_threads) / len(r.listeners)
-                port_threads = zip(*[r.port_threads[i::n] for i in range(n)])
-                recv_aff = zip(r.listeners, r.writers, port_threads)
-                recv_list.append(recv_aff)
+                port_aff = zip(r.listeners, r.writers)
+                recv_list.append((port_aff, r.recv_threads))
             recv_str = aff_2_str(recv_list)
             lima_str = aff_2_str(global_aff.lima)
             other_str = aff_2_str(global_aff.other)
@@ -460,7 +456,7 @@ class SlsDetector(PyTango.Device_4Impl):
             s = "Recv[%d]:" % i
             s += " listeners=%s," % [A(x) for x in r.listeners]
             s += " writers=%s," % [A(x) for x in r.writers]
-            s += " port_threads=%s" % [A(x) for x in r.port_threads]
+            s += " recv_threads=%s" % [A(x) for x in r.recv_threads]
             deb.Always('  ' + s)
         lima, other = global_aff.lima, global_aff.other
         deb.Always('  Lima=%s, Other=%s' % (A(lima), A(other)))
@@ -518,18 +514,15 @@ class SlsDetectorClass(PyTango.DeviceClass):
          "Default PixelDepthCPUAffinityMap as Python string(s) defining a dict: "
          "{<pixel_depth>: <global_affinity>}, being global_affinity a tuple: "
          "(<recv_list>, <lima>, <other>, <netdev_grp_list>), where recv_list "
-         "is a list of tupples in the form: (<port_1>, <port_2>), where portX "
-         "is a tupple: (<listener>, <writer>, <port_threads>) where listener "
-         "and writer are affinities and port_threads a tuple of affinities, "
-         "lima and and other are affinities, and netdev_grp_list is a list of "
-         "tuples in the form: "
+         "is a list of tupples in the form: "
+         "((<port_1>, <port_2>), <recv_threads>), where portX is a tupple: "
+         "(<listener>, <writer>), being listener and writer are affinities, "
+         "recv_threads a tuple of affinities, lima and other are "
+         "affinities, and netdev_grp_list is a list of tuples in the form: "
          "(<comma_separated_netdev_name_list>, <rx_queue_affinity_map>), the "
          "latter in the form of: {<queue>: (<irq>, <processing>)}. "
          "Each affinity can be expressed by one of the functions: Mask(mask) "
          "or CPU(<cpu1>[, ..., <cpuN>]) for independent CPU enumeration", []],
-        'expand_4_in_threads':
-        [PyTango.DevBoolean,
-         "Expand 4-to-8 bit in threads", True],
         }
 
     cmd_list = {
@@ -543,10 +536,10 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevString, "SlsDetector command"],
          [PyTango.DevString, "SlsDetector response"]],
         'getNbBadFrames':
-        [[PyTango.DevLong, "port_idx(-1=all)"],
+        [[PyTango.DevLong, "recv_idx(-1=all)"],
          [PyTango.DevLong, "Number of bad frames"]],
         'getBadFrameList':
-        [[PyTango.DevLong, "port_idx(-1=all)"],
+        [[PyTango.DevLong, "recv_idx(-1=all)"],
          [PyTango.DevVarLongArray, "Bad frame list"]],
         'getStats':
         [[PyTango.DevString, "port_idx(-1=all):stats_name"],

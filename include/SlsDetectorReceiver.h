@@ -45,7 +45,8 @@ public:
 	~Receiver();
 
 	void start();
-	void setNbPorts(int nb_ports);
+
+	void setModelRecv(Model::Recv *model_recv);
 
 	void prepareAcq();
 
@@ -72,83 +73,21 @@ private:
 	
 		Port(Receiver& recv, int port);
 
-		pid_t getThreadID(int idx)
-		{ return m_thread_list[idx].getThreadID(); }
-		
 		void prepareAcq();
 
-		void processFileStart(uint32_t dsize);
-		void processFrame(FrameType frame, char *dptr, uint32_t dsize);
-
-		bool isBadFrame(FrameType frame);
-	
-		int getNbBadFrames()
-		{
-			AutoMutex l = lock();
-			return m_bad_frame_list.size();
-		}
-	
-		void getBadFrameList(int first_idx, int last_idx, IntList& bfl)
-		{
-			AutoMutex l = lock();
-			IntList::const_iterator b = m_bad_frame_list.begin();
-			bfl.assign(b + first_idx, b + last_idx);
-		}
-		
 		Stats& getStats()
 		{ return m_stats; }
-
-		void setNbThreads(int nb_threads);
-		int getNbThreads();
 
 	private:
 		friend class Receiver;
 
-		typedef FrameMap::Item::FrameData FrameData;
-		typedef FrameMap::Item::FrameDataList FrameDataList;
-		typedef FrameMap::Item::FinishInfo FinishInfo;
-		typedef FrameMap::Item::FinishInfoList FinishInfoList;
-		typedef std::vector<FinishInfo> FinishInfoArray;
-		
-		class Thread : public lima::Thread
-		{
-			DEB_CLASS_NAMESPC(DebModCamera, 
-					  "Receiver::Port::Thread", 
-					  "SlsDetector");
-		public:
-			virtual ~Thread();
+		void portCallback(FrameType det_frame, char *dptr, 
+				  uint32_t dsize);
 
-			void init(Port *port, int idx);
-
-		protected:
-			virtual void start();
-			virtual void threadFunction();
-
-		private:
-			Port *m_port;
-			int m_idx;
-			pid_t m_tid;
-			volatile bool m_end;
-		};
-		typedef std::vector<Thread> ThreadList;
-
-		typedef std::vector<FrameMap::Item *> FrameMapItemList;
-
-		AutoMutex lock()
-		{ return m_mutex; }
-
-		void pollFrameFinished(int thread_idx);
-		void stopPollFrameFinished();
-		void processFinishInfo(const FinishInfo& finfo);
-		
 		Camera *m_cam;
 		int m_port_idx;
-		Model::RecvPort *m_model_port;
-		Mutex m_mutex;
-		FrameMapItemList m_frame_map_item_list;
-		IntList m_bad_frame_list;
+		Model::Recv::Port *m_model_port;
 		Stats m_stats;
-		ThreadList m_thread_list;
 	};
 	typedef std::vector<AutoPtr<Port> > PortList;
 
@@ -172,8 +111,6 @@ private:
 
 	int fileStartCallback(char *fpath, char *fname, uint64_t fidx, 
 			      uint32_t dsize);
-	void portCallback(FrameType det_frame, int port, char *dptr, 
-			  uint32_t dsize);
 
 	void getNodeMaskList(const CPUAffinityList& listener,
 			     const CPUAffinityList& writer,
@@ -185,6 +122,7 @@ private:
 	int m_rx_port;
 	Args m_args;
 	AutoPtr<slsReceiverUsers> m_recv;
+	Model::Recv *m_model_recv;
 	PortList m_port_list;
 }; 
 

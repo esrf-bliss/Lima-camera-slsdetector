@@ -27,7 +27,12 @@ using namespace lima;
 using namespace lima::SlsDetector;
 
 
-Model::RecvPort::~RecvPort()
+Model::Recv::~Recv()
+{
+	DEB_DESTRUCTOR();
+}
+
+Model::Recv::Port::~Port()
 {
 	DEB_DESTRUCTOR();
 }
@@ -74,3 +79,29 @@ string Model::getCmd(const string& s, int idx)
 	return m_cam->getCmd(s, idx);
 }
 
+int Model::getNbRecvPorts()
+{
+	DEB_MEMBER_FUNCT();
+	return getNbRecvs() ? getRecv(0)->getNbPorts() : 0;
+}
+
+void Model::processFinishInfo(const FinishInfo& finfo)
+{
+	DEB_MEMBER_FUNCT();
+
+	if ((finfo.nb_lost == 0) && finfo.finished.empty())
+		return;
+
+	try {
+		if ((finfo.nb_lost > 0) && m_cam->m_tol_lost_packets)
+			THROW_HW_ERROR(Error) << "lost frames: "
+					      << "first=" << finfo.first_lost
+					      << ", nb=" << finfo.nb_lost;
+
+		SortedIntList::const_iterator it, end = finfo.finished.end();
+		for (it = finfo.finished.begin(); it != end; ++it)
+			m_cam->m_acq_thread->queueFinishedFrame(*it);
+	} catch (Exception& e) {
+		m_cam->reportException(e, "Model::processFinishInfo");
+	}
+}

@@ -485,7 +485,7 @@ class SystemCPUAffinityMgr
 struct RecvCPUAffinity {
 	CPUAffinityList listeners;
 	CPUAffinityList writers;
-	CPUAffinityList port_threads;
+	CPUAffinityList recv_threads;
 
 	RecvCPUAffinity();
 	CPUAffinity all() const;
@@ -495,8 +495,8 @@ struct RecvCPUAffinity {
 	{ return listeners; }
 	const CPUAffinityList& Writers() const
 	{ return writers; }
-	const CPUAffinityList& PortThreads() const
-	{ return port_threads; }
+	const CPUAffinityList& RecvThreads() const
+	{ return recv_threads; }
 
 	typedef const CPUAffinityList& (RecvCPUAffinity::*Selector)() const;
 };
@@ -505,7 +505,7 @@ struct RecvCPUAffinity {
 inline CPUAffinity RecvCPUAffinity::all() const
 {
 	return (CPUAffinityList_all(listeners) | CPUAffinityList_all(writers) |
-		CPUAffinityList_all(port_threads));
+		CPUAffinityList_all(recv_threads));
 }
 
 

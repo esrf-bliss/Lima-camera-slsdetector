@@ -36,6 +36,9 @@ namespace SlsDetector
 
 #define EIGER_PACKET_DATA_LEN	(4 * 1024)
 
+#define MaxEigerNbPorts		32
+#define MaxEigerNbThreads	32
+
 class Eiger : public Model
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "Eiger", "SlsDetector");
@@ -47,13 +50,15 @@ class Eiger : public Model
 
 	typedef Defs::ClockDiv ClockDiv;
 
+	typedef std::vector<int> ThreadBalance;
+
 	enum ParallelMode {
 		NonParallel, Parallel, Safe,
 	};
 
 	class Correction : public LinkTask
 	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Correction", 
+		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Correction",
 				  "SlsDetector");
 	public:
 		Correction(Eiger *eiger);
@@ -63,9 +68,169 @@ class Eiger : public Model
 		Eiger *m_eiger;
 	};
 
+	class Geometry
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Geometry",
+				  "SlsDetector");
+	public:
+		typedef std::bitset<MaxEigerNbPorts> Mask;
+
+		class Recv
+		{
+			DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Geometry::Recv",
+					  "SlsDetector");
+		public:
+			class Port;
+
+			struct FrameData {
+				char *src[MaxEigerNbPorts];
+				char *dst;
+				Mask valid;
+			};
+
+			class Port
+			{
+				DEB_CLASS_NAMESPC(DebModCamera,
+						  "Eiger::Geometry::Recv::Port",
+						  "SlsDetector");
+			public:
+				Port(Recv *recv, int port);
+
+				void prepareAcq();
+
+				FrameDim getSrcFrameDim();
+
+				void copy(char *dst, char *src, int thread_idx);
+
+			private:
+				friend class Recv;
+
+				struct CalcData {
+					int cw;		// chip width
+					int lw;		// line width
+				};
+
+				struct ThreadData {
+					int src_offset;
+					int dst_offset;
+					int xfer_lines;
+					int port_blocks;
+					int first_port;
+					int src_len;
+				};
+
+				Recv *m_recv;
+				int m_recv_idx;
+				int m_port;
+				bool m_top_half_recv;
+				bool m_port_idx;
+				bool m_raw;
+				CalcData m_src;
+				CalcData m_dst;
+				int m_pchips;
+				int m_raw_port_blocks;
+				ThreadData m_td[MaxEigerNbThreads];
+			};
+			typedef std::vector<AutoPtr<Port> > PortList;
+
+			Recv(Geometry *eiger_geom, int idx);
+
+			int getNbPorts();
+			Port *getPort(int idx);
+
+			void setNbProcessingThreads(int nb_proc_threads)
+			{
+				if (nb_proc_threads != m_nb_proc_threads)
+					m_thread_bal.clear();
+				m_nb_proc_threads = nb_proc_threads;
+			}
+
+			void setThreadBalance(const ThreadBalance& thread_bal)
+			{ m_thread_bal = thread_bal; }
+
+			static
+			ThreadBalance getDefaultThreadBalance(int nb_threads);
+
+			void prepareAcq();
+
+			void processFrame(const FrameData& data, int thread_idx)
+			{
+				if (m_pixel_depth_4)
+					expandPixelDepth4(data, thread_idx);
+				else
+					copy(data, thread_idx);
+			}
+
+			void expandPixelDepth4(const FrameData& data,
+					       int thread_idx);
+			void copy(const FrameData& data, int thread_idx);
+
+			void fillBadFrame(FrameType frame, char *bptr);
+
+		private:
+			friend class Port;
+			friend class Geometry;
+
+			Geometry *m_eiger_geom;
+			int m_idx;
+			PortList m_port_list;
+			int m_nb_proc_threads;
+			ThreadBalance m_thread_bal;
+			bool m_pixel_depth_4;
+		};
+		typedef std::vector<AutoPtr<Recv> > RecvList;
+
+		Geometry();
+
+		void setNbRecvs(int nb_recv);
+		int getNbRecvs()
+		{ return m_recv_list.size(); }
+		Recv *getRecv(int idx)
+		{ return m_recv_list[idx]; }
+
+		int getNbEigerModules()
+		{ return getNbRecvs() / 2; }
+
+		void setRaw(bool  raw)
+		{ m_raw = raw; }
+		bool getRaw()
+		{ return m_raw; }
+
+		void setImageType(ImageType image_type)
+		{ m_image_type = image_type; }
+		ImageType getImageType()
+		{ return m_image_type; }
+
+		void setPixelDepth(PixelDepth pixel_depth)
+		{ m_pixel_depth = pixel_depth; }
+		PixelDepth getPixelDepth()
+		{ return m_pixel_depth; }
+		bool isPixelDepth4()
+		{ return (m_pixel_depth == PixelDepth4); }
+
+
+		FrameDim getFrameDim(bool raw);
+		FrameDim getRecvFrameDim(bool raw);
+
+		int getInterModuleGap(int det);
+
+		void prepareAcq();
+
+	private:
+		friend class Recv;
+		friend class Recv::Port;
+		friend class Eiger;
+
+		bool m_raw;
+		ImageType m_image_type;
+		PixelDepth m_pixel_depth;
+		FrameDim m_recv_frame_dim;
+		RecvList m_recv_list;
+	};
+
 	Eiger(Camera *cam);
 	~Eiger();
-	
+
 	virtual void getFrameDim(FrameDim& frame_dim, bool raw = false);
 
 	virtual std::string getName();
@@ -106,71 +271,203 @@ class Eiger : public Model
 	void setThresholdEnergy(int  thres);
 	void getThresholdEnergy(int& thres);
 
-	void setExpand4InThreads(bool  expand_4_in_threads);
-	void getExpand4InThreads(bool& expand_4_in_threads);
+	Geometry *getGeometry()
+	{ return &m_geom; }
 
  protected:
+	virtual int getNbFrameMapItems();
+	virtual void updateFrameMapItems(FrameMap *map);
+	virtual void processBadItemFrame(FrameType frame, int item,
+					 char *bptr);
+
 	virtual void updateImageSize();
 
 	virtual bool checkSettings(Settings settings);
 
-	virtual int getNbRecvPorts();
-	virtual Model::RecvPort *getRecvPort(int port_idx);
+	virtual int getNbRecvs();
+	virtual Model::Recv *getRecv(int recv_idx);
 
 	virtual void prepareAcq();
+	virtual void startAcq();
+	virtual void stopAcq();
 
  private:
 	friend class Correction;
 	friend class CorrBase;
 
-	class RecvPort : public Model::RecvPort
+	class Recv : public Model::Recv
 	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::RecvPort",
-				  "SlsDetector");
+		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Recv", "SlsDetector");
 	public:
-		RecvPort(Eiger *eiger, int recv_idx, int port);
+		typedef Geometry::Recv::FrameData FrameData;
+
+		class Port : public Model::Recv::Port
+		{
+			DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Recv::Port",
+					  "SlsDetector");
+		public:
+			struct Sync {
+				Recv *recv;
+				int port;
+				FrameType frame;
+				char *src;
+				char *dst;
+				bool waiting, stopped;
+
+				Sync(Recv *r, int p) : recv(r), port(p)
+				{}
+
+				void prepareAcq()
+				{
+					waiting = stopped = false;
+					frame = -1;
+				}
+
+				bool triggerProcess(FrameType f, char *s,
+						    char *d)
+				{
+					AutoMutex l = recv->lockPort();
+					if (waiting)
+						return false;
+					frame = f;
+					src = s;
+					dst = d;
+					waiting = true;
+					recv->updatePortFrame(this);
+					return true;
+				}
+
+				void waitProcess()
+				{
+					AutoMutex l = recv->lockPort();
+					while (waiting && !stopped)
+						recv->waitPort();
+				}
+
+				void triggerProcessCleanUp()
+				{
+					AutoMutex l = recv->lockPort();
+					waiting = false;
+				}
+
+				void stopAcq()
+				{
+					AutoMutex l = recv->lockPort();
+					stopped = true;
+					recv->broadcastPort();
+				}
+			};
+
+			Port(Recv *recv, int port);
+
+			void prepareAcq();
+			void stopAcq();
+			virtual void processFrame(FrameType frame, char *dptr,
+						  uint32_t dsize, char *bptr);
+
+			bool triggerProcess(FrameType frame, char *dptr,
+					    uint32_t dsize, char *bptr)
+			{ return m_sync.triggerProcess(frame, dptr, bptr); }
+			void waitProcess()
+			{ m_sync.waitProcess(); }
+			void triggerProcessCleanUp()
+			{ m_sync.triggerProcessCleanUp(); }
+
+		private:
+			friend class Recv;
+
+			Recv *m_recv;
+			int m_port;
+			Sync m_sync;
+			Geometry::Recv::Port *m_geom;
+		};
+		typedef std::vector<AutoPtr<Port> > PortList;
+
+		Recv(Eiger *eiger, int idx);
+
+		virtual int getNbPorts();
+		virtual Port *getPort(int port_idx);
 
 		void prepareAcq();
-		virtual void processRecvFileStart(uint32_t dsize);
-		virtual void processRecvPort(FrameType frame, char *dptr,
-					     uint32_t dsize, char *bptr);
-		virtual int getNbPortProcessingThreads();
-		virtual void processPortThread(FrameType frame, char *bptr,
-					       int thread_idx);
+		void startAcq();
+		void stopAcq();
+
+		virtual void processFileStart(uint32_t dsize);
+
+		virtual int getNbProcessingThreads();
+		virtual void setNbProcessingThreads(int nb_proc_threads);
+		virtual pid_t getThreadID(int thread_idx)
+		{ return m_thread_list[thread_idx]->getThreadID(); }
+
+		void updateFrameMapItem(FrameMap::Item *item)
+		{ m_frame_map_item = item; }
+
+		void processBadFrame(FrameType frame, char *bptr);
 
 	private:
-		void copy2LimaBuffer(char *dst, char *src, int thread_idx);
-		void expandPixelDepth4(char *dst, char *src, int len4,
-				       int thread_idx);
+		friend class Port::Sync;
+
+		class Thread : public lima::Thread
+		{
+			DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Recv::Thread",
+					  "SlsDetector");
+		public:
+			virtual ~Thread();
+
+			void init(Recv *recv, int idx);
+
+			void addNewFrame(const FrameData& data)
+			{
+				AutoMutex l = lockThread();
+				m_data = &data;
+				signalThread();
+			}
+
+		protected:
+			virtual void start();
+			virtual void threadFunction();
+
+		private:
+			AutoMutex lockThread()
+			{ return AutoMutex(m_cond.mutex()); }
+			void waitThread()
+			{ m_cond.wait(); }
+			void signalThread()
+			{ m_cond.signal(); }
+
+			Recv *m_recv;
+			int m_idx;
+			bool m_end;
+			Cond m_cond;
+			const FrameData *m_data;
+		};
+		typedef std::vector<AutoPtr<Thread> > ThreadList;
+
+		AutoMutex lockPort()
+		{ return m_cond.mutex(); }
+		void broadcastPort()
+		{ m_cond.broadcast(); }
+		void waitPort()
+		{ m_cond.wait(); }
+
+		void updatePortFrame(Port::Sync *sync);
+		void updateProcessingFrame();
 
 		Eiger *m_eiger;
-		int m_port;
-		bool m_top_half_recv;
-		bool m_port_idx;
-		bool m_raw;
-		bool m_pixel_depth_4;
-		bool m_thread_proc;
-		int m_recv_idx;
-		int m_nb_threads;
-		int m_slw;			// source line width
-		int m_dlw;			// dest line width
-		int m_scw;			// source chip width
-		int m_dcw;			// dest chip width
-		int m_pchips;
-		int m_copy_lines;
-		int m_spo;			// source port offset
-		int m_dpo;			// dest port offset
-		int m_sto;			// source thread offset
-		int m_dto;			// dest thread offset
-		int m_nb_buffers;
-		NumaSoftBufferAllocMgr m_buffer_alloc_mgr;
-		StdBufferCbMgr m_buffer_cb_mgr;
-		FrameType m_last_recv_frame;
-		FrameType m_last_proc_frame;
-		bool m_overrun;
+		int m_idx;
+		Cond m_cond;
+		Geometry::Recv *m_geom;
+		FrameType m_frame;
+		FrameType m_candidate;
+		int m_nb_ready_threads;
+		Geometry::Recv::FrameData m_frame_data;
+		ThreadList m_thread_list;
+		PortList m_port_list;
+		FrameMap::Item *m_frame_map_item;
 	};
 
-	typedef std::vector<AutoPtr<RecvPort> > RecvPortList;
+	typedef std::vector<AutoPtr<Recv> > RecvList;
+
 
 	class CorrBase
 	{
@@ -216,7 +513,7 @@ class Eiger : public Model
 		};
 
 		Camera *m_cam;
-		int m_nb_ports;
+		int m_nb_recvs;
 		std::vector<BadFrameData> m_bfd_list;
 	};
 
@@ -243,7 +540,7 @@ class Eiger : public Model
 		ChipBorderCorr(Eiger *eiger)
 			: CorrBase(eiger)
 		{}
-		
+
 		virtual void prepareAcq()
 		{
 			CorrBase::prepareAcq();
@@ -342,17 +639,11 @@ class Eiger : public Model
 		std::vector<BorderFactor> m_f;
 	};
 
-	bool isPixelDepth4()
-	{
-		PixelDepth pixel_depth;
-		getCamera()->getPixelDepth(pixel_depth);
-		return (pixel_depth == PixelDepth4);
-	}
-
 	int getNbEigerModules()
-	{ return getNbDetModules() / 2; }
+	{ return m_geom.getNbEigerModules(); }
 
-	void getRecvFrameDim(FrameDim& frame_dim, bool raw, bool geom);
+	const FrameDim& getRecvFrameDim()
+	{ return m_geom.m_recv_frame_dim; }
 
 	CorrBase *createBadRecvFrameCorr();
 	CorrBase *createChipBorderCorr(ImageType image_type);
@@ -363,7 +654,8 @@ class Eiger : public Model
 	void removeAllCorr();
 
 	double getBorderCorrFactor(int det, int line);
-	int getInterModuleGap(int det);
+	int getInterModuleGap(int det)
+	{ return m_geom.getInterModuleGap(det); }
 
 	static const int ChipSize;
 	static const int ChipGap;
@@ -386,12 +678,11 @@ class Eiger : public Model
 	static const LinScale ChipXfer2Buff;
 	static const LinScale ChipRealReadout;
 
-	FrameDim m_recv_frame_dim;
+	Geometry m_geom;
 	CorrList m_corr_list;
-	RecvPortList m_recv_port_list;
+	RecvList m_recv_list;
 	bool m_fixed_clock_div;
 	ClockDiv m_clock_div;
-	bool m_expand_4_in_threads;
 };
 
 std::ostream& operator <<(std::ostream& os, Eiger::ParallelMode mode);

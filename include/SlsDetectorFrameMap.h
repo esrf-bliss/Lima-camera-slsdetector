@@ -25,7 +25,9 @@
 
 #include "SlsDetectorDefs.h"
 
-namespace lima 
+#include <algorithm>
+
+namespace lima
 {
 
 namespace SlsDetector
@@ -36,74 +38,59 @@ class FrameMap
 	DEB_CLASS_NAMESPC(DebModCamera, "FrameMap", "SlsDetector");
 
  public:
+	struct FinishInfo {
+		FrameType first_lost;
+		int nb_lost;
+		SortedIntList finished;
+	};
+
 	class Item
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Item", "SlsDetector");
-	
-	public:
-		typedef std::pair<int, bool> FrameData;
-		typedef std::vector<FrameData> FrameDataList;
 
-		struct FinishInfo {
-			FrameType first_lost;
-			int nb_lost;
-			SortedIntList finished;
-		};
-		typedef std::vector<FinishInfo> FinishInfoList;
-	
-		Item();
-		~Item();
-	
+	public:
+		Item(FrameMap *map, int idx);
+
+		FrameMap *getFrameMap()
+		{ return m_map; }
+
+		int getIndex()
+		{ return m_idx; }
+
 		void checkFinishedFrame(FrameType frame);
-		void frameFinished(FrameType frame, bool no_check, bool valid);
-		FrameDataList pollFrameFinished();
-		FinishInfoList getFrameFinishInfo(const FrameDataList&
-								  data_list);
-		void stopPollFrameFinished();
-	
+		FinishInfo frameFinished(FrameType frame, bool no_check,
+					 bool valid);
+
+		bool isBadFrame(FrameType frame);
+		int getNbBadFrames();
+		void getBadFrameList(int first_idx, int last_idx, IntList& bfl);
+
 	private:
 		friend class FrameMap;
-	
-		class FrameQueue 
-		{
-		public:
-			FrameQueue(int size = 1000);
-			void clear();
-			void push(FrameData data);
-			FrameDataList pop_all();
-			void stop();
-	
-		private:
-			int index(int i)
-			{ return i % m_size; }
-	
-			FrameDataList m_array;
-			int m_size;
-			volatile int m_write_idx;
-			volatile int m_read_idx;
-			volatile bool m_stopped;
-		};
-	
-		friend bool SlsDetector::operator <(FrameData a, FrameData b);
-	
-		void setFrameMap(FrameMap *map);
-		void clear();
-	
-		FrameMap *m_map;
-		FrameQueue m_frame_queue;
-		FrameType m_last_pushed_frame;
-		FrameType m_last_frame;
-	};
-	typedef std::vector<Item> ItemList;
 
-	
-	FrameMap();
-		
+		void clear();
+
+		AutoMutex lock()
+		{ return m_mutex; }
+
+		Mutex m_mutex;
+		FrameMap *m_map;
+		int m_idx;
+		FrameType m_last_frame;
+		IntList m_bad_frame_list;
+	};
+	typedef std::vector<AutoPtr<Item> > ItemList;
+
+	FrameMap(Camera *cam);
+
 	void setNbItems(int nb_items);
+	int getNbItems()
+	{ return m_nb_items; }
+
 	void setBufferSize(int buffer_size);
 	void clear();
 
-	Item& getItem(int item)
+	Item *getItem(int item)
 	{ return m_item_list[item]; }
 
 	FrameArray getItemFrameArray() const;
@@ -120,10 +107,10 @@ class FrameMap
 	struct AtomicCounter {
 		int count;
 		Mutex mutex;
-	
+
 		void set(int reset)
 		{ count = reset; }
-	
+
 		bool dec_test_and_reset(int reset)
 		{
 			mutex.lock();
@@ -135,14 +122,38 @@ class FrameMap
 		}
 	};
 	typedef std::vector<AtomicCounter> CounterList;
-	
+
+	Camera *m_cam;
 	int m_nb_items;
 	int m_buffer_size;
 	CounterList m_frame_item_count_list;
 	ItemList m_item_list;
 };
 
+inline bool FrameMap::Item::isBadFrame(FrameType frame)
+{ 
+	AutoMutex l = lock();
+	IntList::iterator end = m_bad_frame_list.end();
+	return (std::find(m_bad_frame_list.begin(), end, frame) != end); 
+}
+
+inline int FrameMap::Item::getNbBadFrames()
+{
+	AutoMutex l = lock();
+	return m_bad_frame_list.size();
+}
+	
+inline void FrameMap::Item::getBadFrameList(int first_idx, int last_idx,
+					    IntList& bfl)
+{
+	AutoMutex l = lock();
+	IntList::const_iterator b = m_bad_frame_list.begin();
+	bfl.assign(b + first_idx, b + last_idx);
+}
+
+
 std::ostream& operator <<(std::ostream& os, const FrameMap& m);
+
 
 } // namespace SlsDetector
 

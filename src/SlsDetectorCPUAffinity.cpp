@@ -1331,7 +1331,7 @@ void SystemCPUAffinityMgr::setNetDevCPUAffinity(
 }
 
 RecvCPUAffinity::RecvCPUAffinity()
-	: listeners(1), writers(1), port_threads(1)
+	: listeners(1), writers(1), recv_threads(1)
 {
 }
 
@@ -1339,7 +1339,7 @@ RecvCPUAffinity& RecvCPUAffinity::operator =(CPUAffinity a)
 {
 	listeners.assign(1, a);
 	writers.assign(1, a);
-	port_threads.assign(1, a);
+	recv_threads.assign(1, a);
 	return *this;
 }
 
@@ -1568,7 +1568,7 @@ void GlobalCPUAffinityMgr::setRecvAffinity(
 	m_cam->setRecvCPUAffinity(recv_affinity_list);
 
 	const RecvCPUAffinityList& l = recv_affinity_list;
-	RecvCPUAffinity::Selector s = &RecvCPUAffinity::PortThreads;
+	RecvCPUAffinity::Selector s = &RecvCPUAffinity::RecvThreads;
 	CPUAffinity buffer_affinity = RecvCPUAffinityList_all(l, s);
 	DEB_ALWAYS() << DEB_VAR1(buffer_affinity);
 	m_cam->m_buffer_ctrl_obj->setCPUAffinityMask(buffer_affinity);
@@ -1749,7 +1749,7 @@ ostream& lima::SlsDetector::operator <<(ostream& os, const RecvCPUAffinity& a)
 {
 	os << "<";
 	os << "listeners=" << a.listeners << ", writers=" << a.writers << ", "
-	   << "port_threads=" << a.port_threads;
+	   << "recv_threads=" << a.recv_threads;
 	return os << ">";
 }
 
