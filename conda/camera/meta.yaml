@@ -27,7 +27,7 @@ requirements:
     - sip >=4.19.4, <=4.19.8  # For compatibility with pyqt 5.9.2
     - libpng
     - libnuma
-    - lima-core
+    - {{ pin_compatible('lima-core', max_pin='x.x') }}
 
 test:
   requires:
