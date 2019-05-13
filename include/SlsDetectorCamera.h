@@ -81,7 +81,7 @@ public:
 	{ return std::pair<int, int>(port_idx / m_recv_nb_ports, 
 				     port_idx % m_recv_nb_ports); }
 
-	void setBufferCtrlObj(SoftBufferCtrlObj *buffer_ctrl_obj)
+	void setBufferCtrlObj(NumaSoftBufferCtrlObj *buffer_ctrl_obj)
 	{ m_buffer_ctrl_obj = buffer_ctrl_obj; }
 
 	void setPixelDepth(PixelDepth  pixel_depth);
@@ -300,7 +300,7 @@ private:
 	double m_lat_time;
 	double m_frame_period;
 	Settings m_settings;
-	SoftBufferCtrlObj *m_buffer_ctrl_obj;
+	NumaSoftBufferCtrlObj *m_buffer_ctrl_obj;
 	PixelDepth m_pixel_depth;
 	ImageType m_image_type;
 	bool m_raw_mode;
