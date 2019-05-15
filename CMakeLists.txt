@@ -118,6 +118,7 @@ add_library(slsdetector SHARED
   src/SlsDetectorFrameMap.cpp
   src/SlsDetectorArgs.cpp
   src/SlsDetectorCPUAffinity.cpp
+  src/SlsDetectorBebTools.cpp
   src/SlsDetectorModel.cpp
   src/SlsDetectorReceiver.cpp
   src/SlsDetectorCamera.cpp
