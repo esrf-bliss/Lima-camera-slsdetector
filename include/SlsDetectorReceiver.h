@@ -41,6 +41,9 @@ class Receiver
 	DEB_CLASS_NAMESPC(DebModCamera, "Receiver", "SlsDetector");
 
 public:
+	typedef slsReceiverDefs::sls_detector_header sls_detector_header;
+	typedef slsReceiverDefs::sls_receiver_header sls_receiver_header;
+
 	Receiver(Camera *cam, int idx, int rx_port);
 	~Receiver();
 
@@ -94,19 +97,7 @@ private:
 	static int fileStartCallback(char *fpath, char *fname, 
 				     FrameType fidx, uint32_t dsize, 
 				     void *priv);
-	static void portCallback(FrameType frame, 
-				 uint32_t exp_len,
-				 uint32_t recv_packets,
-				 uint64_t bunch_id,
-				 uint64_t timestamp,
-				 uint16_t mod_id,
-				 uint16_t x, uint16_t y, uint16_t z,
-				 uint32_t debug,
-				 uint16_t rr_nb,
-				 uint8_t det_type,
-				 uint8_t cb_version,
-				 char *dptr, 
-				 uint32_t dsize, 
+	static void portCallback(char *header, char *dptr, uint32_t dsize, 
 				 void *priv);
 
 	int fileStartCallback(char *fpath, char *fname, uint64_t fidx, 

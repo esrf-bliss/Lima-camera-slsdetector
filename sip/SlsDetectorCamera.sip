@@ -30,7 +30,7 @@ namespace SlsDetector
 class Camera : public HwMaxImageSizeCallbackGen, public EventCallbackGen
 {
 public:
-	Camera(std::string config_fname);
+	Camera(std::string config_fname, int det_id = 0);
 	virtual ~Camera();
 
 	SlsDetector::Type getType();

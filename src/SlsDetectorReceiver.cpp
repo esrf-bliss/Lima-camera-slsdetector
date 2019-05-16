@@ -106,7 +106,6 @@ Receiver::Receiver(Camera *cam, int idx, int rx_port)
 
 	m_recv->registerCallBackStartAcquisition(fileStartCallback, this);
 	m_recv->registerCallBackRawDataReady(portCallback, this);
-	m_recv->setFrameEventPolicy(slsReceiverUsers::SkipMissingFrames);
 }
 
 Receiver::~Receiver()
@@ -332,26 +331,20 @@ int Receiver::fileStartCallback(char *fpath, char *fname, uint64_t fidx,
 	return recv->fileStartCallback(fpath, fname, fidx, dsize);
 }
 
-void Receiver::portCallback(FrameType frame,
-			    uint32_t exp_len,
-			    uint32_t recv_packets,
-			    uint64_t bunch_id,
-			    uint64_t timestamp,
-			    uint16_t mod_id,
-			    uint16_t x, uint16_t y, uint16_t z,
-			    uint32_t debug,
-			    uint16_t rr_nb,
-			    uint8_t det_type,
-			    uint8_t cb_version,
-			    char *dptr, 
-			    uint32_t dsize, 
+void Receiver::portCallback(char *header, char *dptr, uint32_t dsize, 
 			    void *priv)
 {
 	DEB_STATIC_FUNCT();
 	Receiver *recv = static_cast<Receiver *>(priv);
-	int port = (x % 2);
+	sls_receiver_header *recv_header = (sls_receiver_header *) header;
+	sls_detector_header *det_header = &recv_header->detHeader;
+	DEB_TRACE() << DEB_VAR3(det_header->frameNumber,
+				det_header->row, det_header->column);
+	const FrameType& frame = det_header->frameNumber;
+	const uint16_t& col = det_header->column;
+	int port = (col % 2);
 	FrameType det_frame = frame - 1;
-	DEB_PARAM() << DEB_VAR2(frame, det_frame);
+	DEB_TRACE() << DEB_VAR4(frame, det_frame, recv->m_idx, port);
 
 	int nb_ports = recv->m_port_list.size();
 	if ((port >= nb_ports) || (recv->m_cam->getState() == Stopping))

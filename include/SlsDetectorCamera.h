@@ -53,7 +53,7 @@ public:
 	typedef Defs::DetStatus DetStatus;
 	typedef Defs::NetworkParameter NetworkParameter;
 
-	Camera(std::string config_fname);
+	Camera(std::string config_fname, int det_id = 0);
 	Camera(const Camera& o) = delete;
 	virtual ~Camera();
 
@@ -163,7 +163,7 @@ public:
 	GlobalCPUAffinityMgr::ProcessingFinishedEvent *
 		getProcessingFinishedEvent();
 
-	void reportException(Exception& e, string name);
+	void reportException(Exception& e, std::string name);
 
 private:
 	typedef std::map<int, int> RecvPortMap;
@@ -284,6 +284,7 @@ private:
 	void setFlowControl10G(bool enabled);
 	void resetFramesCaught();
 
+	int m_det_id;
 	Model *m_model;
 	Cond m_cond;
 	AutoPtr<AppInputData> m_input_data;

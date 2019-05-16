@@ -296,8 +296,9 @@ Camera::AcqThread::Status Camera::AcqThread::newFrameReady(FrameType frame)
 	return Status(cont_acq, acq_end);
 }
 
-Camera::Camera(string config_fname) 
-	: m_model(NULL),
+Camera::Camera(string config_fname, int det_id) 
+	: m_det_id(det_id),
+	  m_model(NULL),
 	  m_frame_map(this),
 	  m_recv_fifo_depth(1000),
 	  m_lima_nb_frames(1),
@@ -326,12 +327,14 @@ Camera::Camera(string config_fname)
 	createReceivers();
 
 	DEB_TRACE() << "Creating the slsDetectorUsers object";
-	m_det = new slsDetectorUsers(0);
+	int ret;
+	m_det = new slsDetectorUsers(ret, m_det_id);
 	DEB_TRACE() << "Reading configuration file";
 	const char *fname = m_input_data->config_file_name.c_str();
 	m_det->readConfigurationFile(fname);
 
 	m_det->setReceiverSilentMode(1);
+	m_det->setReceiverFramesDiscardPolicy("discardpartial");
 	setReceiverFifoDepth(m_recv_fifo_depth);
 
 	m_pixel_depth = PixelDepth(m_det->setBitDepth(-1));
@@ -365,7 +368,7 @@ Camera::~Camera()
 Type Camera::getType()
 {
 	DEB_MEMBER_FUNCT();
-	string type_resp = getCmd("type");
+	string type_resp = m_det->getDetectorType();
 	ostringstream os;
 	os << "(([^+]+)\\+){" << getNbDetModules() << "}";
 	DEB_TRACE() << DEB_VAR1(os.str());
