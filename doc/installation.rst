@@ -1034,7 +1034,7 @@ and create the *slsdetector* environment:
       - conda-forge
     EOF
       ${HOME}/conda/miniconda/bin/conda update -n base conda
-      ${HOME}/conda/miniconda/bin/conda create -n slsdetector python=2.7
+      ${HOME}/conda/miniconda/bin/conda create -n slsdetector-py37 python=3.7
     )
 
 Patch *blissrc* to use *conda* environments:
@@ -1130,7 +1130,7 @@ Patch *blissrc* to use *conda* environments:
     )
 
 Configure *blissadm* software to use *conda* with the default
-*slsdetector* environment:
+*slsdetector-py37* environment:
 
 ::
 
@@ -1138,7 +1138,7 @@ Configure *blissadm* software to use *conda* with the default
     lid10eiger1:~ % \
       sed -i -e '/^BLISS_LIB_PATH/i\
     BLISS_CONDA_BASE=${BLISSADM}/conda/miniconda export BLISS_CONDA_BASE' -e '/^BLISS_LIB_PATH/i\
-    BLISS_CONDA_DEFAULT_ENV=slsdetector export BLISS_CONDA_DEFAULT_ENV' ~/local/BLISS_ENV_VAR
+    BLISS_CONDA_DEFAULT_ENV=slsdetector-py37 export BLISS_CONDA_DEFAULT_ENV' ~/local/BLISS_ENV_VAR
 
 Patch *bliss_drivers* and *bliss_daemons* so they **do not** use
 the *conda* environment:
@@ -1202,13 +1202,10 @@ Install basic *conda* packages:
     # as blissadm
     lid10eiger1:~ % (
       . blissrc
-      conda install gxx_linux-64 gxx-dbg_linux-64
-      conda install cmake
-      conda install sip="4.18*" numpy gsl
-      conda install lz4-c=1.8.2 hdf5="1.10*"
-      conda install libpng 
+      conda install gxx_linux-64 gxx-dbg_linux-64 cmake \
+                    sip="4.19*" numpy gsl lz4-c=1.8.2 hdf5="1.10*" \
+                    libpng gevent
       conda install -c valkyriesystemscorporation libnuma
-      conda install gevent
     )
 
 Restart the *BLISS daemons*:
@@ -1227,35 +1224,6 @@ Install *PyTango*, needed by *Lima*:
 
     # as blissadm
     lid10eiger1:~ % (. blissrc && conda install pytango)
-
-Apply a patch fixing Unicode string management in attribute names
-(Python 3 compatible *SIP*):
-
-::
-
-    # as blissadm
-    lid10eiger1:~ % (
-      cat > /tmp/PyTango.patch <<'EOF'
-    --- a/attr_data.py      2017-01-09 17:10:46.000000000 +0100
-    +++ b/attr_data.py      2018-04-04 09:44:13.551026750 +0200
-    @@ -62,6 +62,7 @@
-         def from_dict(cls, attr_dict):
-             attr_dict = dict(attr_dict)
-             name = attr_dict.pop('name', None)
-    +        name = name if isinstance(name, bytes) else name.encode()
-             class_name = attr_dict.pop('class_name', None)
-             self = cls(name, class_name)
-             self.build_from_dict(attr_dict)
-    EOF
-      cat > /tmp/find_pytango_attr_data.py <<'EOF'
-    from PyTango import AttrData
-    import sys
-    fname = sys.modules[AttrData.__module__].__file__
-    print(fname.replace('.pyc', '.py'))
-    EOF
-      attr_data=$(. blissrc && python /tmp/find_pytango_attr_data.py)
-      (cd $(dirname ${attr_data}) && patch -b -p1 < /tmp/PyTango.patch)
-    )
 
 Install the Python modules needed for building the HTML documentation
 with Doxygen, Sphinx and Read-the-Docs:
@@ -1378,7 +1346,7 @@ computer directories:
 
 ::
 
-    (slsdetector) lid10eiger1:~ % \
+    (slsdetector-py37) lid10eiger1:~ % \
         EIGER_DIR=${EIGER_HOME}/eiger/eiger_v3.1.1
         EIGER_CONFIG=${EIGER_DIR}/config/beb-021-020-direct-FO-10g.config
         mkdir -p $(dirname ${EIGER_CONFIG})
@@ -1390,7 +1358,7 @@ The resulting configuration file:
 
 ::
 
-    (slsdetector) lid10eiger1:~ % cat ${EIGER_CONFIG}
+    (slsdetector-py37) lid10eiger1:~ % cat ${EIGER_CONFIG}
     detsizechan 1024 512
 
     #type Eiger+
@@ -1438,7 +1406,7 @@ Copy the detector calibration data:
 
 ::
 
-    (slsdetector) lid10eiger1:~ % \
+    (slsdetector-py37) lid10eiger1:~ % \
         SLS_DETECTOR_SETTINGS=$(grep ^settings ${EIGER_CONFIG} | awk '{print $2}')/standard
         mkdir -p $(dirname ${SLS_DETECTOR_SETTINGS})
         scp -r lisgeiger1:${SLS_DETECTOR_SETTINGS} $(dirname ${SLS_DETECTOR_SETTINGS})
@@ -1449,7 +1417,7 @@ Add the configuration file to *eiger_setup.sh* and decode the
 
 ::
 
-    (slsdetector) lid10eiger1:~ % cat >> eiger_setup.sh <<'EOF'
+    (slsdetector-py37) lid10eiger1:~ % cat >> eiger_setup.sh <<'EOF'
 
     EIGER_DIR=${EIGER_HOME}/eiger/eiger_v3.1.1
     EIGER_CONFIG=${EIGER_DIR}/config/beb-021-020-direct-FO-10g.config
@@ -1472,8 +1440,8 @@ project\|\ https://gitlab.esrf.fr/Hardware/sls_detectors]:
 
 ::
 
-    (slsdetector) lid10eiger1:~ % mkdir -p ~/esrf && cd ~/esrf
-    (slsdetector) lid10eiger1:~/esrf % git clone -o gitlab git://gitlab.esrf.fr/Hardware/sls_detectors.git
+    (slsdetector-py37) lid10eiger1:~ % mkdir -p ~/esrf && cd ~/esrf
+    (slsdetector-py37) lid10eiger1:~/esrf % git clone -o gitlab git://gitlab.esrf.fr/Hardware/sls_detectors.git
     Cloning into 'sls_detectors'...
     ...
 
@@ -1481,7 +1449,7 @@ Add the *ESRF scripts* to *eiger_setup.sh*:
 
 ::
 
-    (slsdetector) lid10eiger1:~ % cat >> eiger_setup.sh <<'EOF'
+    (slsdetector-py37) lid10eiger1:~ % cat >> eiger_setup.sh <<'EOF'
 
     SLS_DETECTORS=${EIGER_HOME}/esrf/sls_detectors
     export SLS_DETECTORS
@@ -1517,7 +1485,7 @@ De-install *libgsl* and *libnuma-dev*:
 ::
 
     # as opid00
-    (slsdetector) lid10eiger1:~ % \
+    (slsdetector-py37) lid10eiger1:~ % \
         cd ${SLS_DETECTORS}
         git submodule init Lima
         git submodule update
@@ -1560,7 +1528,7 @@ plugin:
 ::
 
     # as opid00
-    (slsdetector) lid10eiger1:~ % \
+    (slsdetector-py37) lid10eiger1:~ % \
         cd ${LIMA_DIR}/camera/slsdetector
         git submodule init
         git submodule update
@@ -1578,21 +1546,24 @@ Compile *Lima*, including *slsDetectorPackage* using *CMake*:
 
 ::
 
-    (slsdetector) lid10eiger1:~ % \
+    (slsdetector-py37) lid10eiger1:~ % \
         cd ${LIMA_DIR}
         cp scripts/config.txt_default scripts/config.txt
         mkdir -p ${LIMA_DIR}/install/python
-    (slsdetector) lid10eiger1:~/esrf/sls_detectors/Lima % ./install.sh \
-        --install-prefix=${LIMA_DIR}/install \
-        --install-python-prefix=${LIMA_DIR}/install/python \
-        slsdetector hdf5 hdf5-bs edfgz edflz4 python pytango-server tests 2>&1
+    (slsdetector-py37) lid10eiger1:~/esrf/sls_detectors/Lima % \
+        cp camera/slsdetector/tango/SlsDetector.py \
+           applications/tango/python/camera && \
+        ./install.sh \
+            --install-prefix=${LIMA_DIR}/install \
+            --install-python-prefix=${LIMA_DIR}/install/python \
+            slsdetector numa hdf5 hdf5-bs edfgz edflz4 python pytango-server tests 2>&1
     ...
 
 Build the documentation:
 
 ::
 
-    (slsdetector) lid10eiger1:~/esrf/sls_detectors/Lima % make -C docs html
+    (slsdetector-py37) lid10eiger1:~/esrf/sls_detectors/Lima % make -C docs html
     ...
 
 Add *Lima* to the *PATH*, *LD_LIBRARY_PATH* and *PYTHONPATH* environment variables in
@@ -1600,7 +1571,7 @@ Add *Lima* to the *PATH*, *LD_LIBRARY_PATH* and *PYTHONPATH* environment variabl
 
 ::
 
-    (slsdetector) lid10eiger1:~ % cat >> eiger_setup.sh <<'EOF'
+    (slsdetector-py37) lid10eiger1:~ % cat >> eiger_setup.sh <<'EOF'
 
     LIMA_DIR=${SLS_DETECTORS}/Lima
     PATH=${LIMA_DIR}/install/bin:${PATH}
@@ -1624,12 +1595,12 @@ Test the *Lima* plugin without and with *CtControl* instantiation:
 
 ::
 
-    (slsdetector) lid10eiger1:~ % \
+    (slsdetector-py37) lid10eiger1:~ % \
         cd ${LIMA_DIR}
         (rm -f /tmp/eiger.edf &&
              build/camera/slsdetector/test/test_slsdetector -c ${EIGER_CONFIG})
     ...
-    (slsdetector) lid10eiger1:~/esrf/sls_detectors/Lima % \
+    (slsdetector-py37) lid10eiger1:~/esrf/sls_detectors/Lima % \
         mkdir -p /nobackup/lid10eiger12/data/eiger/lima
         ln -s /nobackup/lid10eiger12/data/eiger/lima data
         (rm -f data/img*.edf &&
@@ -1642,7 +1613,7 @@ thay can be re-created by *opid10*:
 ::
 
     # as opid00
-    (slsdetector) lid10eiger1:~ % \
+    (slsdetector-py37) lid10eiger1:~ % \
         for m in $(ipcs -m | grep '^0x000016' | awk '{print $2}'); do
             ipcrm -m ${m}
         done
@@ -1705,7 +1676,7 @@ symbolic links:
 ::
 
     # as blissadm
-    (slsdetector) lid10eiger1:~ % \
+    (slsdetector-py37) lid10eiger1:~ % \
         cd ~/python/bliss_modules
         mv Lima Lima-pack
         cd ~/applications
@@ -1723,7 +1694,7 @@ the Tango database:
 
 ::
 
-    (slsdetector) lid10eiger1:~ % jive > /dev/null 2>&1 &
+    (slsdetector-py37) lid10eiger1:~ % jive > /dev/null 2>&1 &
 
 Define the server *LimaCCDs/eiger500k* and include it in the *dserver*
 local database:
@@ -1738,7 +1709,7 @@ local database:
 ::
 
     # as opid10
-    (slsdetector) lid10eiger1:~ % bliss_dserver -fg start LimaCCDs
+    (slsdetector-py37) lid10eiger1:~ % bliss_dserver -fg start LimaCCDs
     Starting: LimaCCDs/eiger500k
 
 Add LimaCCDs and SlsDetector class devices.
@@ -1916,7 +1887,7 @@ Configure the *LimaCCDs/eiger500k* Taco interface server.
 
 ::
 
-    (slsdetector) lid10eiger1:~ % cat ~blissadm/local/spec/spec.d/eiger/config
+    (slsdetector-py37) lid10eiger1:~ % cat ~blissadm/local/spec/spec.d/eiger/config
     # ID @(#)getinfo.c  6.5  03/14/15 CSS
     # Device nodes
     PSE_MAC_MOT  = slsdetmot 32 eiger500k
@@ -1940,7 +1911,7 @@ interfaces.
 
 ::
 
-    (slsdetector) lid10eiger1:~ % cat ~blissadm/local/spec/spec.d/eiger/setup
+    (slsdetector-py37) lid10eiger1:~ % cat ~blissadm/local/spec/spec.d/eiger/setup
     #
     # Add or modify setup lines.
     # Comment out the lines you want to cancel temporarily.
