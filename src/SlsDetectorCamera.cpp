@@ -155,7 +155,13 @@ void Camera::AcqThread::threadFunction()
 		while ((m_state != StopReq) && m_frame_queue.empty()) {
 			if (!m_cond.wait(m_cam->m_new_frame_timeout)) {
 				AutoMutexUnlock u(l);
-				m_cam->checkLostPackets();
+				try {
+					m_cam->checkLostPackets();
+				} catch (Exception& e) {
+					string name = ("Camera::AcqThread: "
+						       "checkLostPackets");
+					m_cam->reportException(e, name);
+				}
 			}
 		}
 		if (!m_frame_queue.empty()) {
