@@ -508,8 +508,11 @@ void Camera::setTrigMode(TrigMode trig_mode)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(trig_mode);
 	waitState(Idle);
+	TrigMode cam_trig_mode = trig_mode;
+	if (trig_mode == Defs::SoftTriggerExposure)
+		cam_trig_mode = Defs::TriggerExposure;
 	typedef slsDetectorDefs::externalCommunicationMode ExtComMode;
-	ExtComMode mode = static_cast<ExtComMode>(trig_mode);
+	ExtComMode mode = static_cast<ExtComMode>(cam_trig_mode);
 	m_det->setTimingMode(mode);
 	m_trig_mode = trig_mode;
 	setNbFrames(m_lima_nb_frames);
@@ -854,6 +857,20 @@ void Camera::stopAcq()
 	m_acq_thread->stop(true);
 	if (getEffectiveState() != Idle)
 		THROW_HW_ERROR(Error) << "Camera not Idle";
+}
+
+void Camera::triggerFrame()
+{
+	DEB_MEMBER_FUNCT();
+
+	if (m_trig_mode != Defs::SoftTriggerExposure)
+		THROW_HW_ERROR(InvalidValue) << "Wrong trigger mode";
+
+	AutoMutex l = lock();
+	if (getEffectiveState() != Running)
+		THROW_HW_ERROR(Error) << "Camera not Running";
+
+	m_det->sendSoftwareTrigger();
 }
 
 bool Camera::checkLostPackets()

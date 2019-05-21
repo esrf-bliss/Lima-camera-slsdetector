@@ -152,6 +152,8 @@ public:
 	void startAcq();
 	void stopAcq();
 
+	void triggerFrame();
+
 	void registerTimeRangesChangedCallback(TimeRangesChangedCallback& cb);
 	void unregisterTimeRangesChangedCallback(TimeRangesChangedCallback& cb);
 

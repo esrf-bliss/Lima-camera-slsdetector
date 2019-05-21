@@ -112,6 +112,8 @@ public:
 	void startAcq();
 	void stopAcq();
 
+	void triggerFrame();
+
 	void getStats(SlsDetector::Stats& stats /Out/, int port_idx=-1);
 
 	void setPixelDepthCPUAffinityMap(
