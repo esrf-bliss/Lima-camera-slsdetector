@@ -1145,6 +1145,9 @@ void Eiger::getTimeRanges(TimeRanges& time_ranges)
 	getParallelMode(parallel_mode);
 
 	calcTimeRanges(pixel_depth, clock_div, parallel_mode, time_ranges);
+
+	double readout_time;
+	measureReadoutTime(readout_time);
 }
 
 void Eiger::calcTimeRanges(PixelDepth pixel_depth, ClockDiv clock_div,
@@ -1218,6 +1221,41 @@ void Eiger::calcTimeRanges(PixelDepth pixel_depth, ClockDiv clock_div,
 				 time_ranges.max_lat_time);
 	DEB_RETURN() << DEB_VAR2(time_ranges.min_frame_period, 
 				 time_ranges.max_frame_period);
+}
+
+void Eiger::measureReadoutTime(double& readout_time)
+{
+	DEB_MEMBER_FUNCT();
+
+	Camera* cam = getCamera();
+
+	class SyncParams
+	{
+
+
+	private:
+		double prev_exp, prev_period;
+		TrigMode prev_trig_mode;
+	};
+
+	// exp, period, trigmode, nb_frames
+	double prev_exp, prev_period;
+	cam->getExpTime(prev_exp);
+	cam->getFramePeriod(prev_period);
+	FrameType prev_nb_frames;
+	cam->getNbFrames(prev_nb_frames);
+	Defs::TrigMode prev_trig_mode;
+	cam->getTrigMode(prev_trig_mode);
+
+
+	/*
+	DEB_ALWAYS() << "calling startAcquisition";
+	cam->m_det->startAcquisition();
+
+	DEB_ALWAYS() << "calling stopAcquisition";
+	cam->m_det->stopAcquisition();
+
+	 */
 }
 
 int Eiger::getNbFrameMapItems()

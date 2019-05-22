@@ -657,6 +657,8 @@ class Eiger : public Model
 	int getInterModuleGap(int det)
 	{ return m_geom.getInterModuleGap(det); }
 
+	void measureReadoutTime(double& readout_time);
+
 	static const int ChipSize;
 	static const int ChipGap;
 	static const int HalfModuleChips;
