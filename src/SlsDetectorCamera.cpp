@@ -329,7 +329,9 @@ Camera::Camera(string config_fname, int det_id)
 
 	m_input_data = new AppInputData(config_fname);
 
-	removeSharedMem();
+	bool remove_shmem = false;
+	if (remove_shmem)
+		removeSharedMem();
 	createReceivers();
 
 	DEB_TRACE() << "Creating the slsDetectorUsers object";
@@ -457,10 +459,9 @@ char *Camera::getFrameBufferPtr(FrameType frame_nb)
 void Camera::removeSharedMem()
 {
 	DEB_MEMBER_FUNCT();
-	const char *cmd = "ipcs -m | "
-		"grep -E '^0x000016[0-9a-z]{2}' | "
-		"awk '{print $2}' | while read m; do ipcrm -m $m; done";
-	system(cmd);
+	ostringstream cmd;
+	cmd << "sls_detector_get " << m_det_id << "-free";
+	system(cmd.str().c_str());
 }
 
 void Camera::createReceivers()
