@@ -16,12 +16,9 @@ void test_expand_4(bool raw)
 	cout << "raw=" << raw << endl;
 
 	int nb_recvs = 2;
-	int nb_proc_threads = 1;
 	PixelDepth pixel_depth = PixelDepth4;
 	Eiger::Geometry geom;
 	geom.setNbRecvs(nb_recvs);
-	for (int i = 0; i < nb_recvs; ++i)
-		geom.getRecv(i)->setNbProcessingThreads(nb_proc_threads);
 	geom.setRaw(raw);
 	geom.setPixelDepth(pixel_depth);
 	geom.setImageType(Bpp8);
@@ -68,7 +65,6 @@ void test_expand_4(bool raw)
 	MemBuffer dst_buffer;
 	dst_buffer.alloc(dst_size);
 
-	int thread_idx = 0;
 	sit = src_buffer_list.begin();
 	for (int i = 0; i < nb_recvs; ++i) {
 		recv = geom.getRecv(i);
@@ -78,7 +74,7 @@ void test_expand_4(bool raw)
 			data.valid.set(j);
 		}
 		data.dst = (char *) dst_buffer.getPtr();
-		recv->expandPixelDepth4(data, thread_idx);
+		recv->expandPixelDepth4(data);
 		cout << "Recv #" << i << endl;
 		cout << setfill('0') << setbase(16);
 		unsigned char *p = (unsigned char *) dst_buffer.getPtr();

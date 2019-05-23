@@ -284,10 +284,10 @@ void Camera::AcqThread::stopAcq()
 		double milli_sec = (Timestamp::now() - t0) * 1e3;
 		DEB_TRACE() << "Abort -> Idle: " << DEB_VAR1(milli_sec);
 	}
-	DEB_TRACE() << "calling Model::stopAcq";
-	m_cam->m_model->stopAcq();
 	DEB_TRACE() << "calling stopReceiver";
 	det->stopReceiver();
+	DEB_TRACE() << "calling Model::stopAcq";
+	m_cam->m_model->stopAcq();
 }
 
 Camera::AcqThread::Status Camera::AcqThread::newFrameReady(FrameType frame)
@@ -306,13 +306,11 @@ Camera::Camera(string config_fname, int det_id)
 	: m_det_id(det_id),
 	  m_model(NULL),
 	  m_frame_map(this),
-	  m_recv_fifo_depth(1000),
 	  m_lima_nb_frames(1),
 	  m_det_nb_frames(1),
 	  m_skip_frame_freq(0),
 	  m_last_skipped_frame_timeout(0.5),
 	  m_lat_time(0),
-	  m_nb_recv_ports(0),
 	  m_pixel_depth(PixelDepth16), 
 	  m_image_type(Bpp16), 
 	  m_raw_mode(false),
@@ -343,7 +341,7 @@ Camera::Camera(string config_fname, int det_id)
 
 	m_det->setReceiverSilentMode(1);
 	m_det->setReceiverFramesDiscardPolicy("discardpartial");
-	setReceiverFifoDepth(m_recv_fifo_depth);
+	setReceiverFifoDepth(1);
 
 	m_pixel_depth = PixelDepth(m_det->setBitDepth(-1));
 
@@ -413,36 +411,12 @@ void Camera::setModel(Model *model)
 	if (!m_model)
 		return;
 
-	m_nb_recv_ports = m_model->getNbRecvPorts();
 	int nb_items = m_model->getNbFrameMapItems();
 	m_frame_map.setNbItems(nb_items);
 	m_model->updateFrameMapItems(&m_frame_map);
 
-	int idx = 0;
-	RecvList::iterator it, end = m_recv_list.end();
-	for (it = m_recv_list.begin(); it != end; ++it, ++idx)
-		(*it)->setModelRecv(m_model->getRecv(idx));
-
 	setPixelDepth(m_pixel_depth);
 	setSettings(m_settings);
-}
-
-Camera::RecvPortList Camera::getRecvPortList()
-{
-	DEB_MEMBER_FUNCT();
-	RecvPortList port_list;
-	RecvList::iterator it, end = m_recv_list.end();
-	for (it = m_recv_list.begin(); it != end; ++it)
-		port_list.insert(port_list.end(), (*it)->m_port_list.begin(),
-						  (*it)->m_port_list.end());
-	return port_list;
-}
-
-Receiver::Port *Camera::getRecvPort(int port_idx)
-{
-	pair<int, int> recv_port = splitPortIndex(port_idx);
-	Receiver *recv = m_recv_list[recv_port.first];
-	return recv->m_port_list[recv_port.second];
 }
 
 char *Camera::getFrameBufferPtr(FrameType frame_nb)
@@ -675,7 +649,7 @@ void Camera::updateCPUAffinity(bool recv_restarted)
 void Camera::setRecvCPUAffinity(const RecvCPUAffinityList& recv_affinity_list)
 {
 	DEB_MEMBER_FUNCT();
-	unsigned int nb_recv = m_recv_list.size();
+	unsigned int nb_recv = m_model->getNbRecvs();
 	unsigned int nb_aff = recv_affinity_list.size();
 	DEB_PARAM() << DEB_VAR2(nb_recv, nb_aff);
 	if (nb_aff != nb_recv)
@@ -683,10 +657,11 @@ void Camera::setRecvCPUAffinity(const RecvCPUAffinityList& recv_affinity_list)
 					     <<  DEB_VAR2(nb_recv, nb_aff);
 
 	RecvCPUAffinityList::const_iterator ait = recv_affinity_list.begin();
-	RecvList::iterator it, end = m_recv_list.end();
-	for (it = m_recv_list.begin(); it != end; ++it, ++ait) {
-		Receiver *recv = *it;
-		recv->setCPUAffinity(*ait);
+	for (int i = 0; i < nb_recv; ++i, ++ait) {
+		Model::Recv *recv = m_model->getRecv(i);
+		const RecvCPUAffinity& aff = *ait;
+		recv->setNbProcessingThreads(aff.recv_threads.size());
+		recv->setCPUAffinity(aff);
 	}
 }
 
@@ -819,7 +794,7 @@ void Camera::prepareAcq()
 
 		m_missing_last_skipped_frame.clear();
 		if (m_skip_frame_freq)
-			for (int i = 0; i < getTotNbPorts(); ++i)
+			for (int i = 0; i < getNbRecvs(); ++i)
 				m_missing_last_skipped_frame.insert(i);
 	}
 
@@ -944,8 +919,8 @@ void Camera::waitLastSkippedFrame()
 	AutoMutex l = lock();
 	bool stopping = false;
 	Timestamp t0;
-	SortedIntList& port_list = m_missing_last_skipped_frame;
-	while (!port_list.empty()) {
+	SortedIntList& recv_list = m_missing_last_skipped_frame;
+	while (!recv_list.empty()) {
 		double timeout = -1;
 		if (!stopping && (m_state == StopReq)) {
 			DEB_TRACE() << "stop requested";
@@ -958,8 +933,8 @@ void Camera::waitLastSkippedFrame()
 			if (timeout <= 0) {
 				DEB_WARNING() << "Missing last skipped frame "
 					      << elapsed << " sec after stop: "
-					      << "remaining port_list="
-					      << PrettySortedList(port_list);
+					      << "remaining recv_list="
+					      << PrettySortedList(recv_list);
 				break;
 			}
 		}
@@ -967,13 +942,13 @@ void Camera::waitLastSkippedFrame()
 	}
 }
 
-void Camera::processLastSkippedFrame(int port_idx)
+void Camera::processLastSkippedFrame(int recv_idx)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(port_idx);
+	DEB_PARAM() << DEB_VAR1(recv_idx);
 	AutoMutex l = lock();
-	if (m_missing_last_skipped_frame.erase(port_idx) != 1)
-		DEB_ERROR() << "port " << port_idx << " already processed";
+	if (m_missing_last_skipped_frame.erase(recv_idx) != 1)
+		DEB_ERROR() << "recv " << recv_idx << " already processed";
 	m_cond.broadcast();
 }
 
@@ -1157,7 +1132,7 @@ void Camera::getSortedBadFrameList(IntList first_idx, IntList last_idx,
 {
 	bool all = first_idx.empty();
 	IntList bfl;
-	int nb_recvs = m_recv_list.size();
+	int nb_recvs = getNbRecvs();
 	for (int i = 0; i < nb_recvs; ++i) {
 		FrameMap::Item *item = m_frame_map.getItem(i);
 		int first = all ? 0 : first_idx[i];
@@ -1222,21 +1197,20 @@ void Camera::unregisterTimeRangesChangedCallback(TimeRangesChangedCallback& cb)
 	cb.m_cam = NULL;
 }
 
-void Camera::getStats(Stats& stats, int port_idx)
+void Camera::getStats(Stats& stats, int recv_idx)
 {
 	DEB_MEMBER_FUNCT();
-	if ((port_idx < -1) || (port_idx >= getTotNbPorts()))
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(port_idx);
+	if ((recv_idx < -1) || (recv_idx >= getNbRecvs()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(recv_idx);
 
-	if (port_idx < 0) {
+	if (recv_idx < 0) {
 		stats.reset();
-		RecvPortList port_list = getRecvPortList();
-		RecvPortList::iterator it, end = port_list.end();
-		for (it = port_list.begin(); it != end; ++it)
-			stats += (*it)->getStats().stats;
+		RecvList::iterator it, end = m_recv_list.end();
+		for (it = m_recv_list.begin(); it != end; ++it)
+			stats += (*it)->getStats();
 	} else {
-		Receiver::Port *port = getRecvPort(port_idx);
-		stats = port->getStats().stats;
+		Receiver *recv = m_recv_list[recv_idx];
+		stats = recv->getStats();
 	}
 	DEB_RETURN() << DEB_VAR1(stats);
 }

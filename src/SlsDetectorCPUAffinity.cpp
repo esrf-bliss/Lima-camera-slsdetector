@@ -1331,14 +1331,12 @@ void SystemCPUAffinityMgr::setNetDevCPUAffinity(
 }
 
 RecvCPUAffinity::RecvCPUAffinity()
-	: listeners(1), writers(1), recv_threads(1)
+	: recv_threads(1)
 {
 }
 
 RecvCPUAffinity& RecvCPUAffinity::operator =(CPUAffinity a)
 {
-	listeners.assign(1, a);
-	writers.assign(1, a);
 	recv_threads.assign(1, a);
 	return *this;
 }
@@ -1748,8 +1746,7 @@ lima::SlsDetector::operator <<(ostream& os, const NetDevGroupCPUAffinity& a)
 ostream& lima::SlsDetector::operator <<(ostream& os, const RecvCPUAffinity& a)
 {
 	os << "<";
-	os << "listeners=" << a.listeners << ", writers=" << a.writers << ", "
-	   << "recv_threads=" << a.recv_threads;
+	os << "recv_threads=" << a.recv_threads;
 	return os << ">";
 }
 

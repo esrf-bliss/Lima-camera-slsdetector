@@ -38,8 +38,6 @@ public:
 	std::vector<std::string> getHostnameList();
 	int getNbDetModules();
 	int getNbDetSubModules();
-	int getTotNbPorts();
-	int getPortIndex(int recv_idx, int port);
 
 //	void setBufferCtrlObj(NumaSoftBufferCtrlObj *buffer_ctrl_obj);
 
@@ -114,7 +112,7 @@ public:
 
 	void triggerFrame();
 
-	void getStats(SlsDetector::Stats& stats /Out/, int port_idx=-1);
+	void getStats(SlsDetector::Stats& stats /Out/, int recv_idx=-1);
 
 	void setPixelDepthCPUAffinityMap(
 		SlsDetector::PixelDepthCPUAffinityMap aff_map);

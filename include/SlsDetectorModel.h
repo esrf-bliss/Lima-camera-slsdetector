@@ -24,6 +24,7 @@
 #define __SLS_DETECTOR_MODEL_H
 
 #include "SlsDetectorDefs.h"
+#include "SlsDetectorCPUAffinity.h"
 
 #include "lima/SizeUtils.h"
 
@@ -50,28 +51,13 @@ class Model
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Model::Recv", "SlsDetector");
 	public:
-		class Port
-		{
-			DEB_CLASS_NAMESPC(DebModCamera, "Model::Recv::Port",
-					  "SlsDetector");
-		public:
-			virtual ~Port();
-
-			// TODO: add file finished callback
-			virtual void processFrame(FrameType frame, char *dptr,
-						  uint32_t dsize, char *bptr) = 0;
-		};
-
 		virtual ~Recv();
-
-		virtual int getNbPorts() = 0;
-		virtual Port *getPort(int port_idx) = 0;
-
-		virtual void processFileStart(uint32_t dsize) = 0;
 
 		virtual int getNbProcessingThreads() = 0;
 		virtual void setNbProcessingThreads(int nb_proc_threads) = 0;
-		virtual pid_t getThreadID(int thread_idx) = 0;
+
+		virtual void setCPUAffinity(const RecvCPUAffinity&
+							recv_affinity) = 0;
 	};
 
 	Model(Camera *cam, Type type);
@@ -116,12 +102,12 @@ class Model
 	void putCmd(const std::string& s, int idx = -1);
 	std::string getCmd(const std::string& s, int idx = -1);
 
+	char *getFrameBufferPtr(FrameType frame_nb);
+
 	virtual bool checkSettings(Settings settings) = 0;
 
 	virtual int getNbRecvs() = 0;
 	virtual Recv *getRecv(int recv_idx) = 0;
-
-	int getNbRecvPorts();
 
 	virtual void prepareAcq() = 0;
 	virtual void startAcq() = 0;

@@ -25,7 +25,6 @@
 
 #include "SlsDetectorFrameMap.h"
 #include "SlsDetectorModel.h"
-#include "SlsDetectorCPUAffinity.h"
 #include "slsReceiverUsers.h"
 
 namespace lima 
@@ -43,78 +42,46 @@ class Receiver
 public:
 	typedef slsReceiverDefs::sls_detector_header sls_detector_header;
 	typedef slsReceiverDefs::sls_receiver_header sls_receiver_header;
+	typedef slsReceiverDefs::thread_image_data thread_image_data;
+	typedef slsReceiverDefs::receiver_image_data receiver_image_data;
+	
+	struct ImageData {
+		receiver_image_data recv_data;
+		FrameType frame;
+	};
 
 	Receiver(Camera *cam, int idx, int rx_port);
 	~Receiver();
 
 	void start();
 
-	void setModelRecv(Model::Recv *model_recv);
-
 	void prepareAcq();
 
-	void setCPUAffinity(const RecvCPUAffinity& recv_affinity);
+	bool getImage(ImageData& image_data);
+	
+	SlsDetector::Stats& getStats()
+	{ return m_stats.stats; }
 
 private:
 	friend class Camera;
 
-	class Port 
-	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Receiver::Port", 
-				  "SlsDetector");
-	public:
-		struct Stats {
-			SlsDetector::Stats stats;
-			Timestamp last_t0;
-			Timestamp last_t1;
-			void reset()
-			{
-				stats.reset();
-				last_t0 = last_t1 = Timestamp();
-			}
-		};
-	
-		Port(Receiver& recv, int port);
-
-		void prepareAcq();
-
-		Stats& getStats()
-		{ return m_stats; }
-
-	private:
-		friend class Receiver;
-
-		void portCallback(FrameType det_frame, char *dptr, 
-				  uint32_t dsize);
-
-		Camera *m_cam;
-		int m_port_idx;
-		Model::Recv::Port *m_model_port;
-		Stats m_stats;
+	struct Stats {
+		SlsDetector::Stats stats;
+		Timestamp last_t0;
+		Timestamp last_t1;
+		void reset()
+		{
+			stats.reset();
+			last_t0 = last_t1 = Timestamp();
+		}
 	};
-	typedef std::vector<AutoPtr<Port> > PortList;
-
-	static int fileStartCallback(char *fpath, char *fname, 
-				     FrameType fidx, uint32_t dsize, 
-				     void *priv);
-	static void portCallback(char *header, char *dptr, uint32_t dsize, 
-				 void *priv);
-
-	int fileStartCallback(char *fpath, char *fname, uint64_t fidx, 
-			      uint32_t dsize);
-
-	void getNodeMaskList(const CPUAffinityList& listener,
-			     const CPUAffinityList& writer,
-			     slsReceiverUsers::NodeMaskList& fifo_node_mask,
-			     int& max_node);
-
+	
 	Camera *m_cam;
 	int m_idx;
 	int m_rx_port;
 	Args m_args;
 	AutoPtr<slsReceiverUsers> m_recv;
-	Model::Recv *m_model_recv;
-	PortList m_port_list;
+	Stats m_stats;
 }; 
 
 

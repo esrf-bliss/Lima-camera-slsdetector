@@ -318,22 +318,22 @@ class SlsDetector(PyTango.Device_4Impl):
         return bad_frame_list
 
     @Core.DEB_MEMBER_FUNCT
-    def getStats(self, port_idx_stats_name):
-        port_idx_str, stats_name = port_idx_stats_name.split(':')
-        port_idx = int(port_idx_str)
-        deb.Param("port_idx=%s, stats_name=%s");
-        stats = self.cam.getStats(port_idx)
+    def getStats(self, recv_idx_stats_name):
+        recv_idx_str, stats_name = recv_idx_stats_name.split(':')
+        recv_idx = int(recv_idx_str)
+        deb.Param("recv_idx=%s, stats_name=%s");
+        stats = self.cam.getStats(recv_idx)
         stat = getattr(stats, stats_name)
         stat_data = [stat.min(), stat.max(), stat.ave(), stat.std(), stat.n()]
         deb.Return("stat_data=%s" % stat_data)
         return stat_data
 
     @Core.DEB_MEMBER_FUNCT
-    def getStatsHistogram(self, port_idx_stats_name):
-        port_idx_str, stats_name = port_idx_stats_name.split(':')
-        port_idx = int(port_idx_str)
-        deb.Param("port_idx=%s, stats_name=%s");
-        stats = self.cam.getStats(port_idx)
+    def getStatsHistogram(self, recv_idx_stats_name):
+        recv_idx_str, stats_name = recv_idx_stats_name.split(':')
+        recv_idx = int(recv_idx_str)
+        deb.Param("recv_idx=%s, stats_name=%s");
+        stats = self.cam.getStats(recv_idx)
         stat = getattr(stats, stats_name)
         stat_data = np.array(stat.hist).flatten()
         deb.Return("stat_data=%s" % stat_data)
@@ -359,11 +359,8 @@ class SlsDetector(PyTango.Device_4Impl):
             recv_aff, lima, other, netdev_aff = aff_data
             global_aff = GlobalCPUAffinity()
             recv_list = []
-            for recv_ports, recv_threads in recv_aff:
+            for recv_threads in recv_aff:
                 recv = RecvCPUAffinity()
-                l, w = zip(*recv_ports)
-                recv.listeners = list(l)
-                recv.writers = list(w)
                 recv.recv_threads = list(recv_threads)
                 recv_list.append(recv)
             global_aff.recv = recv_list
@@ -404,8 +401,7 @@ class SlsDetector(PyTango.Device_4Impl):
         for pixel_depth, global_aff in sorted(aff_map.items()):
             recv_list = []
             for r in global_aff.recv:
-                port_aff = zip(r.listeners, r.writers)
-                recv_list.append((port_aff, r.recv_threads))
+                recv_list.append(r.recv_threads)
             recv_str = aff_2_str(recv_list)
             lima_str = aff_2_str(global_aff.lima)
             other_str = aff_2_str(global_aff.other)
@@ -454,8 +450,6 @@ class SlsDetector(PyTango.Device_4Impl):
             return hex(NumAffinity(x))
         for i, r in enumerate(global_aff.recv):
             s = "Recv[%d]:" % i
-            s += " listeners=%s," % [A(x) for x in r.listeners]
-            s += " writers=%s," % [A(x) for x in r.writers]
             s += " recv_threads=%s" % [A(x) for x in r.recv_threads]
             deb.Always('  ' + s)
         lima, other = global_aff.lima, global_aff.other
@@ -514,10 +508,7 @@ class SlsDetectorClass(PyTango.DeviceClass):
          "Default PixelDepthCPUAffinityMap as Python string(s) defining a dict: "
          "{<pixel_depth>: <global_affinity>}, being global_affinity a tuple: "
          "(<recv_list>, <lima>, <other>, <netdev_grp_list>), where recv_list "
-         "is a list of tupples in the form: "
-         "((<port_1>, <port_2>), <recv_threads>), where portX is a tupple: "
-         "(<listener>, <writer>), being listener and writer are affinities, "
-         "recv_threads a tuple of affinities, lima and other are "
+         "is a list of <recv_threads> tuples of affinities, lima and other are "
          "affinities, and netdev_grp_list is a list of tuples in the form: "
          "(<comma_separated_netdev_name_list>, <rx_queue_affinity_map>), the "
          "latter in the form of: {<queue>: (<irq>, <processing>)}. "
@@ -542,10 +533,10 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevLong, "recv_idx(-1=all)"],
          [PyTango.DevVarLongArray, "Bad frame list"]],
         'getStats':
-        [[PyTango.DevString, "port_idx(-1=all):stats_name"],
+        [[PyTango.DevString, "recv_idx(-1=all):stats_name"],
          [PyTango.DevVarDoubleArray, "Statistics: min, max, ave, std, n"]],
         'getStatsHistogram':
-        [[PyTango.DevString, "port_idx(-1=all):stats_name"],
+        [[PyTango.DevString, "recv_idx(-1=all):stats_name"],
          [PyTango.DevVarDoubleArray, "[[bin, count], ...]"]],
         }
 
@@ -649,7 +640,8 @@ def get_control(config_fname, **keys) :
             p.start()
             p.join()
 
-        _SlsDetectorCam = SlsDetectorHw.Camera(config_fname)
+        det_id = 0
+        _SlsDetectorCam = SlsDetectorHw.Camera(config_fname, det_id)
         for i, n in enumerate(_SlsDetectorCam.getHostnameList()):
             print('Enabling: %s (%d)' % (n, i))
             _SlsDetectorCam.putCmd('activate 1', i)
