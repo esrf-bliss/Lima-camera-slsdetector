@@ -77,12 +77,12 @@ bool Receiver::getImage(ImageData& image_data)
 
 	FrameType det_frame;
 	try {
-		int ret = m_recv->getImage(image_data.recv_data);
+		++image_data.frame;
+		int ret = m_recv->getImage(image_data);
 		if ((ret < 0) || (m_cam->getState() == Stopping))
 			return false;
 		
-		receiver_image_data& recv_data = image_data.recv_data;
-		sls_receiver_header& header = recv_data.threadData[0].header;
+		sls_receiver_header& header = image_data.header;
 		det_frame = header.detHeader.frameNumber - 1;
 		if (det_frame >= m_cam->m_det_nb_frames)
 			THROW_HW_ERROR(Error) << "Invalid frame: " 

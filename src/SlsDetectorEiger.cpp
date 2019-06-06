@@ -207,12 +207,6 @@ Eiger::Geometry::Recv::FrameData::FrameData()
 Eiger::Geometry::Recv::FrameData::FrameData(const RecvImageData& image, char *d)
 	: dst(d)
 {
-	const slsReceiverDefs::receiver_image_data& recv_data = image.recv_data;
-	valid.reset();
-	for (int i = 0; i < recv_data.numThreads; ++i) {
-		src[i] = recv_data.threadData[i].buffer;
-		valid[i] = recv_data.threadsMask[i];
-	}
 }
 
 Eiger::Geometry::Recv::Port::Port(Recv *recv, int port)
@@ -658,24 +652,11 @@ void Eiger::Recv::Thread::setCPUAffinity(CPUAffinity aff)
 	DEB_PARAM() << DEB_VAR1(aff);
 
         aff.applyToTask(getThreadID(), false);
-	m_buffer.setCPUAffinityMask(aff);
 }
 
 void Eiger::Recv::Thread::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
-
-	Geometry::Recv* geom = m_recv->m_geom;
-	int nb_ports = geom->getNbPorts();
-	FrameDim port_dim = geom->getPort(0)->getSrcFrameDim();
-	m_buffer.setFrameDim(port_dim);
-	m_buffer.setNbBuffers(nb_ports);
-
-	Receiver::receiver_image_data& recv_data = m_image_data.recv_data;
-	Receiver::thread_image_data *thread_data = recv_data.threadData;
-	for (int i = 0; i < nb_ports; ++i, ++thread_data)
-		thread_data->buffer = (char *) m_buffer.getBufferPtr(i);
-	recv_data.numThreads = nb_ports;
 }
 
 Eiger::Recv::Recv(Eiger *eiger, int idx)
@@ -724,6 +705,7 @@ void Eiger::Recv::prepareAcq()
 
 	Camera *cam = m_eiger->getCamera();
 	cam->getNbFrames(m_nb_frames);
+	m_next_frame = 0;
 	m_last_frame = -1;
 
 	m_geom->prepareAcq();
@@ -791,10 +773,16 @@ void Eiger::Recv::processOneFrame(Thread& t)
 		return;
 
 	RecvImageData& data = t.m_image_data;
+	FrameType frame = m_next_frame++;
 	m_busy = true;
 	bool ok;
 	{
 		AutoMutexUnlock u(l);
+		char *bptr = m_eiger->getFrameBufferPtr(frame);
+		FrameDim recv_frame_dim = m_eiger->getRecvFrameDim();
+		bptr += recv_frame_dim.getMemSize() * m_idx;
+		data.frame = frame;
+		data.buffer = bptr;
 		ok = m_recv->getImage(data);
 	}
 	m_busy = false;
@@ -802,16 +790,8 @@ void Eiger::Recv::processOneFrame(Thread& t)
 	if (!ok)
 		return;
 
-	FrameType frame = data.frame;
 	m_last_frame = frame;
 	m_in_process.insert(frame);
-
-	{
-		AutoMutexUnlock u(l);
-		char *bptr = m_eiger->getFrameBufferPtr(frame);
-		FrameData frame_data(data, bptr);
-		m_geom->processFrame(frame_data);
-	}
 
 	while (m_finishing)
 		wait();
@@ -1356,6 +1336,11 @@ Model::Recv *Eiger::getRecv(int recv_idx)
 void Eiger::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
+
+	bool raw;
+	getCamera()->getRawMode(raw);
+	if (!raw)
+		THROW_HW_ERROR(NotSupported) << "Only raw supported";
 
 	m_geom.prepareAcq();
 

@@ -342,7 +342,6 @@ class Eiger : public Model
 			Recv *m_recv;
 			int m_idx;
 			State m_state;
-			NumaSoftBufferCtrlObj m_buffer;
 			RecvImageData m_image_data;
 		};
 		typedef std::vector<AutoPtr<Thread> > ThreadList;
@@ -355,7 +354,7 @@ class Eiger : public Model
 		{ m_cond.broadcast(); }
 
 		bool allFramesAcquired()
-		{ return m_last_frame == m_nb_frames - 1; }
+		{ return m_next_frame == m_nb_frames; }
 
 		bool checkForRecvState(Thread& t)
 		{
@@ -375,6 +374,7 @@ class Eiger : public Model
 		Receiver *m_recv;
 		bool m_busy;
 		FrameType m_nb_frames;
+		FrameType m_next_frame;
 		FrameType m_last_frame;
 		SortedIntList m_in_process;
 		SortedIntList m_in_hold;

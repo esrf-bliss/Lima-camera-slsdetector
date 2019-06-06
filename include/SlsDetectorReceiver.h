@@ -42,13 +42,7 @@ class Receiver
 public:
 	typedef slsReceiverDefs::sls_detector_header sls_detector_header;
 	typedef slsReceiverDefs::sls_receiver_header sls_receiver_header;
-	typedef slsReceiverDefs::thread_image_data thread_image_data;
-	typedef slsReceiverDefs::receiver_image_data receiver_image_data;
-	
-	struct ImageData {
-		receiver_image_data recv_data;
-		FrameType frame;
-	};
+	typedef slsReceiverDefs::receiver_image_data ImageData;
 
 	Receiver(Camera *cam, int idx, int rx_port);
 	~Receiver();
