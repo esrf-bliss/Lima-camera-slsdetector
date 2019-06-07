@@ -63,6 +63,32 @@ void Receiver::prepareAcq()
 	m_stats.reset();
 }
 
+void Receiver::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
+{
+	DEB_MEMBER_FUNCT();
+
+	string deb_head;
+	if (DEB_CHECK_ANY(DebTypeTrace) || DEB_CHECK_ANY(DebTypeWarning)) {
+		ostringstream os;
+		os << "setting recv " << m_idx << " ";
+		deb_head = os.str();
+	}
+
+	CPUAffinity aff = recv_affinity.all();
+	int max_node;
+	vector<unsigned long> mlist;
+	aff.getNUMANodeMask(mlist, max_node);
+	if (mlist.size() != 1)
+		THROW_HW_ERROR(Error) << DEB_VAR1(mlist.size());
+	unsigned long& fifo_node_mask = mlist[0];
+	int c = bitset<64>(fifo_node_mask).count();
+	if (c != 1)
+		DEB_WARNING() << deb_head << "Fifo NUMA node mask has "
+			      << c << " nodes";
+	DEB_ALWAYS() << deb_head << DEB_VAR2(DEB_HEX(fifo_node_mask), max_node);
+	m_recv->setFifoNodeAffinity(fifo_node_mask, max_node);
+}
+
 bool Receiver::getImage(ImageData& image_data)
 {
 	DEB_MEMBER_FUNCT();

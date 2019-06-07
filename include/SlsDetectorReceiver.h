@@ -51,6 +51,8 @@ public:
 
 	void prepareAcq();
 
+	void setCPUAffinity(const RecvCPUAffinity& recv_affinity);
+
 	bool getImage(ImageData& image_data);
 	
 	SlsDetector::Stats& getStats()
