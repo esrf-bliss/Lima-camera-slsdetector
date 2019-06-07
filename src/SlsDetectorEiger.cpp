@@ -692,8 +692,6 @@ void Eiger::Recv::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
 	ThreadList::iterator it, end = m_thread_list.end();
 	for (it = m_thread_list.begin(); it != end; ++it, ++rit)
 		(*it)->setCPUAffinity(*rit);
-
-	m_recv->setCPUAffinity(recv_affinity);
 }
 
 void Eiger::Recv::prepareAcq()

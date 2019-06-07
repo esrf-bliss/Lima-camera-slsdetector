@@ -483,12 +483,15 @@ class SystemCPUAffinityMgr
 };
 
 struct RecvCPUAffinity {
+	CPUAffinityList listeners;
 	CPUAffinityList recv_threads;
 
 	RecvCPUAffinity();
 	CPUAffinity all() const;
 	RecvCPUAffinity& operator =(CPUAffinity a);
 
+	const CPUAffinityList& Listeners() const
+	{ return listeners; }
 	const CPUAffinityList& RecvThreads() const
 	{ return recv_threads; }
 
@@ -498,14 +501,16 @@ struct RecvCPUAffinity {
 
 inline CPUAffinity RecvCPUAffinity::all() const
 {
-	return CPUAffinityList_all(recv_threads);
+	return (CPUAffinityList_all(listeners) |
+		CPUAffinityList_all(recv_threads));
 }
 
 
 inline 
 bool operator ==(const RecvCPUAffinity& a, const RecvCPUAffinity& b)
 {
-	return (a.recv_threads == b.recv_threads);
+	return ((a.listeners == b.listeners) &&
+		(a.recv_threads == b.recv_threads));
 }
 
 inline 

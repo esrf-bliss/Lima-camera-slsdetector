@@ -359,8 +359,9 @@ class SlsDetector(PyTango.Device_4Impl):
             recv_aff, lima, other, netdev_aff = aff_data
             global_aff = GlobalCPUAffinity()
             recv_list = []
-            for recv_threads in recv_aff:
+            for listeners, recv_threads in recv_aff:
                 recv = RecvCPUAffinity()
+                recv.listeners = list(listeners)
                 recv.recv_threads = list(recv_threads)
                 recv_list.append(recv)
             global_aff.recv = recv_list
@@ -401,7 +402,7 @@ class SlsDetector(PyTango.Device_4Impl):
         for pixel_depth, global_aff in sorted(aff_map.items()):
             recv_list = []
             for r in global_aff.recv:
-                recv_list.append(r.recv_threads)
+                recv_list.append((r.listeners, r.recv_threads))
             recv_str = aff_2_str(recv_list)
             lima_str = aff_2_str(global_aff.lima)
             other_str = aff_2_str(global_aff.other)
@@ -450,7 +451,8 @@ class SlsDetector(PyTango.Device_4Impl):
             return hex(NumAffinity(x))
         for i, r in enumerate(global_aff.recv):
             s = "Recv[%d]:" % i
-            s += " recv_threads=%s" % [A(x) for x in r.recv_threads]
+            s += " listeners=%s" % [A(x) for x in r.listeners]
+            s += ", recv_threads=%s" % [A(x) for x in r.recv_threads]
             deb.Always('  ' + s)
         lima, other = global_aff.lima, global_aff.other
         deb.Always('  Lima=%s, Other=%s' % (A(lima), A(other)))

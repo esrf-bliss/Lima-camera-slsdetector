@@ -657,11 +657,13 @@ void Camera::setRecvCPUAffinity(const RecvCPUAffinityList& recv_affinity_list)
 					     <<  DEB_VAR2(nb_recv, nb_aff);
 
 	RecvCPUAffinityList::const_iterator ait = recv_affinity_list.begin();
-	for (int i = 0; i < nb_recv; ++i, ++ait) {
+	RecvList::iterator rit = m_recv_list.begin();
+	for (int i = 0; i < nb_recv; ++i, ++ait, ++rit) {
 		Model::Recv *recv = m_model->getRecv(i);
 		const RecvCPUAffinity& aff = *ait;
 		recv->setNbProcessingThreads(aff.recv_threads.size());
 		recv->setCPUAffinity(aff);
+		(*rit)->setCPUAffinity(aff);
 	}
 }
 

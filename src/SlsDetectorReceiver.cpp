@@ -67,6 +67,14 @@ void Receiver::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
 {
 	DEB_MEMBER_FUNCT();
 
+	const CPUAffinityList& aff_list = recv_affinity.listeners;
+	slsReceiverDefs::CPUMaskList cpu_masks(aff_list.size());
+	slsReceiverDefs::CPUMaskList::iterator mit = cpu_masks.begin();
+	CPUAffinityList::const_iterator it, end = aff_list.end();
+	for (it = aff_list.begin(); it != end; ++it, ++mit)
+		it->initCPUSet(*mit);
+	m_recv->setThreadCPUAffinity(cpu_masks);
+
 	string deb_head;
 	if (DEB_CHECK_ANY(DebTypeTrace) || DEB_CHECK_ANY(DebTypeWarning)) {
 		ostringstream os;
