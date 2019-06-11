@@ -1337,11 +1337,6 @@ void Eiger::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
 
-	bool raw;
-	getCamera()->getRawMode(raw);
-	if (!raw)
-		THROW_HW_ERROR(NotSupported) << "Only raw supported";
-
 	m_geom.prepareAcq();
 
 	RecvList::iterator rit, rend = m_recv_list.end();

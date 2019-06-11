@@ -608,6 +608,7 @@ void Camera::getFramePeriod(double& frame_period)
 void Camera::updateImageSize()
 {
 	DEB_MEMBER_FUNCT();
+	m_det->enableGapPixels(!m_raw_mode);
 	m_model->updateImageSize();
 	FrameDim frame_dim;
 	getFrameDim(frame_dim, m_raw_mode);
