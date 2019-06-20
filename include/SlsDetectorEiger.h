@@ -342,7 +342,6 @@ class Eiger : public Model
 			Recv *m_recv;
 			int m_idx;
 			State m_state;
-			RecvImageData m_image_data;
 		};
 		typedef std::vector<AutoPtr<Thread> > ThreadList;
 
@@ -360,7 +359,7 @@ class Eiger : public Model
 		{
 			while ((t.m_state == Thread::Ready) || 
 			       ((t.m_state == Thread::Running) && 
-				(m_busy || allFramesAcquired())))
+				allFramesAcquired()))
 				wait();
 			return (t.m_state == Thread::Running);
 		}
@@ -372,12 +371,11 @@ class Eiger : public Model
 		Cond m_cond;
 		Geometry::Recv *m_geom;
 		Receiver *m_recv;
-		bool m_busy;
+		int m_data_offset;
 		FrameType m_nb_frames;
 		FrameType m_next_frame;
 		FrameType m_last_frame;
 		SortedIntList m_in_process;
-		SortedIntList m_in_hold;
 		bool m_finishing;
 		FrameMap::Item *m_frame_map_item;
 		ThreadList m_thread_list;
