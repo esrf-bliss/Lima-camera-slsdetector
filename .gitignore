@@ -6,4 +6,5 @@
 \#*\#
 .\#*
 *.pyc
-
+build/
+tango/build/
