@@ -58,6 +58,9 @@ public:
 	SlsDetector::Stats& getStats()
 	{ return m_stats.stats; }
 
+	void clearAllBuffers()
+	{ m_recv->clearAllBuffers(); }
+
 private:
 	friend class Camera;
 

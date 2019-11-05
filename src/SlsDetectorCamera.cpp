@@ -668,6 +668,15 @@ void Camera::setRecvCPUAffinity(const RecvCPUAffinityList& recv_affinity_list)
 	}
 }
 
+void Camera::clearAllBuffers()
+{
+	getBufferCbMgr()->clearAllBuffers();
+
+	RecvList::iterator it, end = m_recv_list.end();
+	for (it = m_recv_list.begin(); it != end; ++it)
+		(*it)->clearAllBuffers();
+}
+
 void Camera::setPixelDepth(PixelDepth pixel_depth)
 {
 	DEB_MEMBER_FUNCT();

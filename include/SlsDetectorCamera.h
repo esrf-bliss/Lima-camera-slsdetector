@@ -80,6 +80,8 @@ public:
 	void setBufferCtrlObj(NumaSoftBufferCtrlObj *buffer_ctrl_obj)
 	{ m_buffer_ctrl_obj = buffer_ctrl_obj; }
 
+	void clearAllBuffers();
+
 	void setPixelDepth(PixelDepth  pixel_depth);
 	void getPixelDepth(PixelDepth& pixel_depth);
 

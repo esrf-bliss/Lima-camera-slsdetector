@@ -41,6 +41,8 @@ public:
 
 //	void setBufferCtrlObj(NumaSoftBufferCtrlObj *buffer_ctrl_obj);
 
+	void clearAllBuffers();
+
 	void setPixelDepth(SlsDetector::PixelDepth  pixel_depth);
 	void getPixelDepth(SlsDetector::PixelDepth& pixel_depth /Out/);
 

@@ -480,6 +480,9 @@ class SlsDetector(PyTango.Device_4Impl):
         self.printPixelDepthCPUAffinityMap(aff_map)
         self.cam.setPixelDepthCPUAffinityMap(aff_map)
 
+    @Core.DEB_MEMBER_FUNCT
+    def clearAllBuffers(self):
+        self.cam.clearAllBuffers()
 
 class SlsDetectorClass(PyTango.DeviceClass):
 
@@ -540,6 +543,9 @@ class SlsDetectorClass(PyTango.DeviceClass):
         'getStatsHistogram':
         [[PyTango.DevString, "recv_idx(-1=all):stats_name"],
          [PyTango.DevVarDoubleArray, "[[bin, count], ...]"]],
+        'clearAllBuffers':
+        [[PyTango.DevVoid, ""],
+         [PyTango.DevVoid, ""]],
         }
 
     attr_list = {
