@@ -712,8 +712,7 @@ void Eiger::Recv::prepareAcq()
 	for (it = m_thread_list.begin(); it != end; ++it)
 		(*it)->prepareAcq();
 
-	FrameDim recv_frame_dim = m_eiger->getRecvFrameDim();
-	m_data_offset = recv_frame_dim.getMemSize() * m_idx;
+	m_data_offset = m_geom->getDstBufferOffset();
 }
 
 void Eiger::Recv::startAcq()
