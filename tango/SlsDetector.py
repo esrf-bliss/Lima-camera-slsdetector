@@ -113,6 +113,9 @@ class SlsDetector(PyTango.Device_4Impl):
         self.init_list_attr()
         self.init_dac_adc_attr()
 
+        if self.initial_acq_params:
+            self.perform_initial_acq(self.initial_acq_params)
+
         self.proc_finished = self.cam.getProcessingFinishedEvent()
         self.proc_finished.registerStatusCallback(_SlsDetectorControl)
 
@@ -181,6 +184,21 @@ class SlsDetector(PyTango.Device_4Impl):
             }
             attr_data = PyTango.AttrData.from_dict(attr_data_dict)
             self.add_attribute(attr_data)
+
+    @Core.DEB_MEMBER_FUNCT
+    def perform_initial_acq(self, params):
+        deb.Always("Performing initial setup acquisition: %s ..." % params)
+        ct = _SlsDetectorControl
+        acq = ct.acquisition()
+        for x in params.split(','):
+            n, v = x.split('=')
+            attr_name = 'set' + ''.join([i.title() for i in n.split('_')])
+            eval('acq.%s(%s)' % (attr_name, v))
+        ct.prepareAcq()
+        ct.startAcq()
+        while ct.getStatus().AcquisitionStatus != Core.AcqReady:
+            time.sleep(0.1)
+        deb.Always("Done!")
 
     @Core.DEB_MEMBER_FUNCT
     def getAttrStringValueList(self, attr_name):
@@ -495,6 +513,10 @@ class SlsDetectorClass(PyTango.DeviceClass):
         'full_config_fname':
         [PyTango.DevString,
          "In case of partial configuration, path to the full config file",[]],
+        'initial_acq_params':
+        [PyTango.DevString,
+         "Initial acquisition parameters: "
+         "acq_expo_time=0.01,acq_nb_frames=10,...", ""],
         'high_voltage':
         [PyTango.DevShort,
          "Initial detector high voltage (V) "

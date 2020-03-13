@@ -1317,6 +1317,7 @@ void Eiger::setHighVoltage(int hvolt)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(hvolt);
+	DEB_ALWAYS() << "Setting high voltage (" << DEB_VAR1(hvolt) << ") ...";
 	m_det->setHighVoltage(hvolt);
 }
 
