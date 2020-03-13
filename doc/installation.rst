@@ -1519,6 +1519,16 @@ De-install *libgsl* and *libnuma-dev*:
         git fetch --all
     ...
 
+Add *Lima* to environment variables in *eiger_setup.sh*:
+
+::
+
+    (slsdetector-py37) lid10eiger1:~ % cat >> eiger_setup.sh <<'EOF'
+
+    LIMA_DIR=${SLS_DETECTORS}/Lima
+    export LIMA_DIR
+    EOF
+
 Eiger software: slsDetectorPackage
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -1542,21 +1552,31 @@ plugin:
 *Lima* compilation
 ~~~~~~~~~~~~~~~~~~
 
-Compile *Lima*, including *slsDetectorPackage* using *CMake*:
+Compile *Lima* as *blissadm*, including *slsDetectorPackage* using the *CMake* commands in *Conda*:
 
 ::
 
-    (slsdetector-py37) lid10eiger1:~ % \
+    # as opid00
+    (slsdetector-py37) lid10eiger1:~ % (
         cd ${LIMA_DIR}
-        cp scripts/config.txt_default scripts/config.txt
-        mkdir -p ${LIMA_DIR}/install/python
-    (slsdetector-py37) lid10eiger1:~/esrf/sls_detectors/Lima % \
-        cp camera/slsdetector/tango/SlsDetector.py \
-           applications/tango/python/camera && \
-        ./install.sh \
-            --install-prefix=${LIMA_DIR}/install \
-            --install-python-prefix=${LIMA_DIR}/install/python \
-            slsdetector numa hdf5 hdf5-bs edfgz edflz4 python pytango-server tests 2>&1
+        for d in third-party/Processlib . camera/slsdetector camera/slsdetector/tango; do
+          (cd ${d} && mkdir -p build && chmod a+w build);
+        done)
+
+::
+
+    # as blissadm
+    lid10eiger1:~ % (
+        . ${EIGER_HOME}/eiger_setup.sh
+        cd ${LIMA_DIR}
+        (PREFIX=${CONDA_PREFIX} \
+         SP_DIR=$(python -c "import sysconfig; print(sysconfig.get_paths().get('platlib'))") \
+         bash -c '(cd third-party/Processlib && bash -e conda/debug/build.sh) && \
+                  (cd . && bash -e conda/debug/build.sh) && \
+                  (cd applications/tango/python && \
+                     bash -e conda/build.sh && cp scripts/Lima* ${PREFIX}/bin) && \
+                  (cd camera/slsdetector && \
+                     bash -e conda/camera/build.sh && bash -e conda/tango/build.sh)'))
     ...
 
 Build the documentation:
@@ -1566,19 +1586,6 @@ Build the documentation:
     (slsdetector-py37) lid10eiger1:~/esrf/sls_detectors/Lima % make -C docs html
     ...
 
-Add *Lima* to the *PATH*, *LD_LIBRARY_PATH* and *PYTHONPATH* environment variables in
-*eiger_setup.sh*:
-
-::
-
-    (slsdetector-py37) lid10eiger1:~ % cat >> eiger_setup.sh <<'EOF'
-
-    LIMA_DIR=${SLS_DETECTORS}/Lima
-    PATH=${LIMA_DIR}/install/bin:${PATH}
-    LD_LIBRARY_PATH=${LIMA_DIR}/install/lib:${LD_LIBRARY_PATH}
-    PYTHONPATH=${LIMA_DIR}/install/python:${PYTHONPATH}
-    export LIMA_DIR PATH LD_LIBRARY_PATH PYTHONPATH
-    EOF
 
 *eigerDetectorServer* and detector firmwares
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1633,84 +1640,23 @@ Include the Eiger environment at login:
     . ${EIGER_HOME}/eiger_setup.sh
     EOF
 
-Install Lima Python Tango software in *blissadm*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Install the following packages with *Blissinstaller*:
-
--  Control/Driver/bliss_drivers: needed for *blisspipe*
--  Control/Taco/bliss_dserver
--  Tango/Server/LimaCCDs-Simulator:
-
-   -  Python/Modules/PyLimaCore
-   -  Python/MOdules/PyLimaSimulator
-   -  Tango/Server/LimaCCDs-common
-
--  Control/Tango/Applications/Jive
-
-Configure the driver infrastructure by calling *bliss_drivers config*:
-
-::
-
-    # as blissadm
-    lid10eiger1:~ % bliss_drivers config
-    Root Password:
-    Copying /users/blissadm/applications/bliss_drivers/Esrfmap/60-esrf.rules to /etc/udev/rules.d/60-esrf.rules
-    Starting blisspipe ...
-
-Apply all the suggestions and save before quiting.
-
-Include the *Lima* libraries and modules in the *BLISS_LIB_PATH* and *PYTHONPATH*, respectively:
-
-::
-
-    # as blissadm
-    lid10eiger1:~ % \
-        . ${EIGER_HOME}/eiger_setup.sh
-        blissrc -a BLISS_LIB_PATH ${LIMA_DIR}/install/lib
-        blissrc -a PYTHONPATH ${LIMA_DIR}/install/python
-
-Rename the Lima installed directories so they are no longer visible, and create the necessary
-symbolic links:
-
-::
-
-    # as blissadm
-    (slsdetector-py37) lid10eiger1:~ % \
-        cd ~/python/bliss_modules
-        mv Lima Lima-pack
-        cd ~/applications
-        mv LimaCCDs LimaCCDs-pack
-        cd ~/server/src
-        mv LimaCCDs LimaCCDs-pack
-        ln -s ${LIMA_DIR}/install/bin/LimaCCDs
-
-
 Lima Python Tango server configuration in *blissadm*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Use *jive* server wizard to add the Lima Python Tango device server to
+Use *jive* server wizard to add the *LimaCCDs/eiger500k* server to
 the Tango database:
 
 ::
 
     (slsdetector-py37) lid10eiger1:~ % jive > /dev/null 2>&1 &
 
-Define the server *LimaCCDs/eiger500k* and include it in the *dserver*
-local database:
-
-::
-
-    # as blissadm
-    lid10eiger1:~ % cat ~/local/daemon/config/device_servers
-    [LimaCCDs]
-    *eiger500k
+and start it:
 
 ::
 
     # as opid10
-    (slsdetector-py37) lid10eiger1:~ % bliss_dserver -fg start LimaCCDs
-    Starting: LimaCCDs/eiger500k
+    (slsdetector-py37) lid10eiger1:~ % LimaCCDs eiger500k
+    ...
 
 Add LimaCCDs and SlsDetector class devices.
 
@@ -1785,35 +1731,6 @@ Add LimaCCDs and SlsDetector class devices.
    the *irqbalance* service is stopped before setting the IRQ affinity and restored during application
    cleanup.
                 
-Finally, configure *opid10* as the default *DSERVER_USER*, which is used
-by the *dserver_daemon*
-   
-::
-
-    # as blissadm
-    lid10eiger1:~ % grep DSERVER_USER local/BLISS_ENV_VAR || \
-                         echo 'DSERVER_USER=opid10 export DSERVER_USER' >> local/BLISS_ENV_VAR
-
-
-and restart the *blcontrol* subsystem:
-
-::
-
-    # as root
-    lid10eiger1:~ # service blcontrol stop
-     BL control ...
-    ...
-    lid10eiger1:~ # service blcontrol start
-     BL control ...
-    ...
-
-.. note:: the latest version of the *daemon_adm* package allows the
-   propagation of the real-time priority capabilities configured as
-   resource limits, so **it is safe** to start the server through the
-   *dserver* remote utility. **If the command *bliss_dserver start* is
-   used, start the server in background and avoid *-fg* option**, so the
-   *LimaCCDs* process is decoupled from the terminal, reducing the
-   risks of CPU blocking.
    
 SPEC
 ----
