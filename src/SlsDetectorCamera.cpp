@@ -435,7 +435,10 @@ void Camera::removeSharedMem()
 	DEB_MEMBER_FUNCT();
 	ostringstream cmd;
 	cmd << "sls_detector_get " << m_det_id << "-free";
-	system(cmd.str().c_str());
+	string cmd_str = cmd.str();
+	int ret = system(cmd_str.c_str());
+	if (ret != 0)
+		THROW_HW_ERROR(Error) << "Error executing " << DEB_VAR1(cmd_str);
 }
 
 void Camera::createReceivers()
