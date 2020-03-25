@@ -109,14 +109,18 @@ class FrameMap
 		Mutex mutex;
 
 		void set(int reset)
-		{ count = reset; }
+		{
+			mutex.lock();
+			count = reset;
+			mutex.unlock();
+		}
 
 		bool dec_test_and_reset(int reset)
 		{
 			mutex.lock();
 			bool zero = (--count == 0);
 			if (zero)
-				set(reset);
+				count = reset;
 			mutex.unlock();
 			return zero;
 		}

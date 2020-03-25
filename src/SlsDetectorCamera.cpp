@@ -435,7 +435,10 @@ void Camera::removeSharedMem()
 	DEB_MEMBER_FUNCT();
 	ostringstream cmd;
 	cmd << "sls_detector_get " << m_det_id << "-free";
-	system(cmd.str().c_str());
+	string cmd_str = cmd.str();
+	int ret = system(cmd_str.c_str());
+	if (ret != 0)
+		THROW_HW_ERROR(Error) << "Error executing " << DEB_VAR1(cmd_str);
 }
 
 void Camera::createReceivers()
@@ -535,6 +538,8 @@ void Camera::setSkipFrameFreq(FrameType skip_frame_freq)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(skip_frame_freq);
+	if (skip_frame_freq)
+		THROW_HW_ERROR(NotSupported) << "Skip frame not supported yet";
 	m_skip_frame_freq = skip_frame_freq;
 	setNbFrames(m_lima_nb_frames);
 }

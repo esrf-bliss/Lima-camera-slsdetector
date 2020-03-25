@@ -357,6 +357,7 @@ void Eiger::Geometry::Recv::copy(const FrameData& data)
 void Eiger::Geometry::Recv::fillBadFrame(FrameType frame, char *bptr)
 {
 	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(m_idx, frame);
 	FrameData data;
 	for (int i = 0; i < getNbPorts(); ++i)
 		data.src[i] = NULL;
@@ -638,10 +639,9 @@ void Eiger::Recv::Thread::threadFunction()
 	m_state = Ready;
 	broadcast();
 
-	while (m_state != Stop) {
-		AutoMutexUnlock u(l);
-		m_recv->processOneFrame(*this);
-	}
+	while (m_state != Stop)
+		m_recv->processOneFrame(*this, l);
+
 	m_state = End;
 	broadcast();
 }
@@ -660,7 +660,7 @@ void Eiger::Recv::Thread::prepareAcq()
 }
 
 Eiger::Recv::Recv(Eiger *eiger, int idx)
-	: m_eiger(eiger), m_idx(idx), m_finishing(false)
+	: m_eiger(eiger), m_idx(idx)
 {
 	DEB_CONSTRUCTOR();
 	DEB_PARAM() << DEB_VAR1(m_idx);
@@ -698,7 +698,6 @@ void Eiger::Recv::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
 
-	m_finishing = false;
 	m_in_process.clear();
 
 	Camera *cam = m_eiger->getCamera();
@@ -731,7 +730,7 @@ void Eiger::Recv::stopAcq()
 		(*it)->stopAcq();
 
 	AutoMutex l = lock();
-	while (m_finishing)
+	while (!m_in_process.empty())
 		wait();
 }
 
@@ -763,11 +762,9 @@ void Eiger::Recv::setNbProcessingThreads(int nb_proc_threads)
 	}
 }
 
-void Eiger::Recv::processOneFrame(Thread& t)
+void Eiger::Recv::processOneFrame(Thread& t, AutoMutex& l)
 {
 	DEB_MEMBER_FUNCT();
-
-	AutoMutex l = lock();
 
 	if (!checkForRecvState(t))
 		return;
@@ -778,8 +775,7 @@ void Eiger::Recv::processOneFrame(Thread& t)
 	{
 	public:
 		Sync(FrameType f, Recv& r)
-			: frame(f), recv(r), in_proc(r.m_in_process),
-			  finishing(r.m_finishing), do_finish(false)
+			: frame(f), recv(r), in_proc(r.m_in_process)
 		{
 			in_proc.insert(frame);
 		}
@@ -787,31 +783,19 @@ void Eiger::Recv::processOneFrame(Thread& t)
 		~Sync()
 		{
 			in_proc.erase(frame);
-			if (do_finish)
-				endFinish();
 			recv.broadcast();
 		}
 
 		void startFinish()
 		{
-			do_finish = true;
-			while (finishing ||
-			       (!in_proc.empty() && (*in_proc.begin() < frame)))
+			while (!in_proc.empty() && (*in_proc.begin() < frame))
 				recv.wait();
-			finishing = true;
-		}
-
-		void endFinish()
-		{
-			finishing = false;
 		}
 
 	private:
 		FrameType frame;
 		Recv& recv;
 		SortedIntList& in_proc;
-		bool& finishing;
-		bool do_finish;
 	} sync(frame, *this);
 
 	bool ok;

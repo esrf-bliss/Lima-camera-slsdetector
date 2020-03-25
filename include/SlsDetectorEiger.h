@@ -375,7 +375,7 @@ class Eiger : public Model
 			return (t.m_state == Thread::Running);
 		}
 
-		void processOneFrame(Thread& t);
+		void processOneFrame(Thread& t, AutoMutex& l);
 
 		Eiger *m_eiger;
 		int m_idx;
@@ -387,7 +387,6 @@ class Eiger : public Model
 		FrameType m_next_frame;
 		FrameType m_last_frame;
 		SortedIntList m_in_process;
-		bool m_finishing;
 		FrameMap::Item *m_frame_map_item;
 		ThreadList m_thread_list;
 	};
