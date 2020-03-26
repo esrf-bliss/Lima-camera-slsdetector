@@ -22,9 +22,8 @@ tolerate_lost_packets		No		True		Initial tolerance to lost packets
 pixel_depth_cpu_affinity_map	No		[]		Default PixelDepthCPUAffinityMap as Python string(s) defining a dict:
 								{<pixel_depth>: <global_affinity>}, being global_affinity a tuple:
 								(<recv_list>, <lima>, <other>, <netdev_grp_list>), where recv_list
-								is a list of tupples in the form: (<port_1>, <port_2>), where portX
-								is a tupple: (<listener>, <writer>, <port_threads>) where listener 
-								and writer are affinities and port_threads a tuple of affinities,
+								is a list of tupples in the form: (<listeners>, <port_threads>),
+								where listeners and port_threads are tuples of affinities,
 								lima and and other are affinities, and netdev_grp_list is a list of
 								tuples in the form:
 								(<comma_separated_netdev_name_list>, <rx_queue_affinity_map>), the

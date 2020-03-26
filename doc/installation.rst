@@ -1665,7 +1665,7 @@ Add LimaCCDs and SlsDetector class devices.
 +----------------------------------------------------------+------------------------------------------------------+
 | id10/limaccds/eiger500k->LimaCameraType                  | SlsDetector                                          |
 +----------------------------------------------------------+------------------------------------------------------+
-| id10/limaccds/eiger500k->NbProcessingThread              | 11                                                   |
+| id10/limaccds/eiger500k->NbProcessingThread              | 12                                                   |
 +----------------------------------------------------------+------------------------------------------------------+
 | id10/limaccds/eiger500k->BufferMaxMemory                 | 25                                                   |
 +----------------------------------------------------------+------------------------------------------------------+
@@ -1678,7 +1678,7 @@ Add LimaCCDs and SlsDetector class devices.
 +----------------------------------------------------------+------------------------------------------------------+
 | id10/slsdetector/eiger500k->pixel_depth_cpu_affinity_map | | { 4: ((((CPU( 6), CPU( 7)), (CPU(18), CPU(19))),   |
 |                                                          | |        ((CPU( 9), CPU(10)), (CPU(21), CPU(22)))),  |
-|                                                          | |       CPU(*chain(range(1, 6), range(12, 18))),     |
+|                                                          | |       CPU(*chain(range(0, 6), range(12, 18))),     |
 |                                                          | |       CPU(0),                                      |
 |                                                          | |       (('eth0,eth1,eth2,eth4,eth6,eth7,eth8,eth9', |
 |                                                          |           {-1: (CPU(0), CPU(0))}),                   |
@@ -1703,8 +1703,8 @@ Add LimaCCDs and SlsDetector class devices.
    The previous example is based on a dual 6-core CPUs backend with *Hyper-Threading Technology* (12 cores, 
    24 threads). The configuration is optimised to work in pipe-line mode: cores/threads in Socket #1
    (6-11, 18-23) will perform network data acquisition and basic image reconstruction (4-to-8 bit conversion,
-   gap pixel insertion), and cores/threads in Socket #0 (1-5, 12-17) will perform Lima processing tasks.
-   That's why the NbProcessingThread is set to 11. Please note that there are three network groups and four
+   gap pixel insertion), and cores/threads in Socket #0 (0-5, 12-17) will perform Lima processing tasks.
+   That's why the NbProcessingThread is set to 12. Please note that there are three network groups and four
    pixel_depth->cpu_affinity settings (4-, 8-, 16- and 32-bit). The special global_affinity '@X' is a reference
    to pixel_depth X.
 
