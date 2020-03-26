@@ -1676,8 +1676,8 @@ Add LimaCCDs and SlsDetector class devices.
 +----------------------------------------------------------+------------------------------------------------------+
 | id10/slsdetector/eiger500k->apply_corrections            | 0                                                    |
 +----------------------------------------------------------+------------------------------------------------------+
-| id10/slsdetector/eiger500k->pixel_depth_cpu_affinity_map | | { 4: ((((CPU( 6), CPU( 7)), (CPU(18), CPU(19))),   |
-|                                                          | |        ((CPU( 9), CPU(10)), (CPU(21), CPU(22)))),  |
+| id10/slsdetector/eiger500k->pixel_depth_cpu_affinity_map | | { 4: (((CPU( 6), CPU( 7)), (CPU( 9), CPU(10))),    |
+|                                                          | |       (CPU(18), CPU(19), CPU(21), CPU(22)),        |
 |                                                          | |       CPU(*chain(range(0, 6), range(12, 18))),     |
 |                                                          | |       CPU(0),                                      |
 |                                                          | |       (('eth0,eth1,eth2,eth4,eth6,eth7,eth8,eth9', |
@@ -1695,7 +1695,7 @@ Add LimaCCDs and SlsDetector class devices.
    the following tasks:
 
    * Receivers' packet stream threads (passive mode equivalent to listeners): 2
-   * Eiger processing threads: 2 per receiver, configurable
+   * Eiger processing threads: 4, configurable
    * Lima processing threads
    * Other OS processes
    * Net-dev group packet dispatching for Rx queues: irq & processing

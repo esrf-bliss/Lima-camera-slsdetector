@@ -87,8 +87,6 @@ Eiger::BadRecvFrameCorr::BadRecvFrameCorr(Eiger *eiger)
 	DEB_CONSTRUCTOR();
 
 	m_cam = m_eiger->getCamera();
-	m_nb_recvs = m_eiger->getNbRecvs();
-	m_bfd_list.resize(m_nb_recvs);
 }
 
 void Eiger::BadRecvFrameCorr::prepareAcq()
@@ -96,9 +94,7 @@ void Eiger::BadRecvFrameCorr::prepareAcq()
 	DEB_MEMBER_FUNCT();
 
 	CorrBase::prepareAcq();
-
-	for (int i = 0; i < m_nb_recvs; ++i)
-		m_bfd_list[i].reset();
+	m_bfd.reset();
 }
 
 void Eiger::BadRecvFrameCorr::correctFrame(FrameType frame, void *ptr)
@@ -106,27 +102,26 @@ void Eiger::BadRecvFrameCorr::correctFrame(FrameType frame, void *ptr)
 	DEB_MEMBER_FUNCT();
 
 	char *bptr = (char *) ptr;
-	for (int i = 0; i < m_nb_recvs; ++i) {
-		BadFrameData& bfd = m_bfd_list[i];
-		IntList& bfl = bfd.bad_frame_list;
-		int& last_idx = bfd.last_idx;
-		if (bfl.empty()) {
-			int bad_frames = m_cam->getNbBadFrames(i);
-			if (bad_frames == last_idx)
-				continue;
-			m_cam->getBadFrameList(i, last_idx, bad_frames, bfl);
-		}
-		IntList::iterator end = bfl.end();
-		if (find(bfl.begin(), end, frame) != end) {
-			Eiger::Geometry *geom = m_eiger->getGeometry();
+	IntList& bfl = m_bfd.bad_frame_list;
+	int& last_idx = m_bfd.last_idx;
+	if (bfl.empty()) {
+		int bad_frames = m_cam->getNbBadFrames(0);
+		if (bad_frames == last_idx)
+			return;
+		m_cam->getBadFrameList(0, last_idx, bad_frames, bfl);
+	}
+	IntList::iterator end = bfl.end();
+	if (find(bfl.begin(), end, frame) != end) {
+		Eiger::Geometry *geom = m_eiger->getGeometry();
+		for (int i = 0; i < geom->getNbRecvs(); ++i) {
 			Eiger::Geometry::Recv *recv = geom->getRecv(i);
 			recv->fillBadFrame(frame, bptr);
 		}
-		if (*(end - 1) > int(frame))
-			continue;
-		last_idx += bfl.size();
-		bfl.clear();
 	}
+	if (*(end - 1) > int(frame))
+		return;
+	last_idx += bfl.size();
+	bfl.clear();
 }
 
 Eiger::InterModGapCorr::InterModGapCorr(Eiger *eiger)
@@ -600,8 +595,48 @@ FrameDim Eiger::Geometry::getRecvFrameDim(bool raw)
 	return frame_dim;
 }
 
-Eiger::Recv::Thread::Thread(Recv *recv, int idx)
-	: m_recv(recv), m_idx(idx)
+Eiger::Recv::Recv(Eiger *eiger, int idx)
+	: m_eiger(eiger), m_idx(idx)
+{
+	DEB_CONSTRUCTOR();
+	DEB_PARAM() << DEB_VAR1(m_idx);
+
+	m_geom = m_eiger->m_geom.getRecv(m_idx);
+	Camera *cam = m_eiger->getCamera(); 
+	m_recv = cam->getRecv(m_idx);
+}
+
+Eiger::Recv::~Recv()
+{
+	DEB_DESTRUCTOR();
+}
+
+void Eiger::Recv::prepareAcq()
+{
+	DEB_MEMBER_FUNCT();
+	m_data_offset = m_geom->getDstBufferOffset();
+	DEB_TRACE() << DEB_VAR2(m_idx, m_data_offset);
+}
+
+bool Eiger::Recv::processOneFrame(FrameType frame, char *bptr)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(m_idx, frame);
+	RecvImageData data;
+	data.frame = frame;
+	data.buffer = bptr + m_data_offset;
+	return m_recv->getImage(data);
+}
+
+void Eiger::Recv::processBadFrame(FrameType frame, char *bptr)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(m_idx, frame);
+	m_geom->fillBadFrame(frame, bptr);
+}
+
+Eiger::Thread::Thread(Eiger *eiger, int idx)
+	: m_eiger(eiger), m_idx(idx)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -620,7 +655,7 @@ Eiger::Recv::Thread::Thread(Recv *recv, int idx)
 		wait();
 }
 
-Eiger::Recv::Thread::~Thread()
+Eiger::Thread::~Thread()
 {
 	DEB_DESTRUCTOR();
 
@@ -631,7 +666,7 @@ Eiger::Recv::Thread::~Thread()
 		wait();
 }
 
-void Eiger::Recv::Thread::threadFunction()
+void Eiger::Thread::threadFunction()
 {
 	DEB_MEMBER_FUNCT();
 
@@ -640,13 +675,13 @@ void Eiger::Recv::Thread::threadFunction()
 	broadcast();
 
 	while (m_state != Stop)
-		m_recv->processOneFrame(*this, l);
+		m_eiger->processOneFrame(*this, l);
 
 	m_state = End;
 	broadcast();
 }
 
-void Eiger::Recv::Thread::setCPUAffinity(CPUAffinity aff)
+void Eiger::Thread::setCPUAffinity(CPUAffinity aff)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(aff);
@@ -654,180 +689,9 @@ void Eiger::Recv::Thread::setCPUAffinity(CPUAffinity aff)
         aff.applyToTask(getThreadID(), false);
 }
 
-void Eiger::Recv::Thread::prepareAcq()
+void Eiger::Thread::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
-}
-
-Eiger::Recv::Recv(Eiger *eiger, int idx)
-	: m_eiger(eiger), m_idx(idx)
-{
-	DEB_CONSTRUCTOR();
-	DEB_PARAM() << DEB_VAR1(m_idx);
-
-	m_geom = m_eiger->m_geom.getRecv(m_idx);
-	Camera *cam = m_eiger->getCamera(); 
-	m_recv = cam->getRecv(m_idx);
-
-	setNbProcessingThreads(1);
-}
-
-Eiger::Recv::~Recv()
-{
-	DEB_DESTRUCTOR();
-}
-
-void Eiger::Recv::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
-{
-	DEB_MEMBER_FUNCT();
-
-	const CPUAffinityList& aff_list = recv_affinity.recv_threads;
-	int nb_recv_threads = aff_list.size();
-	if (getNbProcessingThreads() != nb_recv_threads)
-		THROW_HW_ERROR(Error) << "Mismatch in number of threads: " 
-				      << DEB_VAR2(getNbProcessingThreads(),
-						  nb_recv_threads);
-
-	CPUAffinityList::const_iterator rit = aff_list.begin();
-	ThreadList::iterator it, end = m_thread_list.end();
-	for (it = m_thread_list.begin(); it != end; ++it, ++rit)
-		(*it)->setCPUAffinity(*rit);
-}
-
-void Eiger::Recv::prepareAcq()
-{
-	DEB_MEMBER_FUNCT();
-
-	m_in_process.clear();
-
-	Camera *cam = m_eiger->getCamera();
-	cam->getNbFrames(m_nb_frames);
-	m_next_frame = 0;
-	m_last_frame = -1;
-
-	m_geom->prepareAcq();
-
-	ThreadList::iterator it, end = m_thread_list.end();
-	for (it = m_thread_list.begin(); it != end; ++it)
-		(*it)->prepareAcq();
-
-	m_data_offset = m_geom->getDstBufferOffset();
-}
-
-void Eiger::Recv::startAcq()
-{
-	DEB_MEMBER_FUNCT();
-	ThreadList::iterator it, end = m_thread_list.end();
-	for (it = m_thread_list.begin(); it != end; ++it)
-		(*it)->startAcq();
-}
-
-void Eiger::Recv::stopAcq()
-{
-	DEB_MEMBER_FUNCT();
-	ThreadList::iterator it, end = m_thread_list.end();
-	for (it = m_thread_list.begin(); it != end; ++it)
-		(*it)->stopAcq();
-
-	AutoMutex l = lock();
-	while (!m_in_process.empty())
-		wait();
-}
-
-int Eiger::Recv::getNbProcessingThreads()
-{
-	DEB_MEMBER_FUNCT();
-	int nb_proc_threads = m_thread_list.size();
-	DEB_RETURN() << DEB_VAR1(nb_proc_threads);
-	return nb_proc_threads;
-}
-
-void Eiger::Recv::setNbProcessingThreads(int nb_proc_threads)
-{
-	DEB_MEMBER_FUNCT();
-	int curr_nb_proc_threads = m_thread_list.size();
-	DEB_PARAM() << DEB_VAR2(curr_nb_proc_threads, nb_proc_threads);
-
-	if (nb_proc_threads < 1)
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(nb_proc_threads);
-	if (nb_proc_threads == curr_nb_proc_threads)
-		return;
-
-	if (nb_proc_threads < curr_nb_proc_threads)
-		m_thread_list.resize(nb_proc_threads);
-
-	for (int i = curr_nb_proc_threads; i < nb_proc_threads; ++i) {
-		Thread *t = new Thread(this, i);
-		m_thread_list.push_back(t);
-	}
-}
-
-void Eiger::Recv::processOneFrame(Thread& t, AutoMutex& l)
-{
-	DEB_MEMBER_FUNCT();
-
-	if (!checkForRecvState(t))
-		return;
-
-	FrameType frame = m_next_frame++;
-
-	class Sync
-	{
-	public:
-		Sync(FrameType f, Recv& r)
-			: frame(f), recv(r), in_proc(r.m_in_process)
-		{
-			in_proc.insert(frame);
-		}
-
-		~Sync()
-		{
-			in_proc.erase(frame);
-			recv.broadcast();
-		}
-
-		void startFinish()
-		{
-			while (!in_proc.empty() && (*in_proc.begin() < frame))
-				recv.wait();
-		}
-
-	private:
-		FrameType frame;
-		Recv& recv;
-		SortedIntList& in_proc;
-	} sync(frame, *this);
-
-	bool ok;
-	{
-		AutoMutexUnlock u(l);
-		RecvImageData data;
-		char *bptr = m_eiger->getFrameBufferPtr(frame);
-		data.frame = frame;
-		data.buffer = bptr + m_data_offset;
-		ok = m_recv->getImage(data);
-	}
-	if (!ok)
-		return;
-
-	if ((m_last_frame == -1) || (frame > m_last_frame))
-		m_last_frame = frame;
-
-	sync.startFinish();
-
-	{
-		AutoMutexUnlock u(l);
-		FrameMap::Item& mi = *m_frame_map_item;
-		FinishInfo finfo = mi.frameFinished(frame, true, true);
-		m_eiger->processFinishInfo(finfo);
-	}
-}
-
-void Eiger::Recv::processBadFrame(FrameType frame, char *bptr)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(m_idx, frame);
-	m_geom->fillBadFrame(frame, bptr);
 }
 
 Eiger::Eiger(Camera *cam)
@@ -844,6 +708,8 @@ Eiger::Eiger(Camera *cam)
 		Recv *r = new Recv(this, i);
 		m_recv_list.push_back(r);
 	}
+
+	setNbProcessingThreads(1);
 
 	updateCameraModel();
 
@@ -1098,7 +964,7 @@ void Eiger::measureReadoutTime(double& readout_time)
 int Eiger::getNbFrameMapItems()
 {
 	DEB_MEMBER_FUNCT();
-	int nb_items = getNbRecvs();
+	int nb_items = 1;
 	DEB_RETURN() << DEB_VAR1(nb_items);
 	return nb_items;
 }
@@ -1106,8 +972,7 @@ int Eiger::getNbFrameMapItems()
 void Eiger::updateFrameMapItems(FrameMap *map)
 {
 	DEB_MEMBER_FUNCT();
-	for (int i = 0; i < m_recv_list.size(); ++i)
-		m_recv_list[i]->updateFrameMapItem(map->getItem(i));
+	m_frame_map_item = map->getItem(0);
 }
 
 void Eiger::processBadItemFrame(FrameType frame, int item, char *bptr)
@@ -1334,10 +1199,44 @@ int Eiger::getNbRecvs()
 	return nb_recvs;
 }
 
-Model::Recv *Eiger::getRecv(int recv_idx)
+void Eiger::setNbProcessingThreads(int nb_proc_threads)
 {
 	DEB_MEMBER_FUNCT();
-	return m_recv_list[recv_idx];
+	int curr_nb_proc_threads = m_thread_list.size();
+	DEB_PARAM() << DEB_VAR2(curr_nb_proc_threads, nb_proc_threads);
+
+	if (nb_proc_threads < 1)
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(nb_proc_threads);
+	if (nb_proc_threads == curr_nb_proc_threads)
+		return;
+
+	if (nb_proc_threads < curr_nb_proc_threads)
+		m_thread_list.resize(nb_proc_threads);
+
+	for (int i = curr_nb_proc_threads; i < nb_proc_threads; ++i) {
+		Thread *t = new Thread(this, i);
+		m_thread_list.push_back(t);
+	}
+}
+
+int Eiger::getNbProcessingThreads()
+{
+	DEB_MEMBER_FUNCT();
+	int nb_proc_threads = m_thread_list.size();
+	DEB_RETURN() << DEB_VAR1(nb_proc_threads);
+	return nb_proc_threads;
+}
+
+void Eiger::setThreadCPUAffinity(const CPUAffinityList& aff_list)
+{
+	DEB_MEMBER_FUNCT();
+
+	setNbProcessingThreads(aff_list.size());
+
+	CPUAffinityList::const_iterator rit = aff_list.begin();
+	ThreadList::iterator it, end = m_thread_list.end();
+	for (it = m_thread_list.begin(); it != end; ++it, ++rit)
+		(*it)->setCPUAffinity(*rit);
 }
 
 void Eiger::prepareAcq()
@@ -1346,9 +1245,20 @@ void Eiger::prepareAcq()
 
 	m_geom.prepareAcq();
 
+	m_in_process.clear();
+
+	Camera *cam = getCamera();
+	cam->getNbFrames(m_nb_frames);
+	m_next_frame = 0;
+	m_last_frame = -1;
+
 	RecvList::iterator rit, rend = m_recv_list.end();
 	for (rit = m_recv_list.begin(); rit != rend; ++rit)
 		(*rit)->prepareAcq();
+
+	ThreadList::iterator tit, tend = m_thread_list.end();
+	for (tit = m_thread_list.begin(); tit != tend; ++tit)
+		(*tit)->prepareAcq();
 
 	CorrList::iterator cit, cend = m_corr_list.end();
 	for (cit = m_corr_list.begin(); cit != cend; ++cit)
@@ -1358,17 +1268,87 @@ void Eiger::prepareAcq()
 void Eiger::startAcq()
 {
 	DEB_MEMBER_FUNCT();
-	RecvList::iterator it, end = m_recv_list.end();
-	for (it = m_recv_list.begin(); it != end; ++it)
+	ThreadList::iterator it, end = m_thread_list.end();
+	for (it = m_thread_list.begin(); it != end; ++it)
 		(*it)->startAcq();
 }
 
 void Eiger::stopAcq()
 {
 	DEB_MEMBER_FUNCT();
-	RecvList::iterator it, end = m_recv_list.end();
-	for (it = m_recv_list.begin(); it != end; ++it)
+	ThreadList::iterator it, end = m_thread_list.end();
+	for (it = m_thread_list.begin(); it != end; ++it)
 		(*it)->stopAcq();
+
+	AutoMutex l = lock();
+	while (!m_in_process.empty())
+		wait();
+}
+
+void Eiger::processOneFrame(Thread& t, AutoMutex& l)
+{
+	DEB_MEMBER_FUNCT();
+
+	if (!checkForRecvState(t))
+		return;
+
+	FrameType frame = m_next_frame++;
+
+	class Sync
+	{
+	public:
+		Sync(FrameType f, Eiger& r)
+			: frame(f), eiger(r), in_proc(r.m_in_process)
+		{
+			in_proc.insert(frame);
+		}
+
+		~Sync()
+		{
+			in_proc.erase(frame);
+			eiger.broadcast();
+		}
+
+		void startFinish()
+		{
+			while (!in_proc.empty() && (*in_proc.begin() < frame))
+				eiger.wait();
+		}
+
+	private:
+		FrameType frame;
+		Eiger& eiger;
+		SortedIntList& in_proc;
+	} sync(frame, *this);
+
+	{
+		AutoMutexUnlock u(l);
+		std::bitset<64> ok;
+		if (getNbRecvs() > 64)
+			THROW_HW_ERROR(Error) << "Too many receivers";
+		char *bptr = getFrameBufferPtr(frame);
+		for (int i = 0; i < getNbRecvs(); ++i)
+			ok[i] = m_recv_list[i]->processOneFrame(frame, bptr);
+
+		if (ok.none())
+			return;
+
+		for (int i = 0; i < getNbRecvs(); ++i)
+			if (!ok[i])
+				m_recv_list[i]->processBadFrame(frame, bptr);
+	}
+
+	if ((m_last_frame == -1) || (frame > m_last_frame))
+		m_last_frame = frame;
+
+	sync.startFinish();
+
+	{
+		AutoMutexUnlock u(l);
+		FrameMap::Item& mi = *m_frame_map_item;
+		FinishInfo finfo = mi.frameFinished(frame, true, true);
+		processFinishInfo(finfo);
+	}
 }
 
 Eiger::Correction *Eiger::createCorrectionTask()

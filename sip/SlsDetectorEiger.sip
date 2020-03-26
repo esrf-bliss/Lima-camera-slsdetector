@@ -100,8 +100,8 @@ class Eiger : public SlsDetector::Model
 
 	virtual bool checkSettings(SlsDetector::Defs::Settings settings);
 
-	virtual int getNbRecvs();
-	virtual SlsDetector::Model::Recv *getRecv(int recv_idx);
+	virtual void setThreadCPUAffinity(const SlsDetector::CPUAffinityList&
+						det_thread_aff_list);
 
 	virtual void prepareAcq();
 	virtual void startAcq();
