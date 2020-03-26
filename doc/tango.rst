@@ -13,6 +13,7 @@ Properties
 Property name			Mandatory	Default value	Description
 =============================== =============== =============== ==============================================================
 config_fname			Yes		-		Path to the SlsDetector config file
+apply_corrections		No		True		Perform corrections on each frame
 high_voltage			No		0		Initial detector high voltage (V)
 								(set to 150 if already tested)
 fixed_clock_div			No		0		Initial detector fixed-clock-div
@@ -42,6 +43,7 @@ Attribute name			RW	Type			Description
 =============================== ======= ======================= ===========================================================
 config_fname			ro	DevString		Path to the SlsDetector config file
 hostname_list			ro	DevVarStringArray	The list of the Eiger half-modules' hostnames
+apply_corrections		ro	DevBoolean		Pixel software corrections are applied on each frame
 dac_name_list			ro	DevVarStringArray	The list of the DAC signals' names
 dac_<signal_name>		rw	DevVarLongArray		Array with the DAC <signal_name> value for each half-module, in A/D units
 dac_name_list_mv		ro	DevVarStringArray	The list of the DAC signals' names supporting milli-volt units

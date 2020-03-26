@@ -1674,6 +1674,8 @@ Add LimaCCDs and SlsDetector class devices.
 | id10/slsdetector/eiger500k->config_fname                 | /users/opid00/eiger/eiger_v3.1.1/config/             |
 |                                                          | beb-021-020-direct-FO-10g.config                     |
 +----------------------------------------------------------+------------------------------------------------------+
+| id10/slsdetector/eiger500k->apply_corrections            | 0                                                    |
++----------------------------------------------------------+------------------------------------------------------+
 | id10/slsdetector/eiger500k->pixel_depth_cpu_affinity_map | | { 4: ((((CPU( 6), CPU( 7)), (CPU(18), CPU(19))),   |
 |                                                          | |        ((CPU( 9), CPU(10)), (CPU(21), CPU(22)))),  |
 |                                                          | |       CPU(*chain(range(1, 6), range(12, 18))),     |

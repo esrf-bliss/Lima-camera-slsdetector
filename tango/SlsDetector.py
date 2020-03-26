@@ -222,6 +222,11 @@ class SlsDetector(PyTango.Device_4Impl):
         attr.set_value(self.config_fname)
 
     @Core.DEB_MEMBER_FUNCT
+    def read_apply_corrections(self, attr):
+        deb.Return("apply_corrections=%s" % self.apply_corrections)
+        attr.set_value(self.apply_corrections)
+
+    @Core.DEB_MEMBER_FUNCT
     def putCmd(self, cmd):
         deb.Param("cmd=%s" % cmd)
         self.cam.putCmd(cmd);
@@ -530,6 +535,9 @@ class SlsDetectorClass(PyTango.DeviceClass):
         'tolerate_lost_packets':
         [PyTango.DevBoolean,
          "Initial tolerance to lost packets", True],
+        'apply_corrections':
+        [PyTango.DevBoolean,
+         "Apply frame corrections", True],
         'pixel_depth_cpu_affinity_map':
         [PyTango.DevVarStringArray,
          "Default PixelDepthCPUAffinityMap as Python string(s) defining a dict: "
@@ -579,6 +587,10 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevString,
           PyTango.SPECTRUM,
           PyTango.READ, 64]],
+        'apply_corrections':
+        [[PyTango.DevBoolean,
+          PyTango.SCALAR,
+          PyTango.READ]],
         'dac_name_list':
         [[PyTango.DevString,
           PyTango.SPECTRUM,
@@ -659,11 +671,28 @@ _SlsDetectorEiger = None
 _SlsDetectorCorrection = None
 _SlsDetectorControl = None
 
-def get_control(config_fname, **keys) :
+def get_control(config_fname, full_config_fname=None, apply_corrections=None,
+                **keys) :
     global _SlsDetectorCam, _SlsDetectorHwInter, _SlsDetectorEiger
     global _SlsDetectorCorrection, _SlsDetectorControl
+
+    def to_bool(x, default_val=False):
+        if x is None:
+            return default_val
+        elif type(x) is str:
+            x = x.lower()
+            if x == 'true':
+                return True
+            elif x == 'false':
+                return False
+            else:
+                return bool(int(x))
+        else:
+            return bool(x)
+
+    apply_corrections = to_bool(apply_corrections, True)
+
     if _SlsDetectorControl is None:
-        full_config_fname = keys.pop('full_config_fname', None)
         if full_config_fname:
             p = Process(target=setup_partial_config,
                         args=(config_fname, full_config_fname))
@@ -679,7 +708,8 @@ def get_control(config_fname, **keys) :
         _SlsDetectorHwInter = SlsDetectorHw.Interface(_SlsDetectorCam)
         if _SlsDetectorCam.getType() == SlsDetectorHw.EigerDet:
             _SlsDetectorEiger = SlsDetectorHw.Eiger(_SlsDetectorCam)
-            _SlsDetectorCorrection = _SlsDetectorEiger.createCorrectionTask()
+            if apply_corrections:
+                _SlsDetectorCorrection = _SlsDetectorEiger.createCorrectionTask()
         else:
             raise ValueError("Unknown detector type: %s" %
                              _SlsDetectorCam.getType())
