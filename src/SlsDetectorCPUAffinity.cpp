@@ -1331,19 +1331,15 @@ void SystemCPUAffinityMgr::setNetDevCPUAffinity(
 }
 
 RecvCPUAffinity::RecvCPUAffinity()
-	: listeners(1)
+	: listeners(1), recv_threads(1)
 {
 }
 
 RecvCPUAffinity& RecvCPUAffinity::operator =(CPUAffinity a)
 {
 	listeners.assign(1, a);
+	recv_threads.assign(1, a);
 	return *this;
-}
-
-GlobalCPUAffinity::GlobalCPUAffinity()
-	: model_threads(1)
-{
 }
 
 CPUAffinity GlobalCPUAffinity::all() const
@@ -1528,7 +1524,6 @@ void GlobalCPUAffinityMgr::applyAndSet(const GlobalCPUAffinity& o)
 
 	setLimaAffinity(o.lima);
 	setRecvAffinity(o.recv);
-	setModelAffinity(o.model_threads);
 
 	if (!m_system_mgr)
 		m_system_mgr = new SystemCPUAffinityMgr();
@@ -1570,19 +1565,14 @@ void GlobalCPUAffinityMgr::setRecvAffinity(
 		return;
 
 	m_cam->setRecvCPUAffinity(recv_affinity_list);
-	m_curr.recv = recv_affinity_list;
-}
 
-void GlobalCPUAffinityMgr::setModelAffinity(
-				const CPUAffinityList& model_affinity_list)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(model_affinity_list);
-	m_cam->m_model->setThreadCPUAffinity(model_affinity_list);
-
-	CPUAffinity buffer_affinity = CPUAffinityList_all(model_affinity_list);
+	const RecvCPUAffinityList& l = recv_affinity_list;
+	RecvCPUAffinity::Selector s = &RecvCPUAffinity::RecvThreads;
+	CPUAffinity buffer_affinity = RecvCPUAffinityList_all(l, s);
 	DEB_ALWAYS() << DEB_VAR1(buffer_affinity);
 	m_cam->m_buffer_ctrl_obj->setCPUAffinityMask(buffer_affinity);
+
+	m_curr.recv = recv_affinity_list;
 }
 
 void GlobalCPUAffinityMgr::updateRecvRestart()
@@ -1675,7 +1665,6 @@ void GlobalCPUAffinityMgr::limaFinished()
 			     << m_set.lima;
 		setLimaAffinity(m_set.lima);
 		setRecvAffinity(m_set.recv);
-		setModelAffinity(m_set.model_threads);
 	}
 
 	m_state = Ready;
@@ -1758,7 +1747,7 @@ lima::SlsDetector::operator <<(ostream& os, const NetDevGroupCPUAffinity& a)
 ostream& lima::SlsDetector::operator <<(ostream& os, const RecvCPUAffinity& a)
 {
 	os << "<";
-	os << "listeners=" << a.listeners;
+	os << "listeners=" << a.listeners << ", recv_threads=" << a.recv_threads;
 	return os << ">";
 }
 

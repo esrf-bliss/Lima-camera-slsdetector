@@ -31,12 +31,20 @@ class Model
 {
 
 public:
+	class Recv
+	{
+	public:
+		virtual ~Recv();
+
+		virtual int getNbProcessingThreads() = 0;
+		virtual void setNbProcessingThreads(int nb_proc_threads) = 0;
+
+		virtual void setCPUAffinity(const SlsDetector::RecvCPUAffinity&
+							recv_affinity) = 0;
+	};
+
 	Model(SlsDetector::Camera *cam, SlsDetector::Type type);
 	virtual ~Model();
-
-
-	virtual void setThreadCPUAffinity(const SlsDetector::CPUAffinityList&
-						det_thread_aff_list) = 0;
 
 	virtual void getFrameDim(FrameDim& frame_dim /Out/,
 				 bool raw = false) = 0;
@@ -76,6 +84,9 @@ protected:
 
 	virtual 
 	bool checkSettings(SlsDetector::Defs::Settings settings) = 0;
+
+	virtual int getNbRecvs() = 0;
+	virtual SlsDetector::Model::Recv *getRecv(int recv_idx) = 0;
 
 	virtual void prepareAcq() = 0;
 	virtual void startAcq() = 0;

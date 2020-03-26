@@ -66,15 +66,9 @@ FrameMap::Item::frameFinished(FrameType frame, bool no_check, bool valid)
 	finfo.first_lost = m_last_frame + 1;
 	finfo.nb_lost = frame - finfo.first_lost + (!valid ? 1 : 0);
 	for (FrameType f = m_last_frame + 1; f != (frame + 1); ++f) {
-		bool finished;
-		if (nb_items > 1) {
-			int idx = f % m_map->m_buffer_size;
-			CounterList& cl = m_map->m_frame_item_count_list;
-			AtomicCounter& count = cl[idx];
-			finished = count.dec_test_and_reset(nb_items);
-		} else {
-			finished = true;
-		}
+		int idx = f % m_map->m_buffer_size;
+		AtomicCounter& count = m_map->m_frame_item_count_list[idx];
+		bool finished = count.dec_test_and_reset(nb_items);
 		if (finished)
 			finfo.finished.insert(f);
 	}
@@ -135,12 +129,10 @@ void FrameMap::clear()
 	for (iit = m_item_list.begin(); iit != iend; ++iit)
 		(*iit)->clear();
 
-	if (m_nb_items > 1) {
-		CounterList& count_list = m_frame_item_count_list;
-		CounterList::iterator cit, cend = count_list.end();
-		for (cit = count_list.begin(); cit != cend; ++cit)
-			cit->set(m_nb_items);
-	}
+	CounterList& count_list = m_frame_item_count_list;
+	CounterList::iterator cit, cend = count_list.end();
+	for (cit = count_list.begin(); cit != cend; ++cit)
+		cit->set(m_nb_items);
 }
 
 FrameArray FrameMap::getItemFrameArray() const

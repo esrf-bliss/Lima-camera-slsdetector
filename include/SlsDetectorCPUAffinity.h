@@ -484,6 +484,7 @@ class SystemCPUAffinityMgr
 
 struct RecvCPUAffinity {
 	CPUAffinityList listeners;
+	CPUAffinityList recv_threads;
 
 	RecvCPUAffinity();
 	CPUAffinity all() const;
@@ -491,6 +492,8 @@ struct RecvCPUAffinity {
 
 	const CPUAffinityList& Listeners() const
 	{ return listeners; }
+	const CPUAffinityList& RecvThreads() const
+	{ return recv_threads; }
 
 	typedef const CPUAffinityList& (RecvCPUAffinity::*Selector)() const;
 };
@@ -498,14 +501,16 @@ struct RecvCPUAffinity {
 
 inline CPUAffinity RecvCPUAffinity::all() const
 {
-	return CPUAffinityList_all(listeners);
+	return (CPUAffinityList_all(listeners) |
+		CPUAffinityList_all(recv_threads));
 }
 
 
 inline 
 bool operator ==(const RecvCPUAffinity& a, const RecvCPUAffinity& b)
 {
-	return (a.listeners == b.listeners);
+	return ((a.listeners == b.listeners) &&
+		(a.recv_threads == b.recv_threads));
 }
 
 inline 
@@ -539,12 +544,10 @@ inline CPUAffinity RecvCPUAffinityList_all(const RecvCPUAffinityList& l,
 					       
 struct GlobalCPUAffinity {
 	RecvCPUAffinityList recv;
-	CPUAffinityList model_threads;
 	CPUAffinity lima;
 	CPUAffinity other;
 	NetDevGroupCPUAffinityList netdev;
 
-	GlobalCPUAffinity();
 	CPUAffinity all() const;
 	void updateRecvAffinity(CPUAffinity a);
 };
@@ -631,7 +634,6 @@ class GlobalCPUAffinityMgr
 
 	void setLimaAffinity(CPUAffinity lima_affinity);
 	void setRecvAffinity(const RecvCPUAffinityList& recv_affinity_list);
-	void setModelAffinity(const CPUAffinityList& model_affinity_list);
 
 	AutoMutex lock()
 	{ return AutoMutex(m_cond.mutex()); }

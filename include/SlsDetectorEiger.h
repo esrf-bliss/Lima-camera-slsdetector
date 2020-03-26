@@ -268,11 +268,12 @@ class Eiger : public Model
 	virtual void processBadItemFrame(FrameType frame, int item,
 					 char *bptr);
 
-	virtual void setThreadCPUAffinity(const CPUAffinityList& aff_list);
-
 	virtual void updateImageSize();
 
 	virtual bool checkSettings(Settings settings);
+
+	virtual int getNbRecvs();
+	virtual Model::Recv *getRecv(int recv_idx);
 
 	virtual void prepareAcq();
 	virtual void startAcq();
@@ -282,7 +283,7 @@ class Eiger : public Model
 	friend class Correction;
 	friend class CorrBase;
 
-	class Recv
+	class Recv : public Model::Recv
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Recv", "SlsDetector");
 	public:
@@ -293,67 +294,105 @@ class Eiger : public Model
 		virtual ~Recv();
 
 		void prepareAcq();
+		void startAcq();
+		void stopAcq();
 
-		bool processOneFrame(FrameType frame, char *bptr);
+		virtual int getNbProcessingThreads();
+		virtual void setNbProcessingThreads(int nb_proc_threads);
+
+		virtual void setCPUAffinity(const RecvCPUAffinity&
+							recv_affinity);
+
+		void updateFrameMapItem(FrameMap::Item *item)
+		{ m_frame_map_item = item; }
+
 		void processBadFrame(FrameType frame, char *bptr);
 
 	private:
+		class Thread : public lima::Thread
+		{
+			DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Recv::Thread",
+					  "SlsDetector");
+		public:
+			enum State {
+				Init, Ready, Running, Stop, End,
+			};
+
+			Thread(Recv *recv, int idx);
+			virtual ~Thread();
+
+			void setCPUAffinity(CPUAffinity aff);
+
+			void prepareAcq();
+
+			void startAcq()
+			{ setState(Running); }
+			void stopAcq()
+			{ setState(Ready); }
+
+		protected:
+			virtual void threadFunction();
+
+		private:
+			friend class Recv;
+
+			AutoMutex lock()
+			{ return m_recv->lock(); }
+			void wait()
+			{ m_recv->wait(); }
+			void broadcast()
+			{ m_recv->broadcast(); }
+
+			void setState(State state)
+			{
+				AutoMutex l = lock();
+				m_state = state;
+				broadcast();
+			}
+
+			Recv *m_recv;
+			int m_idx;
+			State m_state;
+		};
+		typedef std::vector<AutoPtr<Thread> > ThreadList;
+
+		AutoMutex lock()
+		{ return AutoMutex(m_cond.mutex()); }
+		void wait()
+		{ m_cond.wait(); }
+		void broadcast()
+		{ m_cond.broadcast(); }
+
+		bool allFramesAcquired()
+		{ return m_next_frame == m_nb_frames; }
+
+		bool checkForRecvState(Thread& t)
+		{
+			while ((t.m_state == Thread::Ready) || 
+			       ((t.m_state == Thread::Running) && 
+				allFramesAcquired()))
+				wait();
+			return (t.m_state == Thread::Running);
+		}
+
+		void processOneFrame(Thread& t, AutoMutex& l);
 
 		Eiger *m_eiger;
 		int m_idx;
+		Cond m_cond;
 		Geometry::Recv *m_geom;
 		Receiver *m_recv;
 		int m_data_offset;
+		FrameType m_nb_frames;
+		FrameType m_next_frame;
+		FrameType m_last_frame;
+		SortedIntList m_in_process;
+		FrameMap::Item *m_frame_map_item;
+		ThreadList m_thread_list;
 	};
 
 	typedef std::vector<AutoPtr<Recv> > RecvList;
 
-
-	class Thread : public lima::Thread
-	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Thread", "SlsDetector");
-	public:
-		enum State {
-			Init, Ready, Running, Stop, End,
-		};
-
-		Thread(Eiger *eiger, int idx);
-		virtual ~Thread();
-
-		void setCPUAffinity(CPUAffinity aff);
-
-		void prepareAcq();
-
-		void startAcq()
-		{ setState(Running); }
-		void stopAcq()
-		{ setState(Ready); }
-
-	protected:
-		virtual void threadFunction();
-
-	private:
-		friend class Eiger;
-
-		AutoMutex lock()
-		{ return m_eiger->lock(); }
-		void wait()
-		{ m_eiger->wait(); }
-		void broadcast()
-		{ m_eiger->broadcast(); }
-
-		void setState(State state)
-		{
-			AutoMutex l = lock();
-			m_state = state;
-			broadcast();
-		}
-
-		Eiger *m_eiger;
-		int m_idx;
-		State m_state;
-	};
-	typedef std::vector<AutoPtr<Thread> > ThreadList;
 
 	class CorrBase
 	{
@@ -399,7 +438,8 @@ class Eiger : public Model
 		};
 
 		Camera *m_cam;
-		BadFrameData m_bfd;
+		int m_nb_recvs;
+		std::vector<BadFrameData> m_bfd_list;
 	};
 
 	class InterModGapCorr : public CorrBase
@@ -530,31 +570,6 @@ class Eiger : public Model
 	const FrameDim& getRecvFrameDim()
 	{ return m_geom.m_recv_frame_dim; }
 
-	AutoMutex lock()
-	{ return AutoMutex(m_cond.mutex()); }
-	void wait()
-	{ m_cond.wait(); }
-	void broadcast()
-	{ m_cond.broadcast(); }
-
-	bool allFramesAcquired()
-	{ return m_next_frame == m_nb_frames; }
-
-	bool checkForRecvState(Thread& t)
-	{
-		while ((t.m_state == Thread::Ready) || 
-		       ((t.m_state == Thread::Running) && allFramesAcquired()))
-			wait();
-		return (t.m_state == Thread::Running);
-	}
-
-	int getNbRecvs();
-
-	int getNbProcessingThreads();
-	void setNbProcessingThreads(int nb_proc_threads);
-
-	void processOneFrame(Thread& t, AutoMutex& l);
-
 	CorrBase *createBadRecvFrameCorr();
 	CorrBase *createChipBorderCorr(ImageType image_type);
 	CorrBase *createInterModGapCorr();
@@ -590,16 +605,9 @@ class Eiger : public Model
 	static const LinScale ChipXfer2Buff;
 	static const LinScale ChipRealReadout;
 
-	Cond m_cond;
 	Geometry m_geom;
 	CorrList m_corr_list;
 	RecvList m_recv_list;
-	FrameType m_nb_frames;
-	FrameType m_next_frame;
-	FrameType m_last_frame;
-	SortedIntList m_in_process;
-	FrameMap::Item *m_frame_map_item;
-	ThreadList m_thread_list;
 	bool m_fixed_clock_div;
 	ClockDiv m_clock_div;
 };

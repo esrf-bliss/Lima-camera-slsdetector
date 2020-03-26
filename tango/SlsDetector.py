@@ -379,15 +379,15 @@ class SlsDetector(PyTango.Device_4Impl):
         self.expandPixelDepthRefs(aff_map_raw)
         aff_map = {}
         for pixel_depth, aff_data in aff_map_raw.items():
-            recv_aff, model_threads, lima, other, netdev_aff = aff_data
+            recv_aff, lima, other, netdev_aff = aff_data
             global_aff = GlobalCPUAffinity()
             recv_list = []
-            for listeners in recv_aff:
+            for listeners, recv_threads in recv_aff:
                 recv = RecvCPUAffinity()
                 recv.listeners = list(listeners)
+                recv.recv_threads = list(recv_threads)
                 recv_list.append(recv)
             global_aff.recv = recv_list
-            global_aff.model_threads = list(model_threads)
             global_aff.lima = lima
             global_aff.other = other
             ng_aff_list = []
@@ -416,7 +416,7 @@ class SlsDetector(PyTango.Device_4Impl):
             return 'Mask(0x%x)' % NumAffinity(a)
         def aff_2_str(a):
             if type(a) in [tuple, list]:
-                str_list = list(map(aff_2_str, a))
+                str_list = map(aff_2_str, a)
                 if len(str_list) == 1:
                     str_list.append('')
                 return '(%s)' % ', '.join(str_list)
@@ -425,9 +425,8 @@ class SlsDetector(PyTango.Device_4Impl):
         for pixel_depth, global_aff in sorted(aff_map.items()):
             recv_list = []
             for r in global_aff.recv:
-                recv_list.append(r.listeners)
+                recv_list.append((r.listeners, r.recv_threads))
             recv_str = aff_2_str(recv_list)
-            model_threads_str = aff_2_str(global_aff.model_threads)
             lima_str = aff_2_str(global_aff.lima)
             other_str = aff_2_str(global_aff.other)
             netdev_grp_list = []
@@ -440,10 +439,9 @@ class SlsDetector(PyTango.Device_4Impl):
                 netdev_str = '"%s": {%s}' % (name_str, queue_str)
                 netdev_grp_list.append(netdev_str)
             netdev_grp_str = '(%s)' % ', '.join(netdev_grp_list)
-            aff_str = '%d: (%s, %s, %s, %s, %s)' % (pixel_depth, recv_str,
-                                                    model_threads_str,
-                                                    lima_str, other_str,
-                                                    netdev_grp_str)
+            aff_str = '%d: (%s, %s, %s, %s)' % (pixel_depth, recv_str,
+                                                lima_str, other_str, 
+                                                netdev_grp_str)
             pixel_depth_aff_list.append(aff_str)
         return '{%s}' % ', '.join(pixel_depth_aff_list)
 
@@ -477,9 +475,8 @@ class SlsDetector(PyTango.Device_4Impl):
         for i, r in enumerate(global_aff.recv):
             s = "Recv[%d]:" % i
             s += " listeners=%s" % [A(x) for x in r.listeners]
+            s += ", recv_threads=%s" % [A(x) for x in r.recv_threads]
             deb.Always('  ' + s)
-        model_threads = global_aff.model_threads
-        deb.Always('  ModelThreads=%s' % [A(x) for x in model_threads])
         lima, other = global_aff.lima, global_aff.other
         deb.Always('  Lima=%s, Other=%s' % (A(lima), A(other)))
         for netdev_grp in global_aff.netdev:
@@ -545,10 +542,11 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [PyTango.DevVarStringArray,
          "Default PixelDepthCPUAffinityMap as Python string(s) defining a dict: "
          "{<pixel_depth>: <global_affinity>}, being global_affinity a tuple: "
-         "(<recv_list>, <model_threads>, <lima>, <other>, <netdev_grp_list>), "
-         "where recv_list is a list of tuples of listeners affinities, "
-         "model_threads a tuple of affinities, lima and other are affinities, "
-         "and netdev_grp_list is a list of tuples in the form: "
+         "(<recv_list>, <lima>, <other>, <netdev_grp_list>), where recv_list "
+	 "is a list of tupples in the form: (<listeners>, <port_threads>), "
+	 "where listeners and port_threads are tuples of affinities, "
+	 "lima and and other are affinities, and netdev_grp_list is a list of "
+	 "tuples in the form: "
          "(<comma_separated_netdev_name_list>, <rx_queue_affinity_map>), the "
          "latter in the form of: {<queue>: (<irq>, <processing>)}. "
          "Each affinity can be expressed by one of the functions: Mask(mask) "
