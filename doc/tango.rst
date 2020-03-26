@@ -57,6 +57,7 @@ pixel_depth			rw	DevString		The image pixel bit-depth:
 raw_mode			rw	DevBoolean		Publish image as given by the Receivers (no SW reconstruction)
 threshold_energy		rw	DevLong			The energy (in eV) the pixel discriminator thresholds (Vcmp & Trim bits) is set at
 high_voltage			rw	DevShort		The detector high voltage (in V)
+tx_frame_delay			rw	DevLong			Frame Tx delay (6.2 ns units)
 all_trim_bits			rw	DevVarLongArray		Array with the pixel trimming value [0-63] for each half-module, if all the pixels in the half-module have the same trimming value, -1 otherwise
 clock_div			rw      DevString               The readout clock divider:
 								 - **FULL_SPEED**

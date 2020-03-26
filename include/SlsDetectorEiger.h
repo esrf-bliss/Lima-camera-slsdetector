@@ -259,6 +259,9 @@ class Eiger : public Model
 	void setThresholdEnergy(int  thres);
 	void getThresholdEnergy(int& thres);
 
+	void setTxFrameDelay(int  tx_frame_delay);
+	void getTxFrameDelay(int& tx_frame_delay);
+
 	Geometry *getGeometry()
 	{ return &m_geom; }
 

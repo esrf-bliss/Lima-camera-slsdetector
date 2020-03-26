@@ -41,6 +41,8 @@ namespace lima
 namespace SlsDetector
 {
 
+class Eiger;
+
 class Camera : public HwMaxImageSizeCallbackGen, public EventCallbackGen
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "Camera", "SlsDetector");
@@ -223,6 +225,8 @@ private:
 	friend class Model;
 	friend class Receiver;
 	friend class GlobalCPUAffinityMgr;
+
+	friend class Eiger;
 
 	void setModel(Model *model);
 

@@ -1326,6 +1326,22 @@ void Eiger::getThresholdEnergy(int& thres)
 	DEB_RETURN() << DEB_VAR1(thres);
 }
 
+void Eiger::setTxFrameDelay(int tx_frame_delay)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(tx_frame_delay);
+	Camera* cam = getCamera();
+	cam->putNbCmd<int>("txndelay_frame", tx_frame_delay);
+}
+
+void Eiger::getTxFrameDelay(int& tx_frame_delay)
+{
+	DEB_MEMBER_FUNCT();
+	Camera* cam = getCamera();
+	tx_frame_delay = cam->getNbCmd<int>("txndelay_frame");
+	DEB_RETURN() << DEB_VAR1(tx_frame_delay);
+}
+
 int Eiger::getNbRecvs()
 {
 	DEB_MEMBER_FUNCT();
