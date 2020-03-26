@@ -47,19 +47,6 @@ class Model
 
 	typedef FrameMap::FinishInfo FinishInfo;
 
-	class Recv
-	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Model::Recv", "SlsDetector");
-	public:
-		virtual ~Recv();
-
-		virtual int getNbProcessingThreads() = 0;
-		virtual void setNbProcessingThreads(int nb_proc_threads) = 0;
-
-		virtual void setCPUAffinity(const RecvCPUAffinity&
-							recv_affinity) = 0;
-	};
-
 	Model(Camera *cam, Type type);
 	virtual ~Model();
 	
@@ -95,6 +82,8 @@ class Model
 
 	virtual bool isXferActive() = 0;
 
+	virtual void setThreadCPUAffinity(const CPUAffinityList& aff_list) = 0;
+
  protected:
 	void updateCameraModel();
 	void updateTimeRanges();
@@ -107,9 +96,6 @@ class Model
 	char *getFrameBufferPtr(FrameType frame_nb);
 
 	virtual bool checkSettings(Settings settings) = 0;
-
-	virtual int getNbRecvs() = 0;
-	virtual Recv *getRecv(int recv_idx) = 0;
 
 	virtual void prepareAcq() = 0;
 	virtual void startAcq() = 0;

@@ -66,14 +66,20 @@ FrameMap::Item::frameFinished(FrameType frame, bool no_check, bool valid)
 	finfo.first_lost = m_last_frame + 1;
 	finfo.nb_lost = frame - finfo.first_lost + (!valid ? 1 : 0);
 	for (FrameType f = m_last_frame + 1; f != (frame + 1); ++f) {
-		int idx = f % m_map->m_buffer_size;
-		AtomicCounter& count = m_map->m_frame_item_count_list[idx];
-		double delay;
-		bool finished = count.dec_test_and_reset(nb_items, delay);
-		if (finished) {
-			finfo.finished.insert(f);
-			m_map->m_delay_stat.add(frame, delay);
+		bool finished;
+		if (nb_items > 1) {
+			int idx = f % m_map->m_buffer_size;
+			CounterList& cl = m_map->m_frame_item_count_list;
+			AtomicCounter& count = cl[idx];
+			double delay;
+			bool finished = count.dec_test_and_reset(nb_items, delay);
+			if (finished)
+				m_map->m_delay_stat.add(frame, delay);
+		} else {
+			finished = true;
 		}
+		if (finished)
+			finfo.finished.insert(f);
 	}
 
 	if (DEB_CHECK_ANY(DebTypeReturn)) {
@@ -132,12 +138,14 @@ void FrameMap::clear()
 	for (iit = m_item_list.begin(); iit != iend; ++iit)
 		(*iit)->clear();
 
-	CounterList& count_list = m_frame_item_count_list;
-	CounterList::iterator cit, cend = count_list.end();
-	for (cit = count_list.begin(); cit != cend; ++cit)
-		cit->set(m_nb_items);
+	if (m_nb_items > 1) {
+		CounterList& count_list = m_frame_item_count_list;
+		CounterList::iterator cit, cend = count_list.end();
+		for (cit = count_list.begin(); cit != cend; ++cit)
+			cit->set(m_nb_items);
 
-	m_delay_stat.reset();
+		m_delay_stat.reset();
+	}
 }
 
 FrameArray FrameMap::getItemFrameArray() const

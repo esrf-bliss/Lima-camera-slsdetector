@@ -211,8 +211,10 @@ void Camera::AcqThread::threadFunction()
 		DEB_ALWAYS() << DEB_VAR1(stats);
 
 		FrameMap& m = m_cam->m_frame_map;
-		XYStat::LinRegress delay_stat = m.calcDelayStat();
-		DEB_ALWAYS() << DEB_VAR1(delay_stat);
+		if (m.getNbItems() > 1) {
+			XYStat::LinRegress delay_stat = m.calcDelayStat();
+			DEB_ALWAYS() << DEB_VAR1(delay_stat);
+		}
 
 		if (had_frames) {
 			affinity_mgr.recvFinished();
@@ -673,22 +675,12 @@ void Camera::updateCPUAffinity(bool recv_restarted)
 void Camera::setRecvCPUAffinity(const RecvCPUAffinityList& recv_affinity_list)
 {
 	DEB_MEMBER_FUNCT();
-	unsigned int nb_recv = m_model->getNbRecvs();
 	unsigned int nb_aff = recv_affinity_list.size();
-	DEB_PARAM() << DEB_VAR2(nb_recv, nb_aff);
-	if (nb_aff != nb_recv)
-		THROW_HW_ERROR(InvalidValue) << "invalid affinity list size: "
-					     <<  DEB_VAR2(nb_recv, nb_aff);
-
+	DEB_PARAM() << DEB_VAR1(nb_aff);
 	RecvCPUAffinityList::const_iterator ait = recv_affinity_list.begin();
 	RecvList::iterator rit = m_recv_list.begin();
-	for (unsigned int i = 0; i < nb_recv; ++i, ++ait, ++rit) {
-		Model::Recv *recv = m_model->getRecv(i);
-		const RecvCPUAffinity& aff = *ait;
-		recv->setNbProcessingThreads(aff.recv_threads.size());
-		recv->setCPUAffinity(aff);
-		(*rit)->setCPUAffinity(aff);
-	}
+	for (unsigned int i = 0; i < nb_aff; ++i, ++ait, ++rit)
+		(*rit)->setCPUAffinity(*ait);
 }
 
 void Camera::clearAllBuffers()
@@ -1167,8 +1159,8 @@ void Camera::getSortedBadFrameList(IntList first_idx, IntList last_idx,
 {
 	bool all = first_idx.empty();
 	IntList bfl;
-	int nb_recvs = getNbRecvs();
-	for (int i = 0; i < nb_recvs; ++i) {
+	int nb_items = m_frame_map.getNbItems();
+	for (int i = 0; i < nb_items; ++i) {
 		FrameMap::Item *item = m_frame_map.getItem(i);
 		int first = all ? 0 : first_idx[i];
 		int last = all ? item->getNbBadFrames() : last_idx[i];
