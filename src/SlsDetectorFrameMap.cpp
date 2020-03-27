@@ -72,7 +72,6 @@ FrameMap::Item::frameFinished(FrameType frame, bool no_check, bool valid)
 		if (finished)
 			finfo.finished.insert(f);
 	}
-	m_last_frame = frame;
 
 	if (DEB_CHECK_ANY(DebTypeReturn)) {
 		PrettySortedList finished_list(finfo.finished);
@@ -81,6 +80,8 @@ FrameMap::Item::frameFinished(FrameType frame, bool no_check, bool valid)
 	}
 
 	AutoMutex l = lock();
+
+	m_last_frame = frame;
 
 	FrameType f = finfo.first_lost;
 	for (int i = 0; i < finfo.nb_lost; ++i, ++f)
@@ -138,8 +139,10 @@ FrameArray FrameMap::getItemFrameArray() const
 {
 	FrameArray frame_array;
 	ItemList::const_iterator it, end = m_item_list.end();
-	for (it = m_item_list.begin(); it != end; ++it)
+	for (it = m_item_list.begin(); it != end; ++it) {
+		AutoMutex l = (*it)->lock();
 		frame_array.push_back((*it)->m_last_frame);
+	}
 	return frame_array;
 }
 

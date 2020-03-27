@@ -322,7 +322,6 @@ public:
 
 struct RecvCPUAffinity {
 	SlsDetector::CPUAffinityList listeners;
-	SlsDetector::CPUAffinityList writers;
 	SlsDetector::CPUAffinityList recv_threads;
 
 	RecvCPUAffinity();

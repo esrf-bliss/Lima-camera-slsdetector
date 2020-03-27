@@ -87,6 +87,7 @@ class SlsDetector(PyTango.Device_4Impl):
                   'clock_div',
                   'fixed_clock_div',
                   'threshold_energy',
+                  'tx_frame_delay',
     ]
 
     def __init__(self,*args) :
@@ -112,6 +113,9 @@ class SlsDetector(PyTango.Device_4Impl):
 
         self.init_list_attr()
         self.init_dac_adc_attr()
+
+        if self.initial_acq_params:
+            self.perform_initial_acq(self.initial_acq_params)
 
         self.proc_finished = self.cam.getProcessingFinishedEvent()
         self.proc_finished.registerStatusCallback(_SlsDetectorControl)
@@ -183,6 +187,21 @@ class SlsDetector(PyTango.Device_4Impl):
             self.add_attribute(attr_data)
 
     @Core.DEB_MEMBER_FUNCT
+    def perform_initial_acq(self, params):
+        deb.Always("Performing initial setup acquisition: %s ..." % params)
+        ct = _SlsDetectorControl
+        acq = ct.acquisition()
+        for x in params.split(','):
+            n, v = x.split('=')
+            attr_name = 'set' + ''.join([i.title() for i in n.split('_')])
+            eval('acq.%s(%s)' % (attr_name, v))
+        ct.prepareAcq()
+        ct.startAcq()
+        while ct.getStatus().AcquisitionStatus != Core.AcqReady:
+            time.sleep(0.1)
+        deb.Always("Done!")
+
+    @Core.DEB_MEMBER_FUNCT
     def getAttrStringValueList(self, attr_name):
         return get_attr_string_value_list(self, attr_name)
 
@@ -202,6 +221,11 @@ class SlsDetector(PyTango.Device_4Impl):
     def read_config_fname(self, attr):
         deb.Return("config_fname=%s" % self.config_fname)
         attr.set_value(self.config_fname)
+
+    @Core.DEB_MEMBER_FUNCT
+    def read_apply_corrections(self, attr):
+        deb.Return("apply_corrections=%s" % self.apply_corrections)
+        attr.set_value(self.apply_corrections)
 
     @Core.DEB_MEMBER_FUNCT
     def putCmd(self, cmd):
@@ -318,22 +342,22 @@ class SlsDetector(PyTango.Device_4Impl):
         return bad_frame_list
 
     @Core.DEB_MEMBER_FUNCT
-    def getStats(self, port_idx_stats_name):
-        port_idx_str, stats_name = port_idx_stats_name.split(':')
-        port_idx = int(port_idx_str)
-        deb.Param("port_idx=%s, stats_name=%s");
-        stats = self.cam.getStats(port_idx)
+    def getStats(self, recv_idx_stats_name):
+        recv_idx_str, stats_name = recv_idx_stats_name.split(':')
+        recv_idx = int(recv_idx_str)
+        deb.Param("recv_idx=%s, stats_name=%s");
+        stats = self.cam.getStats(recv_idx)
         stat = getattr(stats, stats_name)
         stat_data = [stat.min(), stat.max(), stat.ave(), stat.std(), stat.n()]
         deb.Return("stat_data=%s" % stat_data)
         return stat_data
 
     @Core.DEB_MEMBER_FUNCT
-    def getStatsHistogram(self, port_idx_stats_name):
-        port_idx_str, stats_name = port_idx_stats_name.split(':')
-        port_idx = int(port_idx_str)
-        deb.Param("port_idx=%s, stats_name=%s");
-        stats = self.cam.getStats(port_idx)
+    def getStatsHistogram(self, recv_idx_stats_name):
+        recv_idx_str, stats_name = recv_idx_stats_name.split(':')
+        recv_idx = int(recv_idx_str)
+        deb.Param("recv_idx=%s, stats_name=%s");
+        stats = self.cam.getStats(recv_idx)
         stat = getattr(stats, stats_name)
         stat_data = np.array(stat.hist).flatten()
         deb.Return("stat_data=%s" % stat_data)
@@ -359,11 +383,9 @@ class SlsDetector(PyTango.Device_4Impl):
             recv_aff, lima, other, netdev_aff = aff_data
             global_aff = GlobalCPUAffinity()
             recv_list = []
-            for recv_ports, recv_threads in recv_aff:
+            for listeners, recv_threads in recv_aff:
                 recv = RecvCPUAffinity()
-                l, w = zip(*recv_ports)
-                recv.listeners = list(l)
-                recv.writers = list(w)
+                recv.listeners = list(listeners)
                 recv.recv_threads = list(recv_threads)
                 recv_list.append(recv)
             global_aff.recv = recv_list
@@ -404,8 +426,7 @@ class SlsDetector(PyTango.Device_4Impl):
         for pixel_depth, global_aff in sorted(aff_map.items()):
             recv_list = []
             for r in global_aff.recv:
-                port_aff = zip(r.listeners, r.writers)
-                recv_list.append((port_aff, r.recv_threads))
+                recv_list.append((r.listeners, r.recv_threads))
             recv_str = aff_2_str(recv_list)
             lima_str = aff_2_str(global_aff.lima)
             other_str = aff_2_str(global_aff.other)
@@ -454,9 +475,8 @@ class SlsDetector(PyTango.Device_4Impl):
             return hex(NumAffinity(x))
         for i, r in enumerate(global_aff.recv):
             s = "Recv[%d]:" % i
-            s += " listeners=%s," % [A(x) for x in r.listeners]
-            s += " writers=%s," % [A(x) for x in r.writers]
-            s += " recv_threads=%s" % [A(x) for x in r.recv_threads]
+            s += " listeners=%s" % [A(x) for x in r.listeners]
+            s += ", recv_threads=%s" % [A(x) for x in r.recv_threads]
             deb.Always('  ' + s)
         lima, other = global_aff.lima, global_aff.other
         deb.Always('  Lima=%s, Other=%s' % (A(lima), A(other)))
@@ -484,6 +504,9 @@ class SlsDetector(PyTango.Device_4Impl):
         self.printPixelDepthCPUAffinityMap(aff_map)
         self.cam.setPixelDepthCPUAffinityMap(aff_map)
 
+    @Core.DEB_MEMBER_FUNCT
+    def clearAllBuffers(self):
+        self.cam.clearAllBuffers()
 
 class SlsDetectorClass(PyTango.DeviceClass):
 
@@ -496,6 +519,10 @@ class SlsDetectorClass(PyTango.DeviceClass):
         'full_config_fname':
         [PyTango.DevString,
          "In case of partial configuration, path to the full config file",[]],
+        'initial_acq_params':
+        [PyTango.DevString,
+         "Initial acquisition parameters: "
+         "acq_expo_time=0.01,acq_nb_frames=10,...", ""],
         'high_voltage':
         [PyTango.DevShort,
          "Initial detector high voltage (V) "
@@ -509,16 +536,18 @@ class SlsDetectorClass(PyTango.DeviceClass):
         'tolerate_lost_packets':
         [PyTango.DevBoolean,
          "Initial tolerance to lost packets", True],
+        'apply_corrections':
+        [PyTango.DevBoolean,
+         "Apply frame corrections", True],
         'pixel_depth_cpu_affinity_map':
         [PyTango.DevVarStringArray,
          "Default PixelDepthCPUAffinityMap as Python string(s) defining a dict: "
          "{<pixel_depth>: <global_affinity>}, being global_affinity a tuple: "
          "(<recv_list>, <lima>, <other>, <netdev_grp_list>), where recv_list "
-         "is a list of tupples in the form: "
-         "((<port_1>, <port_2>), <recv_threads>), where portX is a tupple: "
-         "(<listener>, <writer>), being listener and writer are affinities, "
-         "recv_threads a tuple of affinities, lima and other are "
-         "affinities, and netdev_grp_list is a list of tuples in the form: "
+	 "is a list of tupples in the form: (<listeners>, <port_threads>), "
+	 "where listeners and port_threads are tuples of affinities, "
+	 "lima and and other are affinities, and netdev_grp_list is a list of "
+	 "tuples in the form: "
          "(<comma_separated_netdev_name_list>, <rx_queue_affinity_map>), the "
          "latter in the form of: {<queue>: (<irq>, <processing>)}. "
          "Each affinity can be expressed by one of the functions: Mask(mask) "
@@ -542,11 +571,14 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevLong, "recv_idx(-1=all)"],
          [PyTango.DevVarLongArray, "Bad frame list"]],
         'getStats':
-        [[PyTango.DevString, "port_idx(-1=all):stats_name"],
+        [[PyTango.DevString, "recv_idx(-1=all):stats_name"],
          [PyTango.DevVarDoubleArray, "Statistics: min, max, ave, std, n"]],
         'getStatsHistogram':
-        [[PyTango.DevString, "port_idx(-1=all):stats_name"],
+        [[PyTango.DevString, "recv_idx(-1=all):stats_name"],
          [PyTango.DevVarDoubleArray, "[[bin, count], ...]"]],
+        'clearAllBuffers':
+        [[PyTango.DevVoid, ""],
+         [PyTango.DevVoid, ""]],
         }
 
     attr_list = {
@@ -558,6 +590,10 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevString,
           PyTango.SPECTRUM,
           PyTango.READ, 64]],
+        'apply_corrections':
+        [[PyTango.DevBoolean,
+          PyTango.SCALAR,
+          PyTango.READ]],
         'dac_name_list':
         [[PyTango.DevString,
           PyTango.SPECTRUM,
@@ -622,6 +658,10 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevLong,
           PyTango.SCALAR,
           PyTango.READ_WRITE]],
+        'tx_frame_delay':
+        [[PyTango.DevLong,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
         }
 
     def __init__(self,name) :
@@ -638,18 +678,36 @@ _SlsDetectorEiger = None
 _SlsDetectorCorrection = None
 _SlsDetectorControl = None
 
-def get_control(config_fname, **keys) :
+def get_control(config_fname, full_config_fname=None, apply_corrections=None,
+                **keys) :
     global _SlsDetectorCam, _SlsDetectorHwInter, _SlsDetectorEiger
     global _SlsDetectorCorrection, _SlsDetectorControl
+
+    def to_bool(x, default_val=False):
+        if x is None:
+            return default_val
+        elif type(x) is str:
+            x = x.lower()
+            if x == 'true':
+                return True
+            elif x == 'false':
+                return False
+            else:
+                return bool(int(x))
+        else:
+            return bool(x)
+
+    apply_corrections = to_bool(apply_corrections, True)
+
     if _SlsDetectorControl is None:
-        full_config_fname = keys.pop('full_config_fname', None)
         if full_config_fname:
             p = Process(target=setup_partial_config,
                         args=(config_fname, full_config_fname))
             p.start()
             p.join()
 
-        _SlsDetectorCam = SlsDetectorHw.Camera(config_fname)
+        det_id = 0
+        _SlsDetectorCam = SlsDetectorHw.Camera(config_fname, det_id)
         for i, n in enumerate(_SlsDetectorCam.getHostnameList()):
             print('Enabling: %s (%d)' % (n, i))
             _SlsDetectorCam.putCmd('activate 1', i)
@@ -657,7 +715,8 @@ def get_control(config_fname, **keys) :
         _SlsDetectorHwInter = SlsDetectorHw.Interface(_SlsDetectorCam)
         if _SlsDetectorCam.getType() == SlsDetectorHw.EigerDet:
             _SlsDetectorEiger = SlsDetectorHw.Eiger(_SlsDetectorCam)
-            _SlsDetectorCorrection = _SlsDetectorEiger.createCorrectionTask()
+            if apply_corrections:
+                _SlsDetectorCorrection = _SlsDetectorEiger.createCorrectionTask()
         else:
             raise ValueError("Unknown detector type: %s" %
                              _SlsDetectorCam.getType())

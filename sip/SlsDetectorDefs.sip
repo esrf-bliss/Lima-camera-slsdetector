@@ -170,6 +170,7 @@ enum TrigMode {
 	Gating          = GATE_FIX_NUMBER,
 	TriggeredGating = GATE_WITH_START_TRIGGER,
 	BurstTrigger    = BURST_TRIGGER,
+	SoftTriggerExposure,
 };
 
 enum Settings {

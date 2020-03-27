@@ -30,7 +30,7 @@ namespace SlsDetector
 class Camera : public HwMaxImageSizeCallbackGen, public EventCallbackGen
 {
 public:
-	Camera(std::string config_fname);
+	Camera(std::string config_fname, int det_id = 0);
 	virtual ~Camera();
 
 	SlsDetector::Type getType();
@@ -38,10 +38,10 @@ public:
 	std::vector<std::string> getHostnameList();
 	int getNbDetModules();
 	int getNbDetSubModules();
-	int getTotNbPorts();
-	int getPortIndex(int recv_idx, int port);
 
 //	void setBufferCtrlObj(NumaSoftBufferCtrlObj *buffer_ctrl_obj);
+
+	void clearAllBuffers();
 
 	void setPixelDepth(SlsDetector::PixelDepth  pixel_depth);
 	void getPixelDepth(SlsDetector::PixelDepth& pixel_depth /Out/);
@@ -112,7 +112,9 @@ public:
 	void startAcq();
 	void stopAcq();
 
-	void getStats(SlsDetector::Stats& stats /Out/, int port_idx=-1);
+	void triggerFrame();
+
+	void getStats(SlsDetector::Stats& stats /Out/, int recv_idx=-1);
 
 	void setPixelDepthCPUAffinityMap(
 		SlsDetector::PixelDepthCPUAffinityMap aff_map);

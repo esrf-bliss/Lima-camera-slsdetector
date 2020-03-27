@@ -34,26 +34,13 @@ public:
 	class Recv
 	{
 	public:
-		class Port
-		{
-		public:
-			virtual ~Port();
-	
-			virtual void processFrame(unsigned long frame, char *dptr,
-						  unsigned int dsize,
-						  char *bptr) = 0;
-		};
-
 		virtual ~Recv();
-
-		virtual int getNbPorts() = 0;
-		virtual SlsDetector::Model::Recv::Port *getPort(int port_idx) = 0;
-
-		virtual void processFileStart(unsigned int dsize) = 0;
 
 		virtual int getNbProcessingThreads() = 0;
 		virtual void setNbProcessingThreads(int nb_proc_threads) = 0;
-		virtual int getThreadID(int thread_idx) = 0;
+
+		virtual void setCPUAffinity(const SlsDetector::RecvCPUAffinity&
+							recv_affinity) = 0;
 	};
 
 	Model(SlsDetector::Camera *cam, SlsDetector::Type type);
@@ -93,13 +80,13 @@ protected:
 	void putCmd(const std::string& s, int idx = -1);
 	std::string getCmd(const std::string& s, int idx = -1);
 
+	char *getFrameBufferPtr(unsigned long frame_nb);
+
 	virtual 
 	bool checkSettings(SlsDetector::Defs::Settings settings) = 0;
 
 	virtual int getNbRecvs() = 0;
 	virtual SlsDetector::Model::Recv *getRecv(int recv_idx) = 0;
-
-	int getNbRecvPorts();
 
 	virtual void prepareAcq() = 0;
 	virtual void startAcq() = 0;

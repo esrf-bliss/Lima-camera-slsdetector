@@ -47,6 +47,7 @@ enum TrigMode {
 	Gating          = slsDetectorDefs::GATE_FIX_NUMBER, 
 	TriggeredGating = slsDetectorDefs::GATE_WITH_START_TRIGGER,
 	BurstTrigger    = slsDetectorDefs::BURST_TRIGGER,
+	SoftTriggerExposure, 
 };
 
 enum Settings {

@@ -32,11 +32,6 @@ Model::Recv::~Recv()
 	DEB_DESTRUCTOR();
 }
 
-Model::Recv::Port::~Port()
-{
-	DEB_DESTRUCTOR();
-}
-
 Model::Model(Camera *cam, Type type)
 	: m_cam(cam), m_type(type), m_det(m_cam->m_det)
 {
@@ -79,10 +74,9 @@ string Model::getCmd(const string& s, int idx)
 	return m_cam->getCmd(s, idx);
 }
 
-int Model::getNbRecvPorts()
+char *Model::getFrameBufferPtr(FrameType frame_nb)
 {
-	DEB_MEMBER_FUNCT();
-	return getNbRecvs() ? getRecv(0)->getNbPorts() : 0;
+	return m_cam->getFrameBufferPtr(frame_nb);
 }
 
 void Model::processFinishInfo(const FinishInfo& finfo)
@@ -93,7 +87,7 @@ void Model::processFinishInfo(const FinishInfo& finfo)
 		return;
 
 	try {
-		if ((finfo.nb_lost > 0) && m_cam->m_tol_lost_packets)
+		if ((finfo.nb_lost > 0) && !m_cam->m_tol_lost_packets)
 			THROW_HW_ERROR(Error) << "lost frames: "
 					      << "first=" << finfo.first_lost
 					      << ", nb=" << finfo.nb_lost;

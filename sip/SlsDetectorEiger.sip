@@ -90,6 +90,9 @@ class Eiger : public SlsDetector::Model
 	void setThresholdEnergy(int  thres);
 	void getThresholdEnergy(int& thres /Out/);
 
+	void setTxFrameDelay(int  tx_frame_delay);
+	void getTxFrameDelay(int& tx_frame_delay /Out/);
+
  protected:
 	virtual int getNbFrameMapItems();
 	virtual void updateFrameMapItems(FrameMap *map);

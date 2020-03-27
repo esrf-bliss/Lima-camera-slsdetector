@@ -1,9 +1,9 @@
 ###########################################################################
 # This file is part of LImA, a Library for Image Acquisition
 #
-#  Copyright (C) : 2009-2017
+#  Copyright (C) : 2009-2019
 #  European Synchrotron Radiation Facility
-#  BP 220, Grenoble 38043
+#  CS40220 38043 Grenoble Cedex 9
 #  FRANCE
 #
 #  Contact: lima@esrf.fr
@@ -25,8 +25,6 @@
 cmake_minimum_required(VERSION 3.1)
 
 project(slsdetector)
-
-set(NAME slsdetector)
 
 # Include additional modules that are used inconditionnaly
 include(GNUInstallDirs)
@@ -58,11 +56,13 @@ if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
 endif()
 
 if (CAMERA_MASTER_PROJECT)
-  find_package(Lima REQUIRED)
+  find_package(Lima REQUIRED COMPONENTS devel tools)
 endif()
 
 # CMake additional macros
-set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake ${LIMA_CMAKE_INCLUDE_DIRS} ${CMAKE_MODULE_PATH})
+set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake ${LIMA_CMAKE_INCLUDE_DIRS} ${CMAKE_MODULE_PATH})
+
+include(LimaTools)
 
 # Set version
 include(project_version)
@@ -70,31 +70,11 @@ include(project_version)
 # Enable python binding code compilation using sip generator
 if (CAMERA_MASTER_PROJECT)
   option(LIMA_ENABLE_PYTHON "compile python binding code?" OFF)
-endif()
+  option(LIMA_ENABLE_PYTANGO_SERVER "install python tango server?" OFF)
 
-if (LIMA_ENABLE_PYTHON)
-  # Find python interpreter and libs
-  find_package(PythonInterp)
-  find_package(PythonLibs)
-  if(${PYTHONINTERP_FOUND})
-    # python site-packages folder
-    execute_process(
-      COMMAND ${PYTHON_EXECUTABLE} -c "from distutils.sysconfig import get_python_lib; print (get_python_lib())"
-      OUTPUT_VARIABLE _PYTHON_SITE_PACKAGES_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
+  if (LIMA_ENABLE_PYTHON)
+    limatools_find_python_and_sip()
   endif()
-
-  set(PYTHON_SITE_PACKAGES_DIR ${_PYTHON_SITE_PACKAGES_DIR} CACHE PATH "where should python modules be installed?")
-
-  find_package(SIP REQUIRED)
-  include(SIPMacros)
-  if(WIN32)
-    set(SIP_TAGS WIN32_PLATFORM)
-  elseif(UNIX)
-    set(SIP_TAGS POSIX_PLATFORM)
-  endif(WIN32)
-  set(SIP_EXTRA_OPTIONS -e -g)
-
-  find_package(NumPy REQUIRED)
 endif()
 
 # Additional packages
@@ -105,9 +85,9 @@ set(SLS_DETECTOR_DIR ${CMAKE_CURRENT_SOURCE_DIR}/slsDetectorPackage)
 set(SLS_DETECTOR_SW ${SLS_DETECTOR_DIR}/slsDetectorSoftware)
 set(SLS_DETECTOR_RECV ${SLS_DETECTOR_DIR}/slsReceiverSoftware)
 
-option (USE_TEXTCLIENT "Text Client" ON)
-option (USE_RECEIVER "Receiver" ON)
-option (USE_GUI "GUI" OFF)
+set(SLS_USE_TEXTCLIENT ON CACHE BOOL "Text Client")
+set(SLS_USE_RECEIVER ON CACHE BOOL "Receiver")
+set(SLS_USE_GUI OFF CACHE BOOL "GUI")
 
 add_subdirectory(${SLS_DETECTOR_DIR})
 
@@ -118,6 +98,7 @@ add_library(slsdetector SHARED
   src/SlsDetectorFrameMap.cpp
   src/SlsDetectorArgs.cpp
   src/SlsDetectorCPUAffinity.cpp
+  src/SlsDetectorBebTools.cpp
   src/SlsDetectorModel.cpp
   src/SlsDetectorReceiver.cpp
   src/SlsDetectorCamera.cpp
@@ -155,13 +136,12 @@ message("NUMA_LIBRARY=" ${NUMA_LIBRARY})
 
 target_link_libraries(slsdetector
   PUBLIC limacore
-  PUBLIC slsDetectorShared slsReceiverShared zmq
+  PUBLIC slsDetectorShared slsReceiverShared
   PUBLIC ${NUMA_LIBRARY}
 )
 
 # Binding code for python
 if(LIMA_ENABLE_PYTHON)
-  include(LimaTools)
   limatools_run_sip_for_camera(slsdetector)
 endif()
 
@@ -203,7 +183,10 @@ if(LIMA_ENABLE_PYTHON)
   install(
     DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/python/
     DESTINATION "${PYTHON_SITE_PACKAGES_DIR}/Lima/SlsDetector"
-  )
+    )
+  if (LIMA_ENABLE_PYTANGO_SERVER)
+    add_subdirectory(tango)
+  endif()
 endif()
 
 ## Tests

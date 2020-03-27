@@ -121,19 +121,24 @@ the current versions stored on the modules:
 ::
 
     lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
+        server_dir="executables"
+        server_name="eigerDetectorServer"
+        server="${server_dir}/${server_name}"
+        server_str=$(echo ${server} | sed 's:/:_:g')
+        full_server="/home/root/${server}"
         for m in ${EIGER_MODULES}; do
-            ssh -x root@${m} 'ls -l executables/eigerDetectorServer*' \
-                > ls_executables_eigerDetectorServer_${m}.out
+            ssh -x root@${m} 'ls -l '${server}'*' \
+                > ls_${server_str}_${m}.out
         done
-        cat ls_executables_eigerDetectorServer_${EIGER_MODULE_TOP}.out
+        cat ls_${server_str}_${EIGER_MODULE_TOP}.out
         echo
         for m in ${EIGER_MODULES}; do 
-            ssh -x root@${m} 'md5sum executables/eigerDetectorServer*' \
-                > md5sum_executables_eigerDetectorServer_${m}.out
+            ssh -x root@${m} 'md5sum '${server}'*' \
+                > md5sum_${server_str}_${m}.out
         done
-        cat md5sum_executables_eigerDetectorServer_${EIGER_MODULE_TOP}.out
+        cat md5sum_${server_str}_${EIGER_MODULE_TOP}.out
         echo
-        md5sum md5sum_executables_eigerDetectorServer_beb*
+        md5sum md5sum_${server_str}_beb*
     -rwxr-xr-x    1 root     root        280601 Jan  1 01:15 executables/eigerDetectorServer
     -rwxr-xr-x    1 root     root        277442 Aug 26  2016 executables/eigerDetectorServer_bkp
     -rwxr-xr-x    1 root     root        277442 Aug 26  2016 executables/eigerDetectorServerv2.0.5.14.3
@@ -147,24 +152,56 @@ the current versions stored on the modules:
     754a871d0608c28aa7544230ca728f86  md5sum_executables_eigerDetectorServer_beb024.out
     754a871d0608c28aa7544230ca728f86  md5sum_executables_eigerDetectorServer_beb025.out
 
+Kill the running servers and disable the automatic startup:
+
+::
+
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
+        for m in ${EIGER_MODULES}; do
+            ssh -x root@${m} killall ${server_name}
+        done
+        for m in ${EIGER_MODULES}; do
+            ssh -x root@${m} sed -i '"s:^#\?\('${full_server}'\).*$:#\1 \&:"' \
+                                 /etc/init.d/board_com.sh
+        done
+
+Force a filesystem *sync* on each host to make the changes persistent,
+just before power-cycling:
+
+::
+
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
+        for m in ${EIGER_MODULES}; do
+            ssh -x root@${m} sync
+        done
+
+Power-cycle the detector and check that no *eigerDetectorServer* is running:
+
+::
+
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
+        for m in ${EIGER_MODULES}; do \
+            ssh -x root@${m} 'ps -ef | grep '${server}' | grep -v grep'; \
+        done
+
 Backup the current version, and transfer the new version:
 
 ::
 
     lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
         for m in ${EIGER_MODULES}; do
-            ssh -x root@${m} 'mv executables/eigerDetectorServer executables/eigerDetectorServer_bkp'
+            ssh -x root@${m} 'mv '${server}' '${server}'_bkp'
         done
         SLS_DETECTOR_PACKAGE=${LIMA_DIR}/camera/slsdetector/slsDetectorPackage
-        eiger_servers=$(cd ${SLS_DETECTOR_PACKAGE} && find -name eigerDetectorServerv\*)
-        (cd ${SLS_DETECTOR_PACKAGE} && md5sum ${eiger_servers})
+        new_servers=$(cd ${SLS_DETECTOR_PACKAGE} && find -name ${server_name}v\*)
+        (cd ${SLS_DETECTOR_PACKAGE} && md5sum ${new_servers})
         echo
-        eiger_server=${SLS_DETECTOR_PACKAGE}/$(echo "${eiger_servers}" | head -n 1)
+        new_server=${SLS_DETECTOR_PACKAGE}/$(echo "${new_servers}" | head -n 1)
         for m in ${EIGER_MODULES}; do
-            scp ${eiger_server} root@${m}:executables
+            scp ${new_server} root@${m}:${server_dir}
         done
         for m in ${EIGER_MODULES}; do
-            ssh -x root@${m} "cp executables/$(basename ${eiger_server}) executables/eigerDetectorServer"
+            ssh -x root@${m} "cp ${server_dir}/$(basename ${new_server}) ${server}"
         done
     50ef053f1ddd0b49314479a558c9c330  ./slsDetectorSoftware/eigerDetectorServer/bin/eigerDetectorServerv3.1.1.16.0
     50ef053f1ddd0b49314479a558c9c330  ./serverBin/eigerDetectorServerv3.1.1.16.0
@@ -181,18 +218,18 @@ Check that all is as expected:
         this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
         mkdir -p ${this_dir} && cd ${this_dir}
         for m in ${EIGER_MODULES}; do
-            ssh -x root@${m} 'ls -l executables/eigerDetectorServer*' \
-                > ls_executables_eigerDetectorServer_${m}.out
+            ssh -x root@${m} 'ls -l '${server}'*' \
+                > ls_${server_str}_${m}.out
         done
-        cat ls_executables_eigerDetectorServer_${EIGER_MODULE_TOP}.out
+        cat ls_${server_str}_${EIGER_MODULE_TOP}.out
         echo
         for m in ${EIGER_MODULES}; do
-            ssh -x root@${m} 'md5sum executables/eigerDetectorServer*' \
-                > md5sum_executables_eigerDetectorServer_${m}.out
+            ssh -x root@${m} 'md5sum '${server}'*' \
+                > md5sum_${server_str}_${m}.out
         done
-        cat md5sum_executables_eigerDetectorServer_${EIGER_MODULE_TOP}.out
+        cat md5sum_${server_str}_${EIGER_MODULE_TOP}.out
         echo
-        md5sum md5sum_executables_eigerDetectorServer_beb*
+        md5sum md5sum_${server_str}_beb*
     -rwxr-xr-x    1 root     root        293085 Jan 10 02:35 executables/eigerDetectorServer
     -rwxr-xr-x    1 root     root        280601 Jan  1 01:15 executables/eigerDetectorServer_bkp
     -rwxr-xr-x    1 root     root        277442 Aug 26  2016 executables/eigerDetectorServerv2.0.5.14.3
@@ -208,8 +245,7 @@ Check that all is as expected:
     4168a104e53ee71f763ed5f0e0b43859  md5sum_executables_eigerDetectorServer_beb024.out
     4168a104e53ee71f763ed5f0e0b43859  md5sum_executables_eigerDetectorServer_beb025.out
 
-Force a filesystem *sync* on each host to make the changes persistent,
-just before power-cycling:
+Force a another filesystem *sync*:
 
 ::
 
@@ -228,12 +264,12 @@ And finally perform a *paranoid* check after power-cycling the detector:
         this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
         mkdir -p ${this_dir} && cd ${this_dir}
         for m in ${EIGER_MODULES}; do
-            ssh -x root@${m} 'md5sum executables/eigerDetectorServer*' \
-                > md5sum_executables_eigerDetectorServer_${m}.out
+            ssh -x root@${m} 'md5sum '${server}'*' \
+                > md5sum_${server_str}_${m}.out
         done
         cd ..
         for m in ${EIGER_MODULES}; do
-            (diff ${prev_dir}/md5sum_executables_eigerDetectorServer_${m}.out ${this_dir} &&
+            (diff ${prev_dir}/md5sum_${server_str}_${m}.out ${this_dir} &&
                 echo "${m} OK" || echo "${m} changed")
         done
     beb024 OK
@@ -261,48 +297,50 @@ without the need of pressing the button in the rear panel. The latestversion of 
    ::
 
        lisgeiger1:~ % cd ~/eiger/fw_v18
-       lisgeiger1:~/eiger/fw_v18 % eiger_flash \
-           -m beb_fiber.bit \
-           -l feb_l_fx70t.bit -r feb_r_fx70t.bit \
-           -k simpleImage.virtex440-eiger-beb-hwid1_local \
-           -o ${this_dir}/eiger_flash.log ${EIGER_MODULES}
+       lisgeiger1:~/eiger/fw_v18 % \
+           this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
+           mkdir -p ${this_dir}
+           eiger_flash -m beb_fiber.bit \
+                       -l feb_l_fx70t.bit -r feb_r_fx70t.bit \
+                       -k simpleImage.virtex440-eiger-beb-hwid1_local \
+                       -o ${this_dir}/eiger_flash.log ${EIGER_MODULES}
 
        b69de7bbcb445d281f4ade4836028d1f  beb_fiber.bit
        da44706da1f11a39c2eebb2c63fff752  feb_l_fx70t.bit
        d34fb69a1e4272d824bc2dea26efdd45  feb_r_fx70t.bit
        1f27879faa7082f9ed2bb2b24b84ea99  simpleImage.virtex440-eiger-beb-hwid1_local
        
-       [beb024] Executing: nc -p 3000 -u beb024 3000
-       [beb025] Executing: nc -p 3000 -u beb025 3000
-       [beb024] Not in firmware flash mode ... ping'ing ...
-       [beb025] Not in firmware flash mode ... ping'ing ...
-       [beb024] ping OK ... Check ssh ...
-       [beb025] ping OK ... Check ssh ...
-       [beb024] Checking flash-mode setup files ...
-       [beb025] Checking flash-mode setup files ...
-       [beb024] Remote and local files differ!
-       [beb024] Local: 7f0e3fb00aa722d1b9c0b943b1870c70  boot_recovery
-       [beb024] Local: 89d25988ed13fbb94dd48ed4d6b49e0d  z_mem
-       [beb024] Local: 3f95900e1928d3c59a6ec3afbc5373b0  z_mem_write
-       [beb024] remote: No file found!
-       [beb024] Copying flash-mode setup files ...
-       [beb025] Remote and local files differ!
-       [beb025] Local: 7f0e3fb00aa722d1b9c0b943b1870c70  boot_recovery
-       [beb025] Local: 89d25988ed13fbb94dd48ed4d6b49e0d  z_mem
-       [beb025] Local: 3f95900e1928d3c59a6ec3afbc5373b0  z_mem_write
-       [beb025] remote: No file found!
-       [beb025] Copying flash-mode setup files ...
-       [beb025] Starting flash-mode (boot_recovery) ...
-       [beb024] Starting flash-mode (boot_recovery) ...
-       [beb025] Waiting for flash-mode (20 sec) ...
-       [beb024] Waiting for flash-mode (20 sec) ...
-       [beb025] Restarting Ethernet connection ...
-       [beb025] Waiting for connection (10 sec) ...
-       [beb024] Restarting Ethernet connection ...
-       [beb024] Waiting for connection (10 sec) ...
-       [beb025] Executing: nc -p 3000 -u beb025 3000
-       [beb024] Executing: nc -p 3000 -u beb024 3000
-       Hosts beb024,beb025 are not in firmware flash mode!
+       [beb021] Executing: nc -p 3000 -u beb021 3000
+       [beb020] Executing: nc -p 3000 -u beb020 3000
+       [beb021] Not in firmware flash mode ... ping'ing ...
+       [beb020] Not in firmware flash mode ... ping'ing ...
+       [beb021] ping OK ... Check ssh ...
+       [beb020] ping OK ... Check ssh ...
+       [beb021] Checking flash-mode setup files ...
+       [beb020] Checking flash-mode setup files ...
+       [beb021] Remote and local files differ!
+       [beb021] Local: 7f0e3fb00aa722d1b9c0b943b1870c70  boot_recovery
+       [beb021] Local: 89d25988ed13fbb94dd48ed4d6b49e0d  z_mem
+       [beb021] Local: 3f95900e1928d3c59a6ec3afbc5373b0  z_mem_write
+       [beb021] remote: No file found!
+       [beb021] Copying flash-mode setup files ...
+       [beb020] Remote and local files differ!
+       [beb020] Local: 7f0e3fb00aa722d1b9c0b943b1870c70  boot_recovery
+       [beb020] Local: 89d25988ed13fbb94dd48ed4d6b49e0d  z_mem
+       [beb020] Local: 3f95900e1928d3c59a6ec3afbc5373b0  z_mem_write
+       [beb020] remote: No file found!
+       [beb020] Copying flash-mode setup files ...
+       [beb020] Starting flash-mode (boot_recovery) ...
+       [beb021] Starting flash-mode (boot_recovery) ...
+       [beb020] Waiting for flash-mode (20 sec) ...
+       [beb021] Waiting for flash-mode (20 sec) ...
+       [beb020] Restarting Ethernet connection ...
+       [beb020] Waiting for connection (10 sec) ...
+       [beb021] Restarting Ethernet connection ...
+       [beb021] Waiting for connection (10 sec) ...
+       [beb020] Executing: nc -p 3000 -u beb020 3000
+       [beb021] Executing: nc -p 3000 -u beb021 3000
+       Hosts beb021,beb020 are not in firmware flash mode!
        Please insert a clip into the rear panel hole until all LEDs are red,
          and then wait until LED #4 blinks gren/red
        Press any key to quit ...
@@ -541,3 +579,38 @@ Console output on the FX70T FW:
 .. note:: **To-Do** add a *ManualEthernetConnection* restart in case the modules are not 
    directly connected to the backend computer, or just not defined in the 
    *eiger_flash* utility.
+
+Start the *eigerDetectorServer* and check that everything is OK:
+
+::
+
+    lisgeiger1:~ % \
+        for m in ${EIGER_MODULES}; do
+            ssh -x root@${m} 'nohup '${server}' > /dev/null 2>&1 &'
+        done
+
+Once verified that the new server runs fine with the new firmware, restore automatic startup:
+
+::
+
+    lisgeiger1:~ % \
+        for m in ${EIGER_MODULES}; do
+            ssh -x root@${m} sed -i '"s:^#\?\('${full_server}'\).*$:\1 \&:"' \
+                                 /etc/init.d/board_com.sh
+        done
+        for m in ${EIGER_MODULES}; do
+            ssh -x root@${m} sync
+        done
+
+Power-cycle the detector and verify that the servers start automatically:
+
+::
+
+    lisgeiger1:~ % \
+        for m in ${EIGER_MODULES}; do \
+            ssh -x root@${m} 'ps -ef | grep '${server}' | grep -v grep'; \
+        done
+      961 root       0:00 /home/root/executables/eigerDetectorServer
+      965 root       0:00 /home/root/executables/eigerDetectorServer -stopserver
+      961 root       0:00 /home/root/executables/eigerDetectorServer
+      965 root       0:00 /home/root/executables/eigerDetectorServer -stopserver

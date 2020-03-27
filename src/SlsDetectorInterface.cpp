@@ -193,6 +193,7 @@ TimeRangesChangedCallback::timeRangesChanged(TimeRanges time_ranges)
 typedef pair<TrigMode, Defs::TrigMode> TrigPair;
 static const TrigPair Lima2CamTrigModeCList[] = {
 	TrigPair(IntTrig,	Defs::Auto),
+	TrigPair(IntTrigMult,	Defs::SoftTriggerExposure),
 	TrigPair(ExtTrigSingle, Defs::BurstTrigger),
 	TrigPair(ExtTrigMult,	Defs::TriggerExposure),
 	TrigPair(ExtGate,	Defs::Gating),
@@ -399,7 +400,13 @@ void Interface::prepareAcq()
 void Interface::startAcq()
 {
 	DEB_MEMBER_FUNCT();
-	m_cam.startAcq();
+	Defs::TrigMode trig_mode;
+	m_cam.getTrigMode(trig_mode);
+	bool int_trig_multi = (trig_mode == Defs::SoftTriggerExposure);
+	if (!int_trig_multi || (m_cam.getState() != Running))
+		m_cam.startAcq();
+	if (int_trig_multi)
+		m_cam.triggerFrame();
 }
 
 void Interface::stopAcq()
