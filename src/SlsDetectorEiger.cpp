@@ -43,6 +43,10 @@ const double Eiger::MaxFebBebBandwidth = 25600; // Mbit/s
 const Eiger::LinScale Eiger::ChipXfer2Buff(2.59, 0.85);
 const Eiger::LinScale Eiger::ChipRealReadout(1.074, -4);
 
+const unsigned long Eiger::BebFpgaWritePtrAddr = 0xD10000C4;
+const unsigned long Eiger::BebFpgaReadPtrAddr = 0xD10000E4;
+const unsigned long Eiger::BebFpgaPtrRange = 0x10000000;
+
 Eiger::CorrBase::CorrBase(Eiger *eiger)
 	: m_eiger(eiger)
 {
@@ -1472,6 +1476,35 @@ double Eiger::getBorderCorrFactor(int det, int line)
 	case 1: return 1.3;
 	default: return 1;
 	}
+}
+
+void Eiger::getFpgaFramePtrDiff(PtrDiffList& ptr_diff)
+{
+	DEB_MEMBER_FUNCT();
+	Camera::BebList& beb_list = getCamera()->m_beb_list;
+	for (int i = 0; i != beb_list.size(); ++i) {
+		BebFpgaMem& fpga_mem = beb_list[i]->fpga_mem;
+		unsigned long wr_ptr = fpga_mem.read(BebFpgaWritePtrAddr);
+		unsigned long rd_ptr = fpga_mem.read(BebFpgaReadPtrAddr);
+		if (rd_ptr > wr_ptr)
+			wr_ptr += BebFpgaPtrRange;
+		unsigned long diff = wr_ptr - rd_ptr;
+		DEB_RETURN() << DEB_VAR2(i, diff);
+		ptr_diff.push_back(diff);
+	}
+}
+
+bool Eiger::isXferActive()
+{
+	DEB_MEMBER_FUNCT();
+	PtrDiffList ptr_diff;
+	getFpgaFramePtrDiff(ptr_diff);
+	PtrDiffList::const_iterator it, end = ptr_diff.end();
+	bool xfer_active = false;
+	for (it = ptr_diff.begin(); (it != end) && !xfer_active; ++it)
+		xfer_active = (*it != 0);
+	DEB_RETURN() << DEB_VAR1(xfer_active);
+	return xfer_active;
 }
 
 ostream& lima::SlsDetector::operator <<(ostream& os, Eiger::ParallelMode mode)

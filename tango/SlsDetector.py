@@ -88,6 +88,7 @@ class SlsDetector(PyTango.Device_4Impl):
                   'fixed_clock_div',
                   'threshold_energy',
                   'tx_frame_delay',
+                  'fpga_frame_ptr_diff',
     ]
 
     def __init__(self,*args) :
@@ -662,6 +663,10 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevLong,
           PyTango.SCALAR,
           PyTango.READ_WRITE]],
+        'fpga_frame_ptr_diff':
+        [[PyTango.DevULong,
+          PyTango.SPECTRUM,
+          PyTango.READ, 64]],
         }
 
     def __init__(self,name) :

@@ -84,6 +84,11 @@ void Camera::AppInputData::parseConfigFile()
 	}
 }
 
+Camera::Beb::Beb(const std::string& host_name)
+	: shell(host_name), fpga_mem(shell)
+{
+}
+
 Camera::AcqThread::ExceptionCleanUp::ExceptionCleanUp(AcqThread& thread)
 	: Thread::ExceptionCleanUp(thread)
 {
@@ -275,7 +280,10 @@ void Camera::AcqThread::stopAcq()
 {
 	DEB_MEMBER_FUNCT();
 	slsDetectorUsers *det = m_cam->m_det;
-	if (m_cam->getDetStatus() == Defs::Running) {
+	DetStatus det_status = m_cam->getDetStatus();
+	bool xfer_active = m_cam->m_model->isXferActive();
+	DEB_ALWAYS() << DEB_VAR2(det_status, xfer_active);
+	if ((det_status == Defs::Running) || xfer_active) {
 		DEB_TRACE() << "calling stopAcquisition";
 		det->stopAcquisition();
 		Timestamp t0 = Timestamp::now();
@@ -354,6 +362,12 @@ Camera::Camera(string config_fname, int det_id)
 	if (isTenGigabitEthernetEnabled()) {
 		DEB_TRACE() << "Forcing 10G Ethernet flow control";
 		setFlowControl10G(true);
+	}
+
+	for (int i = 0; i < getNbDetModules(); ++i) {
+		const string& host_name = m_input_data->host_name_list[i];
+		Beb *beb = new Beb(host_name);
+		m_beb_list.push_back(beb);
 	}
 }
 
@@ -664,7 +678,7 @@ void Camera::setRecvCPUAffinity(const RecvCPUAffinityList& recv_affinity_list)
 
 	RecvCPUAffinityList::const_iterator ait = recv_affinity_list.begin();
 	RecvList::iterator rit = m_recv_list.begin();
-	for (int i = 0; i < nb_recv; ++i, ++ait, ++rit) {
+	for (unsigned int i = 0; i < nb_recv; ++i, ++ait, ++rit) {
 		Model::Recv *recv = m_model->getRecv(i);
 		const RecvCPUAffinity& aff = *ait;
 		recv->setNbProcessingThreads(aff.recv_threads.size());

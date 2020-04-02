@@ -93,6 +93,10 @@ class Eiger : public SlsDetector::Model
 	void setTxFrameDelay(int  tx_frame_delay);
 	void getTxFrameDelay(int& tx_frame_delay /Out/);
 
+	void getFpgaFramePtrDiff(std::vector<unsigned long>& ptr_diff /Out/);
+
+	virtual bool isXferActive();
+
  protected:
 	virtual int getNbFrameMapItems();
 	virtual void updateFrameMapItems(FrameMap *map);

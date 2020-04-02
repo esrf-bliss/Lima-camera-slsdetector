@@ -47,6 +47,8 @@ class Eiger : public Model
 	typedef unsigned short Word;
 	typedef unsigned int Long;
 
+	typedef std::vector<unsigned long> PtrDiffList;
+
 	typedef Defs::ClockDiv ClockDiv;
 
 	enum ParallelMode {
@@ -264,6 +266,10 @@ class Eiger : public Model
 
 	Geometry *getGeometry()
 	{ return &m_geom; }
+
+	void getFpgaFramePtrDiff(PtrDiffList& ptr_diff);
+
+	virtual bool isXferActive();
 
  protected:
 	virtual int getNbFrameMapItems();
@@ -607,6 +613,10 @@ class Eiger : public Model
 	static const double MaxFebBebBandwidth;
 	static const LinScale ChipXfer2Buff;
 	static const LinScale ChipRealReadout;
+
+	static const unsigned long BebFpgaWritePtrAddr;
+	static const unsigned long BebFpgaReadPtrAddr;
+	static const unsigned long BebFpgaPtrRange;
 
 	Geometry m_geom;
 	CorrList m_corr_list;
