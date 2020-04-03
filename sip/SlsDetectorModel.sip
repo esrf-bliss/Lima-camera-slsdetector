@@ -72,6 +72,8 @@ public:
 	virtual void processBadItemFrame(unsigned long frame, int item,
 					 char *bptr) = 0;
 
+	virtual bool isXferActive() = 0;
+
 protected:
 	void updateCameraModel();
 

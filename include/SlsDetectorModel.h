@@ -93,6 +93,8 @@ class Model
 	virtual void processBadItemFrame(FrameType frame, int item,
 					 char *bptr) = 0;
 
+	virtual bool isXferActive() = 0;
+
  protected:
 	void updateCameraModel();
 	void updateTimeRanges();

@@ -26,6 +26,7 @@
 #include "SlsDetectorArgs.h"
 #include "SlsDetectorReceiver.h"
 #include "SlsDetectorCPUAffinity.h"
+#include "SlsDetectorBebTools.h"
 
 #include "slsDetectorUsers.h"
 
@@ -172,6 +173,13 @@ private:
 	typedef std::queue<int> FrameQueue;
 	typedef std::vector<AutoPtr<Receiver> > RecvList;
 
+	struct Beb {
+		BebShell shell;
+		BebFpgaMem fpga_mem;
+		Beb(const std::string& host_name);
+	};
+	typedef std::vector<AutoPtr<Beb> > BebList;
+
 	struct AppInputData
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Camera::AppInputData", 
@@ -289,6 +297,7 @@ private:
 	Cond m_cond;
 	AutoPtr<AppInputData> m_input_data;
 	AutoPtr<slsDetectorUsers> m_det;
+	BebList m_beb_list;
 	FrameMap m_frame_map;
 	RecvList m_recv_list;
 	TrigMode m_trig_mode;
