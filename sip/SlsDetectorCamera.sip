@@ -30,7 +30,7 @@ namespace SlsDetector
 class Camera : public HwMaxImageSizeCallbackGen, public EventCallbackGen
 {
 public:
-	Camera(std::string config_fname);
+	Camera(std::string config_fname, int det_id = 0);
 	virtual ~Camera();
 
 	SlsDetector::Type getType();
@@ -38,10 +38,10 @@ public:
 	std::vector<std::string> getHostnameList();
 	int getNbDetModules();
 	int getNbDetSubModules();
-	int getTotNbPorts();
-	int getPortIndex(int recv_idx, int port);
 
 //	void setBufferCtrlObj(NumaSoftBufferCtrlObj *buffer_ctrl_obj);
+
+	void clearAllBuffers();
 
 	void setPixelDepth(SlsDetector::PixelDepth  pixel_depth);
 	void getPixelDepth(SlsDetector::PixelDepth& pixel_depth /Out/);
@@ -55,7 +55,7 @@ public:
 
 	void getFrameDim(FrameDim& frame_dim /Out/, bool raw = false);
 
-	const SlsDetector::FrameMap& getFrameMap();
+	SlsDetector::FrameMap *getFrameMap();
 
 	void putCmd(const std::string& s, int idx = -1);
 	std::string getCmd(const std::string& s, int idx = -1);
@@ -102,17 +102,19 @@ public:
 	void setTolerateLostPackets(bool  tol_lost_packets);
 	void getTolerateLostPackets(bool& tol_lost_packets /Out/);
 
-	int getNbBadFrames(int port_idx);
-	void getBadFrameList(int port_idx, int first_idx, int last_idx,
+	int getNbBadFrames(int recv_idx);
+	void getBadFrameList(int recv_idx, int first_idx, int last_idx,
 			     std::vector<int>& bad_frame_list /Out/);
-	void getBadFrameList(int port_idx, 
+	void getBadFrameList(int recv_idx, 
 			     std::vector<int>& bad_frame_list /Out/);
 
 	void prepareAcq();
 	void startAcq();
 	void stopAcq();
 
-	void getStats(SlsDetector::Stats& stats /Out/, int port_idx=-1);
+	void triggerFrame();
+
+	void getStats(SlsDetector::Stats& stats /Out/, int recv_idx=-1);
 
 	void setPixelDepthCPUAffinityMap(
 		SlsDetector::PixelDepthCPUAffinityMap aff_map);

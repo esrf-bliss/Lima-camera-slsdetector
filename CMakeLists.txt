@@ -85,9 +85,9 @@ set(SLS_DETECTOR_DIR ${CMAKE_CURRENT_SOURCE_DIR}/slsDetectorPackage)
 set(SLS_DETECTOR_SW ${SLS_DETECTOR_DIR}/slsDetectorSoftware)
 set(SLS_DETECTOR_RECV ${SLS_DETECTOR_DIR}/slsReceiverSoftware)
 
-option (USE_TEXTCLIENT "Text Client" ON)
-option (USE_RECEIVER "Receiver" ON)
-option (USE_GUI "GUI" OFF)
+set(SLS_USE_TEXTCLIENT ON CACHE BOOL "Text Client")
+set(SLS_USE_RECEIVER ON CACHE BOOL "Receiver")
+set(SLS_USE_GUI OFF CACHE BOOL "GUI")
 
 add_subdirectory(${SLS_DETECTOR_DIR})
 
@@ -95,8 +95,10 @@ file(GLOB_RECURSE SLSDETECTOR_INCS "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h")
 
 add_library(slsdetector SHARED
   src/SlsDetectorDefs.cpp
+  src/SlsDetectorFrameMap.cpp
   src/SlsDetectorArgs.cpp
   src/SlsDetectorCPUAffinity.cpp
+  src/SlsDetectorBebTools.cpp
   src/SlsDetectorModel.cpp
   src/SlsDetectorReceiver.cpp
   src/SlsDetectorCamera.cpp
@@ -134,7 +136,7 @@ message("NUMA_LIBRARY=" ${NUMA_LIBRARY})
 
 target_link_libraries(slsdetector
   PUBLIC limacore
-  PUBLIC slsDetectorShared slsReceiverShared zmq
+  PUBLIC slsDetectorShared slsReceiverShared
   PUBLIC ${NUMA_LIBRARY}
 )
 
@@ -190,5 +192,5 @@ endif()
 ## Tests
 if(CAMERA_ENABLE_TESTS)
     enable_testing()
-    #add_subdirectory(test)
+    add_subdirectory(test)
 endif()

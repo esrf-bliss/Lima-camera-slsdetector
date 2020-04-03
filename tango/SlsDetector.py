@@ -47,6 +47,7 @@ from collections import OrderedDict
 from functools import partial, reduce
 from itertools import chain
 from multiprocessing import Process
+import re
 
 from Lima import Core
 from Lima import SlsDetector as SlsDetectorHw
@@ -86,6 +87,7 @@ class SlsDetector(PyTango.Device_4Impl):
                   'clock_div',
                   'fixed_clock_div',
                   'threshold_energy',
+                  'tx_frame_delay',
     ]
 
     def __init__(self,*args) :
@@ -112,6 +114,9 @@ class SlsDetector(PyTango.Device_4Impl):
         self.init_list_attr()
         self.init_dac_adc_attr()
 
+        if self.initial_acq_params:
+            self.perform_initial_acq(self.initial_acq_params)
+
         self.proc_finished = self.cam.getProcessingFinishedEvent()
         self.proc_finished.registerStatusCallback(_SlsDetectorControl)
 
@@ -123,13 +128,11 @@ class SlsDetector(PyTango.Device_4Impl):
             self.model.setThresholdEnergy(self.threshold_energy)
 
         self.cam.setTolerateLostPackets(self.tolerate_lost_packets)
-        self.netdev_groups = [g.split(',') for g in self.netdev_groups]
-        aff_array = self.pixel_depth_cpu_affinity_map
-        if aff_array:
-            flat_array = ','.join(aff_array).split(',')
-            aff_array_map = map(partial(int, base=0), flat_array)
-            aff_array = np.array(list(aff_array_map))
-            aff_map = self.getPixelDepthCPUAffinityMapFromArray(aff_array)
+        aff_arr = self.pixel_depth_cpu_affinity_map
+        if aff_arr:
+            aff_str = ' '.join(aff_arr)
+            aff_map = self.getPixelDepthCPUAffinityMapFromString(aff_str)
+            self.printPixelDepthCPUAffinityMap(aff_map)
             self.cam.setPixelDepthCPUAffinityMap(aff_map)
 
     def init_list_attr(self):
@@ -184,6 +187,21 @@ class SlsDetector(PyTango.Device_4Impl):
             self.add_attribute(attr_data)
 
     @Core.DEB_MEMBER_FUNCT
+    def perform_initial_acq(self, params):
+        deb.Always("Performing initial setup acquisition: %s ..." % params)
+        ct = _SlsDetectorControl
+        acq = ct.acquisition()
+        for x in params.split(','):
+            n, v = x.split('=')
+            attr_name = 'set' + ''.join([i.title() for i in n.split('_')])
+            eval('acq.%s(%s)' % (attr_name, v))
+        ct.prepareAcq()
+        ct.startAcq()
+        while ct.getStatus().AcquisitionStatus != Core.AcqReady:
+            time.sleep(0.1)
+        deb.Always("Done!")
+
+    @Core.DEB_MEMBER_FUNCT
     def getAttrStringValueList(self, attr_name):
         return get_attr_string_value_list(self, attr_name)
 
@@ -203,6 +221,11 @@ class SlsDetector(PyTango.Device_4Impl):
     def read_config_fname(self, attr):
         deb.Return("config_fname=%s" % self.config_fname)
         attr.set_value(self.config_fname)
+
+    @Core.DEB_MEMBER_FUNCT
+    def read_apply_corrections(self, attr):
+        deb.Return("apply_corrections=%s" % self.apply_corrections)
+        attr.set_value(self.apply_corrections)
 
     @Core.DEB_MEMBER_FUNCT
     def putCmd(self, cmd):
@@ -307,160 +330,183 @@ class SlsDetector(PyTango.Device_4Impl):
         attr.set_value(max_frame_rate)
 
     @Core.DEB_MEMBER_FUNCT
-    def getNbBadFrames(self, port_idx):
-        nb_bad_frames = self.cam.getNbBadFrames(port_idx);
+    def getNbBadFrames(self, recv_idx):
+        nb_bad_frames = self.cam.getNbBadFrames(recv_idx);
         deb.Return("nb_bad_frames=%s" % nb_bad_frames)
         return nb_bad_frames
 
     @Core.DEB_MEMBER_FUNCT
-    def getBadFrameList(self, port_idx):
-        bad_frame_list = self.cam.getBadFrameList(port_idx);
+    def getBadFrameList(self, recv_idx):
+        bad_frame_list = self.cam.getBadFrameList(recv_idx);
         deb.Return("bad_frame_list=%s" % bad_frame_list)
         return bad_frame_list
 
     @Core.DEB_MEMBER_FUNCT
-    def getStats(self, port_idx_stats_name):
-        port_idx_str, stats_name = port_idx_stats_name.split(':')
-        port_idx = int(port_idx_str)
-        deb.Param("port_idx=%s, stats_name=%s");
-        stats = self.cam.getStats(port_idx)
+    def getStats(self, recv_idx_stats_name):
+        recv_idx_str, stats_name = recv_idx_stats_name.split(':')
+        recv_idx = int(recv_idx_str)
+        deb.Param("recv_idx=%s, stats_name=%s");
+        stats = self.cam.getStats(recv_idx)
         stat = getattr(stats, stats_name)
         stat_data = [stat.min(), stat.max(), stat.ave(), stat.std(), stat.n()]
         deb.Return("stat_data=%s" % stat_data)
         return stat_data
 
     @Core.DEB_MEMBER_FUNCT
-    def getStatsHistogram(self, port_idx_stats_name):
-        port_idx_str, stats_name = port_idx_stats_name.split(':')
-        port_idx = int(port_idx_str)
-        deb.Param("port_idx=%s, stats_name=%s");
-        stats = self.cam.getStats(port_idx)
+    def getStatsHistogram(self, recv_idx_stats_name):
+        recv_idx_str, stats_name = recv_idx_stats_name.split(':')
+        recv_idx = int(recv_idx_str)
+        deb.Param("recv_idx=%s, stats_name=%s");
+        stats = self.cam.getStats(recv_idx)
         stat = getattr(stats, stats_name)
         stat_data = np.array(stat.hist).flatten()
         deb.Return("stat_data=%s" % stat_data)
         return stat_data
 
-    def getCPUAffinityLen(self):
-        return 5 + len(self.netdev_groups);
-
     @Core.DEB_MEMBER_FUNCT
-    def getArrayFromPixelDepthCPUAffinityMap(self, aff_map):
-        nb_pixel_depth = len(aff_map)
-        aff_len = self.getCPUAffinityLen()
-        aff_array = np.zeros((nb_pixel_depth, aff_len), 'int')
-        for i, (pixel_depth, global_affinity) in enumerate(aff_map.items()):
-            aff_array[i][:5] = (pixel_depth, 
-                                global_affinity.recv.listeners, 
-                                global_affinity.recv.writers, 
-                                global_affinity.lima, 
-                                global_affinity.other)
-            for ng_aff in global_affinity.netdev:
-                j = self.netdev_groups.index(ng_aff.name_list)
-                aff_array[i][5 + j] = ng_aff.processing
-        return aff_array
-
-    @Core.DEB_MEMBER_FUNCT
-    def getPixelDepthCPUAffinityMapFromArray(self, aff_array):
-        aff_len = self.getCPUAffinityLen()
-        err = ValueError("Invalid pixel_depth_cpu_affinity_map: "
-                         "must be a list of %d-value tuples" % aff_len)
-        if len(aff_array.shape) == 1:
-            if len(aff_array) % aff_len != 0:
-                raise err
-            aff_array.resize((int(len(aff_array) / aff_len), aff_len))
-        if aff_array.shape[1] != aff_len:
-            raise err
-        aff_map = {}
+    def getPixelDepthCPUAffinityMapFromString(self, aff_str):
         CPUAffinity = SlsDetectorHw.CPUAffinity
         RecvCPUAffinity = SlsDetectorHw.RecvCPUAffinity
         NetDevRxQueueCPUAffinity = SlsDetectorHw.NetDevRxQueueCPUAffinity
         NetDevGroupCPUAffinity = SlsDetectorHw.NetDevGroupCPUAffinity
         GlobalCPUAffinity = SlsDetectorHw.GlobalCPUAffinity
-        for aff_data in aff_array:
-            aff_data = list(map(int, aff_data))
-            pixel_depth, recv_l, recv_w, lima, other = aff_data[:5]
-            netdev_aff = aff_data[5:]
-            all_cpus = range(CPUAffinity.getNbSystemCPUs())
-            recv_lw = [[6, 7], [9, 10]]
-            indep_lw = True
-            if indep_lw:
-                recv_l = recv_lw
-                recv_w = [list(map(lambda x: x + 12, l)) for l in recv_l]
-            else:
-                recv_l = [[(x, x + 12) for x in r] for r in recv_lw]
-                recv_w = recv_l
-            recv_pt = [(8, 20), (11, 23)]
-            recv_pt = zip(*([recv_pt] * 2))
-            lima = list(range(6))
-            lima += map(lambda x: x + 12, list(lima))
-            lima.remove(0)
-            other = [0]
-            irq_aff = [0, (8, 20), (11, 23)]
-            proc_aff = irq_aff
-            def Affinity(*x):
-                if type(x[0]) in [tuple, list]:
-                    x = list(chain(*x))
-                m = reduce(lambda a, b: a | b, map(lambda a: 1 << a, x))
-                return CPUAffinity(m)
-            global_affinity = GlobalCPUAffinity()
+        Mask = CPUAffinity
+        def CPU(*x):
+            if type(x[0]) in [tuple, list]:
+                x = list(chain(*x))
+            m = reduce(lambda a, b: a | b, map(lambda a: 1 << a, x))
+            return Mask(m)
+        aff_map_raw = eval(aff_str)
+        self.expandPixelDepthRefs(aff_map_raw)
+        aff_map = {}
+        for pixel_depth, aff_data in aff_map_raw.items():
+            recv_aff, lima, other, netdev_aff = aff_data
+            global_aff = GlobalCPUAffinity()
             recv_list = []
-            for l, w, pt in zip(recv_l, recv_w, recv_pt):
+            for listeners, recv_threads in recv_aff:
                 recv = RecvCPUAffinity()
-                recv.listeners = list(map(Affinity, l))
-                recv.writers = list(map(Affinity, w))
-                recv.port_threads = list(map(Affinity, pt))
+                recv.listeners = list(listeners)
+                recv.recv_threads = list(recv_threads)
                 recv_list.append(recv)
-            global_affinity.recv = recv_list
-            for i, r in enumerate(global_affinity.recv):
-                s = "Recv[%d]:" % i
-                def A(x):
-                    return hex(NumAffinity(x))
-                s += " listeners=%s," % [A(x) for x in r.listeners]
-                s += " writers=%s," % [A(x) for x in r.writers]
-                s += " port_threads=%s" % [A(x) for x in r.port_threads]
-                deb.Always(s)
-            global_affinity.lima = Affinity(*lima)
-            global_affinity.other = Affinity(*other)
+            global_aff.recv = recv_list
+            global_aff.lima = lima
+            global_aff.other = other
             ng_aff_list = []
-            for name_list, (irq, proc) in zip(self.netdev_groups, 
-                                              zip(irq_aff, proc_aff)):
+            for name_list, queue_data in netdev_aff:
                 ng_aff = NetDevGroupCPUAffinity()
-                ng_aff.name_list = name_list
-                ng_aff_queue = NetDevRxQueueCPUAffinity()
-                ng_aff_queue.irq = Affinity(irq)
-                ng_aff_queue.processing = Affinity(proc)
-                ng_aff.queue_affinity = {-1: ng_aff_queue}
+                ng_aff.name_list = name_list.split(',')
+                queue_aff = {}
+                for queue, (irq, proc) in queue_data.items():
+                    ng_aff_queue = NetDevRxQueueCPUAffinity()
+                    ng_aff_queue.irq = irq
+                    ng_aff_queue.processing = proc
+                    queue_aff[queue] = ng_aff_queue
+                ng_aff.queue_affinity = queue_aff
                 ng_aff_list.append(ng_aff)
-            global_affinity.netdev = ng_aff_list
-            aff_map[pixel_depth] = global_affinity
+            global_aff.netdev = ng_aff_list
+            aff_map[pixel_depth] = global_aff
         return aff_map
 
     @Core.DEB_MEMBER_FUNCT
-    def read_netdev_groups(self, attr):
-        netdev_groups = [','.join(g) for g in self.netdev_groups]
-        deb.Return("aff_array=%s" % netdev_groups)
-        attr.set_value(netdev_groups)
+    def getStringFromPixelDepthCPUAffinityMap(self, aff_map, use_cpu=True):
+        pixel_depth_aff_list = []
+        def cpu_str(a):
+            cpu_list = [str(i) for i in range(128) if NumAffinity(a) & (1 << i)]
+            return 'CPU(%s)' % ', '.join(cpu_list)
+        def mask_str(a):
+            return 'Mask(0x%x)' % NumAffinity(a)
+        def aff_2_str(a):
+            if type(a) in [tuple, list]:
+                str_list = map(aff_2_str, a)
+                if len(str_list) == 1:
+                    str_list.append('')
+                return '(%s)' % ', '.join(str_list)
+            f = cpu_str if use_cpu else mask_str
+            return f(a)
+        for pixel_depth, global_aff in sorted(aff_map.items()):
+            recv_list = []
+            for r in global_aff.recv:
+                recv_list.append((r.listeners, r.recv_threads))
+            recv_str = aff_2_str(recv_list)
+            lima_str = aff_2_str(global_aff.lima)
+            other_str = aff_2_str(global_aff.other)
+            netdev_grp_list = []
+            for netdev_grp in global_aff.netdev:
+                name_str = ','.join(netdev_grp.name_list)
+                queue_list = [('%d: %s)' % (q, aff_2_str((a.irq, 
+                                                          a.processing))))
+                              for q, a in netdev_grp.queue_affinity.items()]
+                queue_str = ','.join(queue_list)
+                netdev_str = '"%s": {%s}' % (name_str, queue_str)
+                netdev_grp_list.append(netdev_str)
+            netdev_grp_str = '(%s)' % ', '.join(netdev_grp_list)
+            aff_str = '%d: (%s, %s, %s, %s)' % (pixel_depth, recv_str,
+                                                lima_str, other_str, 
+                                                netdev_grp_str)
+            pixel_depth_aff_list.append(aff_str)
+        return '{%s}' % ', '.join(pixel_depth_aff_list)
 
     @Core.DEB_MEMBER_FUNCT
-    def write_netdev_groups(self, attr):
-        netdev_groups = [g.split(',') for g in attr.get_write_value()]
-        deb.Param("aff_array=%s" % netdev_groups)
-        self.netdev_groups = netdev_groups
+    def expandPixelDepthRefs(self, aff_map):
+        for k, v in aff_map.items():
+            if type(v) != str:
+                continue
+            re_str = '^@(%s)$' % '|'.join(self.__PixelDepth.keys())
+            re_obj = re.compile(re_str)
+            m = re_obj.match(v)
+            if not m:
+                err = 'Invalid pixel_depth_cpu_affinity_map entry: %s' % v
+                raise ValueError(err)
+            o = int(m.group(1))
+            v = aff_map[o]
+            if type(v) == str:
+                raise ValueError('Invalid reference to pixel depth %d' % o)
+            aff_map[k] = v
+
+    @Core.DEB_MEMBER_FUNCT
+    def printPixelDepthCPUAffinityMap(self, aff_map):
+        for pixel_depth, global_aff in sorted(aff_map.items()):
+            deb.Always('PixelDepth: %d' % pixel_depth)
+            self.printGlobalAffinity(global_aff)
+
+    @Core.DEB_MEMBER_FUNCT
+    def printGlobalAffinity(self, global_aff):
+        def A(x):
+            return hex(NumAffinity(x))
+        for i, r in enumerate(global_aff.recv):
+            s = "Recv[%d]:" % i
+            s += " listeners=%s" % [A(x) for x in r.listeners]
+            s += ", recv_threads=%s" % [A(x) for x in r.recv_threads]
+            deb.Always('  ' + s)
+        lima, other = global_aff.lima, global_aff.other
+        deb.Always('  Lima=%s, Other=%s' % (A(lima), A(other)))
+        for netdev_grp in global_aff.netdev:
+            s = "NetDevGroup[%s]: {" % ','.join(netdev_grp.name_list)
+            l = []
+            for queue, queue_aff in netdev_grp.queue_affinity.items():
+                l.append('%d: (%s, %s)' % (queue, A(queue_aff.irq), 
+                                           A(queue_aff.processing)))
+            s += ','.join(l) + "}"
+            deb.Always('  ' + s)
 
     @Core.DEB_MEMBER_FUNCT
     def read_pixel_depth_cpu_affinity_map(self, attr):
         aff_map = self.cam.getPixelDepthCPUAffinityMap()
-        aff_array = self.getArrayFromPixelDepthCPUAffinityMap(aff_map)
-        deb.Return("aff_array=%s" % aff_array)
-        attr.set_value(aff_array)
+        aff_str = self.getStringFromPixelDepthCPUAffinityMap(aff_map)
+        deb.Return("aff_str=%s" % aff_str)
+        attr.set_value(aff_str)
 
     @Core.DEB_MEMBER_FUNCT
     def write_pixel_depth_cpu_affinity_map(self, attr):
-        aff_array = attr.get_write_value()
-        deb.Param("aff_array=%s" % aff_array)
-        aff_map = self.getPixelDepthCPUAffinityMapFromArray(aff_array)
+        aff_str = attr.get_write_value()
+        deb.Param("aff_str=%s" % aff_str)
+        aff_map = self.getPixelDepthCPUAffinityMapFromString(aff_str)
+        self.printPixelDepthCPUAffinityMap(aff_map)
         self.cam.setPixelDepthCPUAffinityMap(aff_map)
 
+    @Core.DEB_MEMBER_FUNCT
+    def clearAllBuffers(self):
+        self.cam.clearAllBuffers()
 
 class SlsDetectorClass(PyTango.DeviceClass):
 
@@ -473,6 +519,10 @@ class SlsDetectorClass(PyTango.DeviceClass):
         'full_config_fname':
         [PyTango.DevString,
          "In case of partial configuration, path to the full config file",[]],
+        'initial_acq_params':
+        [PyTango.DevString,
+         "Initial acquisition parameters: "
+         "acq_expo_time=0.01,acq_nb_frames=10,...", ""],
         'high_voltage':
         [PyTango.DevShort,
          "Initial detector high voltage (V) "
@@ -486,16 +536,22 @@ class SlsDetectorClass(PyTango.DeviceClass):
         'tolerate_lost_packets':
         [PyTango.DevBoolean,
          "Initial tolerance to lost packets", True],
-        'netdev_groups':
-        [PyTango.DevVarStringArray,
-         "List of network device groups, each group is a list of "
-         "comma-separated interface names: [\"ethX,ethY\", \"ethZ,...\"]", []],
+        'apply_corrections':
+        [PyTango.DevBoolean,
+         "Apply frame corrections", True],
         'pixel_depth_cpu_affinity_map':
         [PyTango.DevVarStringArray,
-         "Default PixelDepthCPUAffinityMap as a list of 5+n-value tuple "
-         "strings (n is nb of netdev_groups): "
-         "[\"<pixel_depth>,<recv_l>,<recv_w>,<lima>,<other>"
-         "[,<netdev_grp1>,...]\", ...]", []],
+         "Default PixelDepthCPUAffinityMap as Python string(s) defining a dict: "
+         "{<pixel_depth>: <global_affinity>}, being global_affinity a tuple: "
+         "(<recv_list>, <lima>, <other>, <netdev_grp_list>), where recv_list "
+	 "is a list of tupples in the form: (<listeners>, <port_threads>), "
+	 "where listeners and port_threads are tuples of affinities, "
+	 "lima and and other are affinities, and netdev_grp_list is a list of "
+	 "tuples in the form: "
+         "(<comma_separated_netdev_name_list>, <rx_queue_affinity_map>), the "
+         "latter in the form of: {<queue>: (<irq>, <processing>)}. "
+         "Each affinity can be expressed by one of the functions: Mask(mask) "
+         "or CPU(<cpu1>[, ..., <cpuN>]) for independent CPU enumeration", []],
         }
 
     cmd_list = {
@@ -509,17 +565,20 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevString, "SlsDetector command"],
          [PyTango.DevString, "SlsDetector response"]],
         'getNbBadFrames':
-        [[PyTango.DevLong, "port_idx(-1=all)"],
+        [[PyTango.DevLong, "recv_idx(-1=all)"],
          [PyTango.DevLong, "Number of bad frames"]],
         'getBadFrameList':
-        [[PyTango.DevLong, "port_idx(-1=all)"],
+        [[PyTango.DevLong, "recv_idx(-1=all)"],
          [PyTango.DevVarLongArray, "Bad frame list"]],
         'getStats':
-        [[PyTango.DevString, "port_idx(-1=all):stats_name"],
+        [[PyTango.DevString, "recv_idx(-1=all):stats_name"],
          [PyTango.DevVarDoubleArray, "Statistics: min, max, ave, std, n"]],
         'getStatsHistogram':
-        [[PyTango.DevString, "port_idx(-1=all):stats_name"],
+        [[PyTango.DevString, "recv_idx(-1=all):stats_name"],
          [PyTango.DevVarDoubleArray, "[[bin, count], ...]"]],
+        'clearAllBuffers':
+        [[PyTango.DevVoid, ""],
+         [PyTango.DevVoid, ""]],
         }
 
     attr_list = {
@@ -531,6 +590,10 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevString,
           PyTango.SPECTRUM,
           PyTango.READ, 64]],
+        'apply_corrections':
+        [[PyTango.DevBoolean,
+          PyTango.SCALAR,
+          PyTango.READ]],
         'dac_name_list':
         [[PyTango.DevString,
           PyTango.SPECTRUM,
@@ -583,19 +646,19 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevBoolean,
           PyTango.SCALAR,
           PyTango.READ_WRITE]],
-        'netdev_groups':
-        [[PyTango.DevString,
-          PyTango.SPECTRUM,
-          PyTango.READ_WRITE, 64]],
         'pixel_depth_cpu_affinity_map':
-        [[PyTango.DevLong,
-          PyTango.IMAGE,
-          PyTango.READ_WRITE, 64, 5]],
+        [[PyTango.DevString,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
         'stats_do_hist':
         [[PyTango.DevBoolean,
           PyTango.SCALAR,
           PyTango.READ_WRITE]],
         'skip_frame_freq':
+        [[PyTango.DevLong,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'tx_frame_delay':
         [[PyTango.DevLong,
           PyTango.SCALAR,
           PyTango.READ_WRITE]],
@@ -615,18 +678,36 @@ _SlsDetectorEiger = None
 _SlsDetectorCorrection = None
 _SlsDetectorControl = None
 
-def get_control(config_fname, **keys) :
+def get_control(config_fname, full_config_fname=None, apply_corrections=None,
+                **keys) :
     global _SlsDetectorCam, _SlsDetectorHwInter, _SlsDetectorEiger
     global _SlsDetectorCorrection, _SlsDetectorControl
+
+    def to_bool(x, default_val=False):
+        if x is None:
+            return default_val
+        elif type(x) is str:
+            x = x.lower()
+            if x == 'true':
+                return True
+            elif x == 'false':
+                return False
+            else:
+                return bool(int(x))
+        else:
+            return bool(x)
+
+    apply_corrections = to_bool(apply_corrections, True)
+
     if _SlsDetectorControl is None:
-        full_config_fname = keys.pop('full_config_fname', None)
         if full_config_fname:
             p = Process(target=setup_partial_config,
                         args=(config_fname, full_config_fname))
             p.start()
             p.join()
 
-        _SlsDetectorCam = SlsDetectorHw.Camera(config_fname)
+        det_id = 0
+        _SlsDetectorCam = SlsDetectorHw.Camera(config_fname, det_id)
         for i, n in enumerate(_SlsDetectorCam.getHostnameList()):
             print('Enabling: %s (%d)' % (n, i))
             _SlsDetectorCam.putCmd('activate 1', i)
@@ -634,7 +715,8 @@ def get_control(config_fname, **keys) :
         _SlsDetectorHwInter = SlsDetectorHw.Interface(_SlsDetectorCam)
         if _SlsDetectorCam.getType() == SlsDetectorHw.EigerDet:
             _SlsDetectorEiger = SlsDetectorHw.Eiger(_SlsDetectorCam)
-            _SlsDetectorCorrection = _SlsDetectorEiger.createCorrectionTask()
+            if apply_corrections:
+                _SlsDetectorCorrection = _SlsDetectorEiger.createCorrectionTask()
         else:
             raise ValueError("Unknown detector type: %s" %
                              _SlsDetectorCam.getType())

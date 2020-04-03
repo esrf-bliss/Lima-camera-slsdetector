@@ -23,8 +23,8 @@
 #ifndef __SLS_DETECTOR_RECEIVER_H
 #define __SLS_DETECTOR_RECEIVER_H
 
+#include "SlsDetectorFrameMap.h"
 #include "SlsDetectorModel.h"
-#include "SlsDetectorCPUAffinity.h"
 #include "slsReceiverUsers.h"
 
 namespace lima 
@@ -40,142 +40,47 @@ class Receiver
 	DEB_CLASS_NAMESPC(DebModCamera, "Receiver", "SlsDetector");
 
 public:
+	typedef slsReceiverDefs::sls_detector_header sls_detector_header;
+	typedef slsReceiverDefs::sls_receiver_header sls_receiver_header;
+	typedef slsReceiverDefs::receiver_image_data ImageData;
+
 	Receiver(Camera *cam, int idx, int rx_port);
 	~Receiver();
 
 	void start();
-	void setNbPorts(int nb_ports);
 
 	void prepareAcq();
 
 	void setCPUAffinity(const RecvCPUAffinity& recv_affinity);
 
+	bool getImage(ImageData& image_data);
+	
+	SlsDetector::Stats& getStats()
+	{ return m_stats.stats; }
+
+	void clearAllBuffers()
+	{ m_recv->clearAllBuffers(); }
+
 private:
 	friend class Camera;
 
-	class Port 
-	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Receiver::Port", 
-				  "SlsDetector");
-	public:
-		struct Stats {
-			SlsDetector::Stats stats;
-			Timestamp last_t0;
-			Timestamp last_t1;
-			void reset()
-			{
-				stats.reset();
-				last_t0 = last_t1 = Timestamp();
-			}
-		};
-	
-		Port(Receiver& recv, int port);
-
-		pid_t getThreadID()
-		{ return m_thread.getThreadID(); }
-		
-		void prepareAcq();
-
-		void processFileStart(uint32_t dsize);
-		void processFrame(FrameType frame, char *dptr, uint32_t dsize);
-
-		bool isBadFrame(FrameType frame);
-	
-		int getNbBadFrames()
+	struct Stats {
+		SlsDetector::Stats stats;
+		Timestamp last_t0;
+		Timestamp last_t1;
+		void reset()
 		{
-			AutoMutex l = lock();
-			return m_bad_frame_list.size();
+			stats.reset();
+			last_t0 = last_t1 = Timestamp();
 		}
-	
-		void getBadFrameList(int first_idx, int last_idx, IntList& bfl)
-		{
-			AutoMutex l = lock();
-			IntList::const_iterator b = m_bad_frame_list.begin();
-			bfl.assign(b + first_idx, b + last_idx);
-		}
-		
-		Stats& getStats()
-		{ return m_stats; }
-
-	private:
-		friend class Receiver;
-
-		typedef FrameMap::Item::FinishInfo FinishInfo;
-		typedef FrameMap::Item::FinishInfoList FinishInfoList;
-		typedef std::vector<FinishInfo> FinishInfoArray;
-		
-		class Thread : public lima::Thread
-		{
-			DEB_CLASS_NAMESPC(DebModCamera, 
-					  "Receiver::Port::Thread", 
-					  "SlsDetector");
-		public:
-			Thread(Port& port);
-			virtual ~Thread();
-
-			virtual void start();
-
-		protected:
-			virtual void threadFunction();
-
-		private:
-			Port& m_port;
-			pid_t m_tid;
-			volatile bool m_end;
-		};
-
-		AutoMutex lock()
-		{ return m_mutex; }
-
-		void pollFrameFinished();
-		void stopPollFrameFinished();
-		void processFinishInfo(const FinishInfo& finfo);
-		
-		Camera *m_cam;
-		Model *m_model;
-		int m_port_idx;
-		Mutex m_mutex;
-		FrameMap::Item *m_frame_map_item;
-		IntList m_bad_frame_list;
-		Stats m_stats;
-		Thread m_thread;
 	};
-	typedef std::vector<AutoPtr<Port> > PortList;
-
-	static int fileStartCallback(char *fpath, char *fname, 
-				     FrameType fidx, uint32_t dsize, 
-				     void *priv);
-	static void portCallback(FrameType frame, 
-				 uint32_t exp_len,
-				 uint32_t recv_packets,
-				 uint64_t bunch_id,
-				 uint64_t timestamp,
-				 uint16_t mod_id,
-				 uint16_t x, uint16_t y, uint16_t z,
-				 uint32_t debug,
-				 uint16_t rr_nb,
-				 uint8_t det_type,
-				 uint8_t cb_version,
-				 char *dptr, 
-				 uint32_t dsize, 
-				 void *priv);
-
-	int fileStartCallback(char *fpath, char *fname, uint64_t fidx, 
-			      uint32_t dsize);
-	void portCallback(FrameType det_frame, int port, char *dptr, 
-			  uint32_t dsize);
-
-	void getNodeMaskList(const CPUAffinityList& listener,
-			     const CPUAffinityList& writer,
-			     slsReceiverUsers::NodeMaskList& fifo_node_mask,
-			     int& max_node);
-
+	
 	Camera *m_cam;
 	int m_idx;
 	int m_rx_port;
 	Args m_args;
 	AutoPtr<slsReceiverUsers> m_recv;
-	PortList m_port_list;
+	Stats m_stats;
 }; 
 
 

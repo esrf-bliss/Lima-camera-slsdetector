@@ -170,6 +170,7 @@ enum TrigMode {
 	Gating          = GATE_FIX_NUMBER,
 	TriggeredGating = GATE_WITH_START_TRIGGER,
 	BurstTrigger    = BURST_TRIGGER,
+	SoftTriggerExposure,
 };
 
 enum Settings {
@@ -356,21 +357,6 @@ struct SimpleStat {
 	double max() const;
 	double ave() const;
 	double std() const;
-};
-
-
-class FrameMap
-{
-public:
-	void setNbItems(int nb_items);
-	void setBufferSize(int buffer_size);
-	void clear();
-
-	unsigned long getLastItemFrame() const;
-	unsigned long getLastFinishedFrame() const;
-
-private:
-	FrameMap();
 };
 
 

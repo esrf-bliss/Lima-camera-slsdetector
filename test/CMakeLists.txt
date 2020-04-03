@@ -22,7 +22,8 @@
 
 set(test_src test_slsdetector 
              test_slsdetector_control
-             test_thread_cpu_affinity)
+             test_thread_cpu_affinity
+	     test_expand_4)
 
 limatools_run_camera_tests("${test_src}" ${PROJECT_NAME})
 

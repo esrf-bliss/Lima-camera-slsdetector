@@ -63,7 +63,8 @@ class TestApp
 		class ArgOptBase
 		{
 		public:
-		ArgOptBase(string sopt, string lopt, string extra = "")
+		ArgOptBase(std::string sopt, std::string lopt,
+			   std::string extra = "")
 			: m_sopt(sopt), m_lopt(lopt), m_extra(extra)
 			{}
 			virtual ~ArgOptBase()
@@ -75,36 +76,39 @@ class TestApp
 			{ return !m_extra.empty(); }
 
 		protected:
-			string m_sopt;
-			string m_lopt;
-			string m_extra;
+			std::string m_sopt;
+			std::string m_lopt;
+			std::string m_extra;
 		};
 
 		template <class T>
 			class ArgOpt : public ArgOptBase
 		{
 		public:
-		ArgOpt(T& var, string sopt, string lopt, string extra = "") 
+		ArgOpt(T& var, std::string sopt, std::string lopt,
+		       std::string extra = "")
 			: ArgOptBase(sopt, lopt, extra), m_var(var)
 			{
 				if (!hasExtra()) {
-					istringstream is("0");
+					std::istringstream is("0");
 					is >> m_var;
 				}
 			}
 
 			virtual bool check(Args& args)
 			{
-				string s = args[0];
+				std::string s = args[0];
 				if ((s != m_sopt) && (s != m_lopt))
 					return false;
 				args.pop_front();
 				if (hasExtra() && !args) {
-					cerr << "Missing " << m_extra << endl;
+					std::cerr << "Missing " << m_extra
+					     << std::endl;
 					exit(1);
 				}
-				s = hasExtra() ? args.pop_front() : string("1");
-				istringstream is(s);
+				s = (hasExtra() ? args.pop_front() :
+						  std::string("1"));
+				std::istringstream is(s);
 				is >> m_var;
 				return true;	
 			}
@@ -124,11 +128,12 @@ class TestApp
 	class EdfHeaderKey
 	{
 	public:
-	EdfHeaderKey(const string& key) : m_key(key)
+	EdfHeaderKey(const std::string& key) : m_key(key)
 		{}
 	private:
-		friend ostream& operator <<(ostream& os, const EdfHeaderKey& h);
-		string m_key;
+		friend std::ostream& operator <<(std::ostream& os,
+						 const EdfHeaderKey& h);
+		std::string m_key;
 	};
 
 	TestApp(int argc, char *argv[]);
@@ -153,7 +158,7 @@ class TestApp
 
 	void save_raw_data(int start_frame, int nb_frames);
 	void save_edf_data(int start_frame, int nb_frames);
-	void save_edf_frame(ofstream& of, int acq_idx, int edf_idx);
+	void save_edf_frame(std::ofstream& of, int acq_idx, int edf_idx);
 
 	Pars m_pars;
 	AutoPtr<NumaSoftBufferCtrlObj> m_buffer_ctrl_obj;
@@ -164,8 +169,9 @@ class TestApp
 	Timestamp m_last_msg_timestamp;
 };
 
-ostream& operator <<(ostream& os, const TestApp::EdfHeaderKey& h)
+std::ostream& operator <<(std::ostream& os, const TestApp::EdfHeaderKey& h)
 {
+	using namespace std;
 	return os << setiosflags(ios::left) << resetiosflags(ios::right)
 		  << setw(14) << setfill(' ') << h.m_key << " = ";
 }

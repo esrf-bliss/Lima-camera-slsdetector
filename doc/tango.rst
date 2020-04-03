@@ -13,17 +13,26 @@ Properties
 Property name			Mandatory	Default value	Description
 =============================== =============== =============== ==============================================================
 config_fname			Yes		-		Path to the SlsDetector config file
+apply_corrections		No		True		Perform corrections on each frame
 high_voltage			No		0		Initial detector high voltage (V)
 								(set to 150 if already tested)
 fixed_clock_div			No		0		Initial detector fixed-clock-div
 threshold_energy		No		0		Initial detector threshold energy (eV)
 tolerate_lost_packets		No		True		Initial tolerance to lost packets
-netdev_groups			No		[]		List of network device groups, each group is a list of 
-								comma-separated interface names: ["ethX,ethY", "ethZ,..."]
-pixel_depth_cpu_affinity_map	No		[]		Default PixelDepthCPUAffinityMap as a list of 5+n-value tuple 
-								strings (n is nb of netdev_groups):
-								["<pixel_depth>,<recv_l>,<recv_w>,<lima>,<other>[,<netdev_grp1>,...]", ...]
+pixel_depth_cpu_affinity_map	No		[]		Default PixelDepthCPUAffinityMap as Python string(s) defining a dict:
+								{<pixel_depth>: <global_affinity>}, being global_affinity a tuple:
+								(<recv_list>, <lima>, <other>, <netdev_grp_list>), where recv_list
+								is a list of tupples in the form: (<listeners>, <port_threads>),
+								where listeners and port_threads are tuples of affinities,
+								lima and and other are affinities, and netdev_grp_list is a list of
+								tuples in the form:
+								(<comma_separated_netdev_name_list>, <rx_queue_affinity_map>), the
+								latter in the form of: {<queue>: (<irq>, <processing>)}.
+								Each affinity can be expressed by one of the functions: Mask(mask)
+								or CPU(<cpu1>[, ..., <cpuN>]) for independent CPU enumeration
 =============================== =============== =============== ==============================================================
+
+.. note: The Eiger detector has currently 4 threads per port.
 
 
 Attributes
@@ -33,6 +42,7 @@ Attribute name			RW	Type			Description
 =============================== ======= ======================= ===========================================================
 config_fname			ro	DevString		Path to the SlsDetector config file
 hostname_list			ro	DevVarStringArray	The list of the Eiger half-modules' hostnames
+apply_corrections		ro	DevBoolean		Pixel software corrections are applied on each frame
 dac_name_list			ro	DevVarStringArray	The list of the DAC signals' names
 dac_<signal_name>		rw	DevVarLongArray		Array with the DAC <signal_name> value for each half-module, in A/D units
 dac_name_list_mv		ro	DevVarStringArray	The list of the DAC signals' names supporting milli-volt units
@@ -47,6 +57,7 @@ pixel_depth			rw	DevString		The image pixel bit-depth:
 raw_mode			rw	DevBoolean		Publish image as given by the Receivers (no SW reconstruction)
 threshold_energy		rw	DevLong			The energy (in eV) the pixel discriminator thresholds (Vcmp & Trim bits) is set at
 high_voltage			rw	DevShort		The detector high voltage (in V)
+tx_frame_delay			rw	DevLong			Frame Tx delay (6.2 ns units)
 all_trim_bits			rw	DevVarLongArray		Array with the pixel trimming value [0-63] for each half-module, if all the pixels in the half-module have the same trimming value, -1 otherwise
 clock_div			rw      DevString               The readout clock divider:
 								 - **FULL_SPEED**
@@ -63,10 +74,8 @@ readout_flags			rw	DevString		The flags affecting the readout mode (Parallel|Non
 								 - **SAFE + CONTINUOUS**
 max_frame_rate			ro	DevDouble		Maximum number of frames per second (kHz)
 tolerate_lost_packets		rw	DevBoolean		Allow acquisitions with incomplete frames due to overrun
-netdev_groups			rw	DevVarStringArray	List of network device groups, each group is a list of 
-								comma-separated interface names: ["ethX,ethY", "ethZ,..."]
-pixel_depth_cpu_affinity_map	rw	DevDouble 5+n-col IMAGE	PixelDepth -> CPUAffinity map as a 2D array:
-					(n=nb of netdev_groups)	[[pixel_depth, recv_l, recv_w, lima, other[, <netdev_grp1>, ...]], ...]
+pixel_depth_cpu_affinity_map	rw	DevString		PixelDepth -> CPUAffinity map as a Python string
+								(see description of corresponding device property)
 =============================== ======= ======================= ===========================================================
 
 Please refer to the *PSI/SLS Eiger User's Manual* for more information about the above specfic configuration parameters.

@@ -41,6 +41,8 @@ namespace lima
 namespace SlsDetector
 {
 
+class Eiger;
+
 class Camera : public HwMaxImageSizeCallbackGen, public EventCallbackGen
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "Camera", "SlsDetector");
@@ -53,7 +55,7 @@ public:
 	typedef Defs::DetStatus DetStatus;
 	typedef Defs::NetworkParameter NetworkParameter;
 
-	Camera(std::string config_fname);
+	Camera(std::string config_fname, int det_id = 0);
 	Camera(const Camera& o) = delete;
 	virtual ~Camera();
 
@@ -71,18 +73,16 @@ public:
 	int getNbDetSubModules()
 	{ return m_det->getNMods(); }
 
-	int getTotNbPorts()
-	{ return m_recv_list.size() * m_recv_nb_ports; }
+	int getNbRecvs()
+	{ return m_recv_list.size(); }
 
-	int getPortIndex(int recv_idx, int port)
-	{ return recv_idx * m_recv_nb_ports + port; }
-
-	std::pair<int, int> splitPortIndex(int port_idx)
-	{ return std::pair<int, int>(port_idx / m_recv_nb_ports, 
-				     port_idx % m_recv_nb_ports); }
+	Receiver* getRecv(int i)
+	{ return m_recv_list[i]; }
 
 	void setBufferCtrlObj(NumaSoftBufferCtrlObj *buffer_ctrl_obj)
 	{ m_buffer_ctrl_obj = buffer_ctrl_obj; }
+
+	void clearAllBuffers();
 
 	void setPixelDepth(PixelDepth  pixel_depth);
 	void getPixelDepth(PixelDepth& pixel_depth);
@@ -100,8 +100,8 @@ public:
 	void getFrameDim(FrameDim& frame_dim, bool raw = false)
 	{ m_model->getFrameDim(frame_dim, raw); }
 
-	const FrameMap& getFrameMap()
-	{ return m_frame_map; }
+	FrameMap *getFrameMap()
+	{ return &m_frame_map; }
 
 	void putCmd(const std::string& s, int idx = -1);
 	std::string getCmd(const std::string& s, int idx = -1);
@@ -143,19 +143,21 @@ public:
 	void setTolerateLostPackets(bool  tol_lost_packets);
 	void getTolerateLostPackets(bool& tol_lost_packets);
 
-	int getNbBadFrames(int port_idx);
-	void getBadFrameList(int port_idx, int first_idx, int last_idx,
+	int getNbBadFrames(int item_idx);
+	void getBadFrameList(int item_idx, int first_idx, int last_idx,
 			     IntList& bad_frame_list);
-	void getBadFrameList(int port_idx, IntList& bad_frame_list);
+	void getBadFrameList(int item_idx, IntList& bad_frame_list);
 
 	void prepareAcq();
 	void startAcq();
 	void stopAcq();
 
+	void triggerFrame();
+
 	void registerTimeRangesChangedCallback(TimeRangesChangedCallback& cb);
 	void unregisterTimeRangesChangedCallback(TimeRangesChangedCallback& cb);
 
-	void getStats(Stats& stats, int port_idx=-1);
+	void getStats(Stats& stats, int recv_idx=-1);
 
 	void setPixelDepthCPUAffinityMap(PixelDepthCPUAffinityMap aff_map);
 	void getPixelDepthCPUAffinityMap(PixelDepthCPUAffinityMap& aff_map);
@@ -163,11 +165,12 @@ public:
 	GlobalCPUAffinityMgr::ProcessingFinishedEvent *
 		getProcessingFinishedEvent();
 
+	void reportException(Exception& e, std::string name);
+
 private:
 	typedef std::map<int, int> RecvPortMap;
 	typedef std::queue<int> FrameQueue;
 	typedef std::vector<AutoPtr<Receiver> > RecvList;
-	typedef std::vector<Receiver::Port *> RecvPortList;
 
 	struct AppInputData
 	{
@@ -223,10 +226,9 @@ private:
 	friend class Receiver;
 	friend class GlobalCPUAffinityMgr;
 
-	void setModel(Model *model);
+	friend class Eiger;
 
-	RecvPortList getRecvPortList();
-	Receiver::Port *getRecvPort(int port_idx);
+	void setModel(Model *model);
 
 	AutoMutex lock()
 	{ return AutoMutex(m_cond.mutex()); }
@@ -252,7 +254,7 @@ private:
 	FrameType getLastReceivedFrame();
 
 	void waitLastSkippedFrame();
-	void processLastSkippedFrame(int port_idx);
+	void processLastSkippedFrame(int recv_idx);
 
 	void getSortedBadFrameList(IntList first_idx, IntList last_idx,
 				   IntList& bad_frame_list );
@@ -282,14 +284,13 @@ private:
 	void setFlowControl10G(bool enabled);
 	void resetFramesCaught();
 
+	int m_det_id;
 	Model *m_model;
 	Cond m_cond;
 	AutoPtr<AppInputData> m_input_data;
 	AutoPtr<slsDetectorUsers> m_det;
 	FrameMap m_frame_map;
-	int m_recv_nb_ports;
 	RecvList m_recv_list;
-	int m_recv_fifo_depth;
 	TrigMode m_trig_mode;
 	FrameType m_lima_nb_frames;
 	FrameType m_det_nb_frames;

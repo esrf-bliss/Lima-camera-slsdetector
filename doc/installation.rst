@@ -1034,7 +1034,7 @@ and create the *slsdetector* environment:
       - conda-forge
     EOF
       ${HOME}/conda/miniconda/bin/conda update -n base conda
-      ${HOME}/conda/miniconda/bin/conda create -n slsdetector python=2.7
+      ${HOME}/conda/miniconda/bin/conda create -n slsdetector-py37 python=3.7
     )
 
 Patch *blissrc* to use *conda* environments:
@@ -1130,7 +1130,7 @@ Patch *blissrc* to use *conda* environments:
     )
 
 Configure *blissadm* software to use *conda* with the default
-*slsdetector* environment:
+*slsdetector-py37* environment:
 
 ::
 
@@ -1138,7 +1138,7 @@ Configure *blissadm* software to use *conda* with the default
     lid10eiger1:~ % \
       sed -i -e '/^BLISS_LIB_PATH/i\
     BLISS_CONDA_BASE=${BLISSADM}/conda/miniconda export BLISS_CONDA_BASE' -e '/^BLISS_LIB_PATH/i\
-    BLISS_CONDA_DEFAULT_ENV=slsdetector export BLISS_CONDA_DEFAULT_ENV' ~/local/BLISS_ENV_VAR
+    BLISS_CONDA_DEFAULT_ENV=slsdetector-py37 export BLISS_CONDA_DEFAULT_ENV' ~/local/BLISS_ENV_VAR
 
 Patch *bliss_drivers* and *bliss_daemons* so they **do not** use
 the *conda* environment:
@@ -1202,13 +1202,10 @@ Install basic *conda* packages:
     # as blissadm
     lid10eiger1:~ % (
       . blissrc
-      conda install gxx_linux-64 gxx-dbg_linux-64
-      conda install cmake
-      conda install sip="4.18*" numpy gsl
-      conda install lz4-c=1.8.2 hdf5="1.10*"
-      conda install libpng 
+      conda install gxx_linux-64 gxx-dbg_linux-64 cmake \
+                    sip="4.19*" numpy gsl lz4-c=1.8.2 hdf5="1.10*" \
+                    libpng gevent
       conda install -c valkyriesystemscorporation libnuma
-      conda install gevent
     )
 
 Restart the *BLISS daemons*:
@@ -1227,35 +1224,6 @@ Install *PyTango*, needed by *Lima*:
 
     # as blissadm
     lid10eiger1:~ % (. blissrc && conda install pytango)
-
-Apply a patch fixing Unicode string management in attribute names
-(Python 3 compatible *SIP*):
-
-::
-
-    # as blissadm
-    lid10eiger1:~ % (
-      cat > /tmp/PyTango.patch <<'EOF'
-    --- a/attr_data.py      2017-01-09 17:10:46.000000000 +0100
-    +++ b/attr_data.py      2018-04-04 09:44:13.551026750 +0200
-    @@ -62,6 +62,7 @@
-         def from_dict(cls, attr_dict):
-             attr_dict = dict(attr_dict)
-             name = attr_dict.pop('name', None)
-    +        name = name if isinstance(name, bytes) else name.encode()
-             class_name = attr_dict.pop('class_name', None)
-             self = cls(name, class_name)
-             self.build_from_dict(attr_dict)
-    EOF
-      cat > /tmp/find_pytango_attr_data.py <<'EOF'
-    from PyTango import AttrData
-    import sys
-    fname = sys.modules[AttrData.__module__].__file__
-    print(fname.replace('.pyc', '.py'))
-    EOF
-      attr_data=$(. blissrc && python /tmp/find_pytango_attr_data.py)
-      (cd $(dirname ${attr_data}) && patch -b -p1 < /tmp/PyTango.patch)
-    )
 
 Install the Python modules needed for building the HTML documentation
 with Doxygen, Sphinx and Read-the-Docs:
@@ -1378,7 +1346,7 @@ computer directories:
 
 ::
 
-    (slsdetector) lid10eiger1:~ % \
+    (slsdetector-py37) lid10eiger1:~ % \
         EIGER_DIR=${EIGER_HOME}/eiger/eiger_v3.1.1
         EIGER_CONFIG=${EIGER_DIR}/config/beb-021-020-direct-FO-10g.config
         mkdir -p $(dirname ${EIGER_CONFIG})
@@ -1390,7 +1358,7 @@ The resulting configuration file:
 
 ::
 
-    (slsdetector) lid10eiger1:~ % cat ${EIGER_CONFIG}
+    (slsdetector-py37) lid10eiger1:~ % cat ${EIGER_CONFIG}
     detsizechan 1024 512
 
     #type Eiger+
@@ -1438,7 +1406,7 @@ Copy the detector calibration data:
 
 ::
 
-    (slsdetector) lid10eiger1:~ % \
+    (slsdetector-py37) lid10eiger1:~ % \
         SLS_DETECTOR_SETTINGS=$(grep ^settings ${EIGER_CONFIG} | awk '{print $2}')/standard
         mkdir -p $(dirname ${SLS_DETECTOR_SETTINGS})
         scp -r lisgeiger1:${SLS_DETECTOR_SETTINGS} $(dirname ${SLS_DETECTOR_SETTINGS})
@@ -1449,7 +1417,7 @@ Add the configuration file to *eiger_setup.sh* and decode the
 
 ::
 
-    (slsdetector) lid10eiger1:~ % cat >> eiger_setup.sh <<'EOF'
+    (slsdetector-py37) lid10eiger1:~ % cat >> eiger_setup.sh <<'EOF'
 
     EIGER_DIR=${EIGER_HOME}/eiger/eiger_v3.1.1
     EIGER_CONFIG=${EIGER_DIR}/config/beb-021-020-direct-FO-10g.config
@@ -1472,8 +1440,8 @@ project\|\ https://gitlab.esrf.fr/Hardware/sls_detectors]:
 
 ::
 
-    (slsdetector) lid10eiger1:~ % mkdir -p ~/esrf && cd ~/esrf
-    (slsdetector) lid10eiger1:~/esrf % git clone -o gitlab git://gitlab.esrf.fr/Hardware/sls_detectors.git
+    (slsdetector-py37) lid10eiger1:~ % mkdir -p ~/esrf && cd ~/esrf
+    (slsdetector-py37) lid10eiger1:~/esrf % git clone -o gitlab git://gitlab.esrf.fr/Hardware/sls_detectors.git
     Cloning into 'sls_detectors'...
     ...
 
@@ -1481,7 +1449,7 @@ Add the *ESRF scripts* to *eiger_setup.sh*:
 
 ::
 
-    (slsdetector) lid10eiger1:~ % cat >> eiger_setup.sh <<'EOF'
+    (slsdetector-py37) lid10eiger1:~ % cat >> eiger_setup.sh <<'EOF'
 
     SLS_DETECTORS=${EIGER_HOME}/esrf/sls_detectors
     export SLS_DETECTORS
@@ -1517,7 +1485,7 @@ De-install *libgsl* and *libnuma-dev*:
 ::
 
     # as opid00
-    (slsdetector) lid10eiger1:~ % \
+    (slsdetector-py37) lid10eiger1:~ % \
         cd ${SLS_DETECTORS}
         git submodule init Lima
         git submodule update
@@ -1551,6 +1519,16 @@ De-install *libgsl* and *libnuma-dev*:
         git fetch --all
     ...
 
+Add *Lima* to environment variables in *eiger_setup.sh*:
+
+::
+
+    (slsdetector-py37) lid10eiger1:~ % cat >> eiger_setup.sh <<'EOF'
+
+    LIMA_DIR=${SLS_DETECTORS}/Lima
+    export LIMA_DIR
+    EOF
+
 Eiger software: slsDetectorPackage
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -1560,7 +1538,7 @@ plugin:
 ::
 
     # as opid00
-    (slsdetector) lid10eiger1:~ % \
+    (slsdetector-py37) lid10eiger1:~ % \
         cd ${LIMA_DIR}/camera/slsdetector
         git submodule init
         git submodule update
@@ -1574,40 +1552,40 @@ plugin:
 *Lima* compilation
 ~~~~~~~~~~~~~~~~~~
 
-Compile *Lima*, including *slsDetectorPackage* using *CMake*:
+Compile *Lima* as *blissadm*, including *slsDetectorPackage* using the *CMake* commands in *Conda*:
 
 ::
 
-    (slsdetector) lid10eiger1:~ % \
+    # as opid00
+    (slsdetector-py37) lid10eiger1:~ % (
         cd ${LIMA_DIR}
-        cp scripts/config.txt_default scripts/config.txt
-        mkdir -p ${LIMA_DIR}/install/python
-    (slsdetector) lid10eiger1:~/esrf/sls_detectors/Lima % ./install.sh \
-        --install-prefix=${LIMA_DIR}/install \
-        --install-python-prefix=${LIMA_DIR}/install/python \
-        slsdetector hdf5 hdf5-bs edfgz edflz4 python pytango-server tests 2>&1
+        for d in third-party/Processlib . camera/slsdetector camera/slsdetector/tango; do
+          (cd ${d} && mkdir -p build && chmod a+w build);
+        done)
+
+::
+
+    # as blissadm
+    lid10eiger1:~ % (
+        . ${EIGER_HOME}/eiger_setup.sh
+        cd ${LIMA_DIR}
+        (PREFIX=${CONDA_PREFIX} \
+         SP_DIR=$(python -c "import sysconfig; print(sysconfig.get_paths().get('platlib'))") \
+         bash -c '(cd third-party/Processlib && bash -e conda/debug/build.sh) && \
+                  (cd . && bash -e conda/debug/build.sh) && \
+                  (cd applications/tango/python && \
+                     bash -e conda/build.sh && cp scripts/Lima* ${PREFIX}/bin) && \
+                  (cd camera/slsdetector && \
+                     bash -e conda/camera/build.sh && bash -e conda/tango/build.sh)'))
     ...
 
 Build the documentation:
 
 ::
 
-    (slsdetector) lid10eiger1:~/esrf/sls_detectors/Lima % make -C docs html
+    (slsdetector-py37) lid10eiger1:~/esrf/sls_detectors/Lima % make -C docs html
     ...
 
-Add *Lima* to the *PATH*, *LD_LIBRARY_PATH* and *PYTHONPATH* environment variables in
-*eiger_setup.sh*:
-
-::
-
-    (slsdetector) lid10eiger1:~ % cat >> eiger_setup.sh <<'EOF'
-
-    LIMA_DIR=${SLS_DETECTORS}/Lima
-    PATH=${LIMA_DIR}/install/bin:${PATH}
-    LD_LIBRARY_PATH=${LIMA_DIR}/install/lib:${LD_LIBRARY_PATH}
-    PYTHONPATH=${LIMA_DIR}/install/python:${PYTHONPATH}
-    export LIMA_DIR PATH LD_LIBRARY_PATH PYTHONPATH
-    EOF
 
 *eigerDetectorServer* and detector firmwares
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1624,12 +1602,12 @@ Test the *Lima* plugin without and with *CtControl* instantiation:
 
 ::
 
-    (slsdetector) lid10eiger1:~ % \
+    (slsdetector-py37) lid10eiger1:~ % \
         cd ${LIMA_DIR}
         (rm -f /tmp/eiger.edf &&
              build/camera/slsdetector/test/test_slsdetector -c ${EIGER_CONFIG})
     ...
-    (slsdetector) lid10eiger1:~/esrf/sls_detectors/Lima % \
+    (slsdetector-py37) lid10eiger1:~/esrf/sls_detectors/Lima % \
         mkdir -p /nobackup/lid10eiger12/data/eiger/lima
         ln -s /nobackup/lid10eiger12/data/eiger/lima data
         (rm -f data/img*.edf &&
@@ -1642,7 +1620,7 @@ thay can be re-created by *opid10*:
 ::
 
     # as opid00
-    (slsdetector) lid10eiger1:~ % \
+    (slsdetector-py37) lid10eiger1:~ % \
         for m in $(ipcs -m | grep '^0x000016' | awk '{print $2}'); do
             ipcrm -m ${m}
         done
@@ -1662,131 +1640,73 @@ Include the Eiger environment at login:
     . ${EIGER_HOME}/eiger_setup.sh
     EOF
 
-Install Lima Python Tango software in *blissadm*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Install the following packages with *Blissinstaller*:
-
--  Control/Driver/bliss_drivers: needed for *blisspipe*
--  Control/Taco/bliss_dserver
--  Tango/Server/LimaCCDs-Simulator:
-
-   -  Python/Modules/PyLimaCore
-   -  Python/MOdules/PyLimaSimulator
-   -  Tango/Server/LimaCCDs-common
-
--  Control/Tango/Applications/Jive
-
-Configure the driver infrastructure by calling *bliss_drivers config*:
-
-::
-
-    # as blissadm
-    lid10eiger1:~ % bliss_drivers config
-    Root Password:
-    Copying /users/blissadm/applications/bliss_drivers/Esrfmap/60-esrf.rules to /etc/udev/rules.d/60-esrf.rules
-    Starting blisspipe ...
-
-Apply all the suggestions and save before quiting.
-
-Include the *Lima* libraries and modules in the *BLISS_LIB_PATH* and *PYTHONPATH*, respectively:
-
-::
-
-    # as blissadm
-    lid10eiger1:~ % \
-        . ${EIGER_HOME}/eiger_setup.sh
-        blissrc -a BLISS_LIB_PATH ${LIMA_DIR}/install/lib
-        blissrc -a PYTHONPATH ${LIMA_DIR}/install/python
-
-Rename the Lima installed directories so they are no longer visible, and create the necessary
-symbolic links:
-
-::
-
-    # as blissadm
-    (slsdetector) lid10eiger1:~ % \
-        cd ~/python/bliss_modules
-        mv Lima Lima-pack
-        cd ~/applications
-        mv LimaCCDs LimaCCDs-pack
-        cd ~/server/src
-        mv LimaCCDs LimaCCDs-pack
-        ln -s ${LIMA_DIR}/install/bin/LimaCCDs
-
-
 Lima Python Tango server configuration in *blissadm*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Use *jive* server wizard to add the Lima Python Tango device server to
+Use *jive* server wizard to add the *LimaCCDs/eiger500k* server to
 the Tango database:
 
 ::
 
-    (slsdetector) lid10eiger1:~ % jive > /dev/null 2>&1 &
+    (slsdetector-py37) lid10eiger1:~ % jive > /dev/null 2>&1 &
 
-Define the server *LimaCCDs/eiger500k* and include it in the *dserver*
-local database:
-
-::
-
-    # as blissadm
-    lid10eiger1:~ % cat ~/local/daemon/config/device_servers
-    [LimaCCDs]
-    *eiger500k
+and start it:
 
 ::
 
     # as opid10
-    (slsdetector) lid10eiger1:~ % bliss_dserver -fg start LimaCCDs
-    Starting: LimaCCDs/eiger500k
+    (slsdetector-py37) lid10eiger1:~ % LimaCCDs eiger500k
+    ...
 
 Add LimaCCDs and SlsDetector class devices.
 
-+----------------------------------------------------------+-------------------------------------------+
-| LimaCCDs/eiger500k/DEVICE/LimaCCDs                       | id10/limaccds/eiger500k                   |
-+----------------------------------------------------------+-------------------------------------------+
-| id10/limaccds/eiger500k->LimaCameraType                  | SlsDetector                               |
-+----------------------------------------------------------+-------------------------------------------+
-| id10/limaccds/eiger500k->NbProcessingThread              | 23                                        |
-+----------------------------------------------------------+-------------------------------------------+
-| id10/limaccds/eiger500k->BufferMaxMemory                 | 40                                        |
-+----------------------------------------------------------+-------------------------------------------+
-| LimaCCDs/eiger500k/DEVICE/SlsDetector                    | id10/slsdetector/eiger500k                |
-+----------------------------------------------------------+-------------------------------------------+
-| id10/slsdetector/eiger500k->config_fname                 | /users/opid00/eiger/eiger_v3.1.1/config/  |
-|                                                          | beb-021-020-direct-FO-10g.config          |
-+----------------------------------------------------------+-------------------------------------------+
-| id10/slsdetector/eiger500k->netdev_groups                | | eth0,eth1,eth2,eth4,eth6,eth7,eth8,eth9 |
-|                                                          | | eth3                                    |
-|                                                          | | eth5                                    |
-+----------------------------------------------------------+-------------------------------------------+
-| id10/slsdetector/eiger500k->pixel_depth_cpu_affinity_map | |  4,0x0006c0,0x6c0000,0x03f03e,0x000001, |
-|                                                          |      0x000001,0x100100,0x800800           |
-|                                                          | |  8,0x0006c0,0x6c0000,0x03f03e,0x000001, |
-|                                                          |      0x000001,0x100100,0x800800           |
-|                                                          | | 16,0xffffff,0xffffff,0xffffff,0xffffff, |
-|                                                          |      0xffffff,0xffffff,0xffffff           |
-|                                                          | | 32,0xffffff,0xffffff,0xffffff,0xffffff, |
-|                                                          |      0xffffff,0xffffff,0xffffff           |
-+----------------------------------------------------------+-------------------------------------------+
++----------------------------------------------------------+------------------------------------------------------+
+| LimaCCDs/eiger500k/DEVICE/LimaCCDs                       | id10/limaccds/eiger500k                              |
++----------------------------------------------------------+------------------------------------------------------+
+| id10/limaccds/eiger500k->LimaCameraType                  | SlsDetector                                          |
++----------------------------------------------------------+------------------------------------------------------+
+| id10/limaccds/eiger500k->NbProcessingThread              | 12                                                   |
++----------------------------------------------------------+------------------------------------------------------+
+| id10/limaccds/eiger500k->BufferMaxMemory                 | 25                                                   |
++----------------------------------------------------------+------------------------------------------------------+
+| LimaCCDs/eiger500k/DEVICE/SlsDetector                    | id10/slsdetector/eiger500k                           |
++----------------------------------------------------------+------------------------------------------------------+
+| id10/slsdetector/eiger500k->config_fname                 | /users/opid00/eiger/eiger_v3.1.1/config/             |
+|                                                          | beb-021-020-direct-FO-10g.config                     |
++----------------------------------------------------------+------------------------------------------------------+
+| id10/slsdetector/eiger500k->apply_corrections            | 0                                                    |
++----------------------------------------------------------+------------------------------------------------------+
+| id10/slsdetector/eiger500k->pixel_depth_cpu_affinity_map | | { 4: ((((CPU( 6), CPU( 7)), (CPU(18), CPU(19))),   |
+|                                                          | |        ((CPU( 9), CPU(10)), (CPU(21), CPU(22)))),  |
+|                                                          | |       CPU(*chain(range(0, 6), range(12, 18))),     |
+|                                                          | |       CPU(0),                                      |
+|                                                          | |       (('eth0,eth1,eth2,eth4,eth6,eth7,eth8,eth9', |
+|                                                          |           {-1: (CPU(0), CPU(0))}),                   |
+|                                                          | |        ('eth3',                                    |
+|                                                          |           {-1: (CPU( 8), CPU(20))}),                 |
+|                                                          | |        ('eth5',                                    |
+|                                                          |           {-1: (CPU(11), CPU(23))}))),               |
+|                                                          | |   8: '@4',                                         |
+|                                                          | |  16: '@4',                                         |
+|                                                          | |  32: '@4'}                                         |
++----------------------------------------------------------+------------------------------------------------------+
 
 .. note:: in order to perform high frame rate acquisitions, the CPU affinity must be fixed for 
    the following tasks:
 
-   * Receiver listeners
-   * Receiver writers
+   * Receivers' packet stream threads (passive mode equivalent to listeners): 2
+   * Eiger processing threads: 2 per receiver, configurable
    * Lima processing threads
-   * OS processes
-   * Net-dev group #0 packet dispatching
-   * Net-dev group #1 packet dispatching
-   * ...
+   * Other OS processes
+   * Net-dev group packet dispatching for Rx queues: irq & processing
 
    The previous example is based on a dual 6-core CPUs backend with *Hyper-Threading Technology* (12 cores, 
-   24 threads). After the data acquisition finishes the Lima processing threads will run also on the CPUs
-   assigned to listeners and writers (0xfffffe), that is 23 cores in total, which is used for setting the
-   NbProcessingThreads. Please note that there are three network groups and four pixel_depth->cpu_affinity
-   settings (4-, 8-, 16- and 32-bit), each one represented by a line in a multi-line string array.
+   24 threads). The configuration is optimised to work in pipe-line mode: cores/threads in Socket #1
+   (6-11, 18-23) will perform network data acquisition and basic image reconstruction (4-to-8 bit conversion,
+   gap pixel insertion), and cores/threads in Socket #0 (0-5, 12-17) will perform Lima processing tasks.
+   That's why the NbProcessingThread is set to 12. Please note that there are three network groups and four
+   pixel_depth->cpu_affinity settings (4-, 8-, 16- and 32-bit). The special global_affinity '@X' is a reference
+   to pixel_depth X.
 
 .. note:: The Intel 10 Gigabit Ethernet Server Adapter has multiple hardware FIFOs per port, called
    queues in the OS terminology. The hardware uses a hash algorithm to dispatch packets into the active
@@ -1813,35 +1733,6 @@ Add LimaCCDs and SlsDetector class devices.
    the *irqbalance* service is stopped before setting the IRQ affinity and restored during application
    cleanup.
                 
-Finally, configure *opid10* as the default *DSERVER_USER*, which is used
-by the *dserver_daemon*
-   
-::
-
-    # as blissadm
-    lid10eiger1:~ % grep DSERVER_USER local/BLISS_ENV_VAR || \
-                         echo 'DSERVER_USER=opid10 export DSERVER_USER' >> local/BLISS_ENV_VAR
-
-
-and restart the *blcontrol* subsystem:
-
-::
-
-    # as root
-    lid10eiger1:~ # service blcontrol stop
-     BL control ...
-    ...
-    lid10eiger1:~ # service blcontrol start
-     BL control ...
-    ...
-
-.. note:: the latest version of the *daemon_adm* package allows the
-   propagation of the real-time priority capabilities configured as
-   resource limits, so **it is safe** to start the server through the
-   *dserver* remote utility. **If the command *bliss_dserver start* is
-   used, start the server in background and avoid *-fg* option**, so the
-   *LimaCCDs* process is decoupled from the terminal, reducing the
-   risks of CPU blocking.
    
 SPEC
 ----
@@ -1904,7 +1795,7 @@ Configure the *LimaCCDs/eiger500k* Taco interface server.
 
 ::
 
-    (slsdetector) lid10eiger1:~ % cat ~blissadm/local/spec/spec.d/eiger/config
+    (slsdetector-py37) lid10eiger1:~ % cat ~blissadm/local/spec/spec.d/eiger/config
     # ID @(#)getinfo.c  6.5  03/14/15 CSS
     # Device nodes
     PSE_MAC_MOT  = slsdetmot 32 eiger500k
@@ -1928,7 +1819,7 @@ interfaces.
 
 ::
 
-    (slsdetector) lid10eiger1:~ % cat ~blissadm/local/spec/spec.d/eiger/setup
+    (slsdetector-py37) lid10eiger1:~ % cat ~blissadm/local/spec/spec.d/eiger/setup
     #
     # Add or modify setup lines.
     # Comment out the lines you want to cancel temporarily.

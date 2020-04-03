@@ -484,25 +484,33 @@ class SystemCPUAffinityMgr
 
 struct RecvCPUAffinity {
 	CPUAffinityList listeners;
-	CPUAffinityList writers;
-	CPUAffinityList port_threads;
+	CPUAffinityList recv_threads;
 
 	RecvCPUAffinity();
 	CPUAffinity all() const;
 	RecvCPUAffinity& operator =(CPUAffinity a);
+
+	const CPUAffinityList& Listeners() const
+	{ return listeners; }
+	const CPUAffinityList& RecvThreads() const
+	{ return recv_threads; }
+
+	typedef const CPUAffinityList& (RecvCPUAffinity::*Selector)() const;
 };
+
 
 inline CPUAffinity RecvCPUAffinity::all() const
 {
-	return (CPUAffinityList_all(listeners) | CPUAffinityList_all(writers) |
-		CPUAffinityList_all(port_threads));
+	return (CPUAffinityList_all(listeners) |
+		CPUAffinityList_all(recv_threads));
 }
 
 
 inline 
 bool operator ==(const RecvCPUAffinity& a, const RecvCPUAffinity& b)
 {
-	return ((a.listeners == b.listeners) && (a.writers == b.writers));
+	return ((a.listeners == b.listeners) &&
+		(a.recv_threads == b.recv_threads));
 }
 
 inline 
@@ -522,6 +530,18 @@ inline CPUAffinity RecvCPUAffinityList_all(const RecvCPUAffinityList& l)
 	return CPUAffinityList_all(recv_aff_list);
 }
 
+inline CPUAffinity RecvCPUAffinityList_all(const RecvCPUAffinityList& l,
+					   RecvCPUAffinity::Selector s)
+{
+	CPUAffinityList recv_aff_list;
+	RecvCPUAffinityList::const_iterator it, end = l.end();
+	for (it = l.begin(); it != end; ++it) {
+		const CPUAffinityList& l = ((*it).*s)();
+		recv_aff_list.push_back(CPUAffinityList_all(l));
+	}
+	return CPUAffinityList_all(recv_aff_list);
+}
+					       
 struct GlobalCPUAffinity {
 	RecvCPUAffinityList recv;
 	CPUAffinity lima;

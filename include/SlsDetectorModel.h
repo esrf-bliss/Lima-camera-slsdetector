@@ -24,6 +24,7 @@
 #define __SLS_DETECTOR_MODEL_H
 
 #include "SlsDetectorDefs.h"
+#include "SlsDetectorCPUAffinity.h"
 
 #include "lima/SizeUtils.h"
 
@@ -43,6 +44,21 @@ class Model
 	DEB_CLASS_NAMESPC(DebModCamera, "Model", "SlsDetector");
  public:
 	typedef Defs::Settings Settings;
+
+	typedef FrameMap::FinishInfo FinishInfo;
+
+	class Recv
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Model::Recv", "SlsDetector");
+	public:
+		virtual ~Recv();
+
+		virtual int getNbProcessingThreads() = 0;
+		virtual void setNbProcessingThreads(int nb_proc_threads) = 0;
+
+		virtual void setCPUAffinity(const RecvCPUAffinity&
+							recv_affinity) = 0;
+	};
 
 	Model(Camera *cam, Type type);
 	virtual ~Model();
@@ -72,6 +88,11 @@ class Model
 
 	virtual void getTimeRanges(TimeRanges& time_ranges) = 0;
 
+	virtual int getNbFrameMapItems() = 0;
+	virtual void updateFrameMapItems(FrameMap *map) = 0;
+	virtual void processBadItemFrame(FrameType frame, int item,
+					 char *bptr) = 0;
+
  protected:
 	void updateCameraModel();
 	void updateTimeRanges();
@@ -81,15 +102,18 @@ class Model
 	void putCmd(const std::string& s, int idx = -1);
 	std::string getCmd(const std::string& s, int idx = -1);
 
+	char *getFrameBufferPtr(FrameType frame_nb);
+
 	virtual bool checkSettings(Settings settings) = 0;
 
-	virtual int getRecvPorts() = 0;
+	virtual int getNbRecvs() = 0;
+	virtual Recv *getRecv(int recv_idx) = 0;
 
 	virtual void prepareAcq() = 0;
-	virtual void processRecvFileStart(int port_idx, uint32_t dsize) = 0;
-	// TODO: add file finished callback
-	virtual void processRecvPort(int port_idx, FrameType frame, char *dptr, 
-				     uint32_t dsize, char *bptr) = 0;
+	virtual void startAcq() = 0;
+	virtual void stopAcq() = 0;
+
+	void processFinishInfo(const FinishInfo& finfo);
 
  private:
 	friend class Camera;
