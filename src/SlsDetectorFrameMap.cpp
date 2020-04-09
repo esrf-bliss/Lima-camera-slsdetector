@@ -68,9 +68,12 @@ FrameMap::Item::frameFinished(FrameType frame, bool no_check, bool valid)
 	for (FrameType f = m_last_frame + 1; f != (frame + 1); ++f) {
 		int idx = f % m_map->m_buffer_size;
 		AtomicCounter& count = m_map->m_frame_item_count_list[idx];
-		bool finished = count.dec_test_and_reset(nb_items);
-		if (finished)
+		double delay;
+		bool finished = count.dec_test_and_reset(nb_items, delay);
+		if (finished) {
 			finfo.finished.insert(f);
+			m_map->m_delay_stat.add(frame, delay);
+		}
 	}
 
 	if (DEB_CHECK_ANY(DebTypeReturn)) {
@@ -133,6 +136,8 @@ void FrameMap::clear()
 	CounterList::iterator cit, cend = count_list.end();
 	for (cit = count_list.begin(); cit != cend; ++cit)
 		cit->set(m_nb_items);
+
+	m_delay_stat.reset();
 }
 
 FrameArray FrameMap::getItemFrameArray() const

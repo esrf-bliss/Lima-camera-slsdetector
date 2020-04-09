@@ -101,12 +101,16 @@ class FrameMap
 	FrameType getLastFinishedFrame() const
 	{ return getOldestFrame(getItemFrameArray()); }
 
+	XYStat::LinRegress calcDelayStat()
+	{ return m_delay_stat.calcLinRegress(); }
+
  private:
 	friend class Item;
 
 	struct AtomicCounter {
 		int count;
 		Mutex mutex;
+		Timestamp t0;
 
 		void set(int reset)
 		{
@@ -115,12 +119,17 @@ class FrameMap
 			mutex.unlock();
 		}
 
-		bool dec_test_and_reset(int reset)
+		bool dec_test_and_reset(int reset, double& delay)
 		{
 			mutex.lock();
+			Timestamp t = Timestamp::now();
+			if (count == reset)
+				t0 = t;
 			bool zero = (--count == 0);
-			if (zero)
+			if (zero) {
 				count = reset;
+				delay = t - t0;
+			}
 			mutex.unlock();
 			return zero;
 		}
@@ -132,6 +141,7 @@ class FrameMap
 	int m_buffer_size;
 	CounterList m_frame_item_count_list;
 	ItemList m_item_list;
+	XYStat m_delay_stat;
 };
 
 inline bool FrameMap::Item::isBadFrame(FrameType frame)
