@@ -408,8 +408,35 @@ private:
 	static bool DoHist;
 };
  
+struct XYStat {
+	double xacc, xacc2, yacc, xyacc;
+	int xn;
+	double factor;
+	mutable Mutex lock;
+
+	XYStat(double f = 1);
+	void reset();
+	void add(double x, double y);
+	XYStat& operator =(const XYStat& o);
+	XYStat& operator += (const XYStat& o);
+
+	// Linear Regression
+	struct LinRegress {
+		int n;
+		double slope;
+		double offset;
+
+		LinRegress() : n(0), slope(0), offset(0)
+		{}
+	};
+
+	int n() const;
+	LinRegress calcLinRegress() const;
+};
+
 std::ostream& operator <<(std::ostream& os, const SimpleStat::Histogram& s);
 std::ostream& operator <<(std::ostream& os, const SimpleStat& s);
+std::ostream& operator <<(std::ostream& os, const XYStat::LinRegress& r);
 
 
 class Camera;
