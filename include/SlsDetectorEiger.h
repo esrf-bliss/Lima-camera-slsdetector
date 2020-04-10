@@ -323,7 +323,7 @@ class Eiger : public Model
 		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Thread", "SlsDetector");
 	public:
 		enum State {
-			Init, Ready, Running, Stop, End,
+			Init, Ready, Running, Stopping, Quitting, End,
 		};
 
 		Thread(Eiger *eiger, int idx);
@@ -336,7 +336,12 @@ class Eiger : public Model
 		void startAcq()
 		{ setState(Running); }
 		void stopAcq()
-		{ setState(Ready); }
+		{
+			setState(Stopping);
+			AutoMutex l = lock();
+			while (m_state != Ready)
+				wait();
+		}
 
 	protected:
 		virtual void threadFunction();
@@ -549,20 +554,12 @@ class Eiger : public Model
 	bool allFramesAcquired()
 	{ return m_next_frame == m_nb_frames; }
 
-	bool checkForRecvState(Thread& t)
-	{
-		while ((t.m_state == Thread::Ready) || 
-		       ((t.m_state == Thread::Running) && allFramesAcquired()))
-			wait();
-		return (t.m_state == Thread::Running);
-	}
-
 	int getNbRecvs();
 
 	int getNbProcessingThreads();
 	void setNbProcessingThreads(int nb_proc_threads);
 
-	void processOneFrame(Thread& t, AutoMutex& l);
+	void processOneFrame(AutoMutex& l);
 
 	CorrBase *createBadRecvFrameCorr();
 	CorrBase *createChipBorderCorr(ImageType image_type);

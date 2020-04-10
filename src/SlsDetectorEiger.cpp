@@ -664,7 +664,7 @@ Eiger::Thread::~Thread()
 	DEB_DESTRUCTOR();
 
 	AutoMutex l = lock();
-	m_state = Stop;
+	m_state = Quitting;
 	broadcast();
 	while (m_state != End)
 		wait();
@@ -674,14 +674,26 @@ void Eiger::Thread::threadFunction()
 {
 	DEB_MEMBER_FUNCT();
 
+	State& s = m_state;
+
 	AutoMutex l = lock();
-	m_state = Ready;
+	s = Ready;
 	broadcast();
 
-	while (m_state != Stop)
-		m_eiger->processOneFrame(*this, l);
+	while (s != Quitting) {
+		while ((s == Ready) || (s == Stopping)
+		       || ((s == Running) && m_eiger->allFramesAcquired())) {
+			if (s == Stopping) {
+				s = Ready;
+				broadcast();
+			}
+			wait();
+		}
+		if (s == Running)
+			m_eiger->processOneFrame(l);
+	}
 
-	m_state = End;
+	s = End;
 	broadcast();
 }
 
@@ -1299,18 +1311,11 @@ void Eiger::stopAcq()
 	ThreadList::iterator it, end = m_thread_list.end();
 	for (it = m_thread_list.begin(); it != end; ++it)
 		(*it)->stopAcq();
-
-	AutoMutex l = lock();
-	while (!m_in_process.empty())
-		wait();
 }
 
-void Eiger::processOneFrame(Thread& t, AutoMutex& l)
+void Eiger::processOneFrame(AutoMutex& l)
 {
 	DEB_MEMBER_FUNCT();
-
-	if (!checkForRecvState(t))
-		return;
 
 	FrameType frame = m_next_frame++;
 
