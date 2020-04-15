@@ -1568,15 +1568,21 @@ Compile *Lima* as *blissadm*, including *slsDetectorPackage* using the *CMake* c
     # as blissadm
     lid10eiger1:~ % (
         . ${EIGER_HOME}/eiger_setup.sh
+        PREFIX=${CONDA_PREFIX}
+        SP_DIR=$(python -c "import sysconfig; print(sysconfig.get_paths().get('platlib'))")
+        export PREFIX SP_DIR
+        CPUS=$(lscpu | grep '^CPU(s)' | awk '{print $2}')
+        function parallel_cmake_sh
+        { sed "s/\(cmake --build build .\+\)/\1 -- -j${CPUS}/" $1 | bash -e; }
         cd ${LIMA_DIR}
-        (PREFIX=${CONDA_PREFIX} \
-         SP_DIR=$(python -c "import sysconfig; print(sysconfig.get_paths().get('platlib'))") \
-         bash -c '(cd third-party/Processlib && bash -e conda/debug/build.sh) && \
-                  (cd . && bash -e conda/debug/build.sh) && \
-                  (cd applications/tango/python && \
-                     bash -e conda/build.sh && cp scripts/Lima* ${PREFIX}/bin) && \
-                  (cd camera/slsdetector && \
-                     bash -e conda/camera/build.sh && bash -e conda/tango/build.sh)'))
+        ((cd third-party/Processlib && parallel_cmake_sh conda/debug/build.sh) \
+           && (cd . && parallel_cmake_sh conda/debug/build.sh) \
+           && (cd applications/tango/python \
+                 && parallel_cmake_sh conda/build.sh \
+                 && cp scripts/Lima* ${PREFIX}/bin) \
+           && (cd camera/slsdetector \
+                 && parallel_cmake_sh conda/camera/build.sh \
+                 && parallel_cmake_sh conda/tango/build.sh))) 2>&1
     ...
 
 Build the documentation:
