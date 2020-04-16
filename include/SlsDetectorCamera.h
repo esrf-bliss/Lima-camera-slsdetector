@@ -215,14 +215,16 @@ private:
 					  "Camera::AcqThread::ExceptionCleanUp",
 					  "SlsDetector");
 		public:
-			ExceptionCleanUp(AcqThread& thread);
+			ExceptionCleanUp(AcqThread& thread, AutoMutex& l);
 			virtual ~ExceptionCleanUp();
+		private:
+			AutoMutex& m_lock;
 		};
 
 		Status newFrameReady(FrameType frame);
 		void startAcq();
 		void stopAcq();
-		void cleanUp();
+		void cleanUp(AutoMutex& l);
 
 		Camera *m_cam;
 		Cond& m_cond;

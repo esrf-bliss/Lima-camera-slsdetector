@@ -89,8 +89,9 @@ Camera::Beb::Beb(const std::string& host_name)
 {
 }
 
-Camera::AcqThread::ExceptionCleanUp::ExceptionCleanUp(AcqThread& thread)
-	: Thread::ExceptionCleanUp(thread)
+Camera::AcqThread::ExceptionCleanUp::ExceptionCleanUp(AcqThread& thread,
+						      AutoMutex& l)
+	: Thread::ExceptionCleanUp(thread), m_lock(l)
 {
 	DEB_CONSTRUCTOR();
 }
@@ -99,7 +100,7 @@ Camera::AcqThread::ExceptionCleanUp::~ExceptionCleanUp()
 {
 	DEB_DESTRUCTOR();
 	AcqThread *thread = static_cast<AcqThread *>(&m_thread);
-	thread->cleanUp();
+	thread->cleanUp(m_lock);
 }
 
 Camera::AcqThread::AcqThread(Camera *cam)
@@ -138,9 +139,11 @@ void Camera::AcqThread::threadFunction()
 {
 	DEB_MEMBER_FUNCT();
 
-	ExceptionCleanUp cleanup(*this);
-
 	AutoMutex l = m_cam->lock();
+
+	// cleanup is executed with lock, once state goes to Stopped
+	// thread will be deleted in getEffectiveState without releasing lock
+	ExceptionCleanUp cleanup(*this, l);
 
 	GlobalCPUAffinityMgr& affinity_mgr = m_cam->m_global_cpu_affinity_mgr;
 	{
@@ -238,11 +241,9 @@ void Camera::AcqThread::queueFinishedFrame(FrameType frame)
 	m_cond.broadcast();
 }
 
-void Camera::AcqThread::cleanUp()
+void Camera::AcqThread::cleanUp(AutoMutex& l)
 {
 	DEB_MEMBER_FUNCT();
-
-	AutoMutex l = m_cam->lock();
 
 	if ((m_state == Stopped) || (m_state == Idle))
 		return;
