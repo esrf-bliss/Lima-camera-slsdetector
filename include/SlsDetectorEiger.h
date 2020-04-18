@@ -453,7 +453,7 @@ class Eiger : public Model
 			}
 		}
 
-		virtual void correctFrame(FrameType frame, void *ptr)
+		virtual void correctFrame(FrameType /*frame*/, void *ptr)
 		{
 			correctBorderCols(ptr);
 			correctBorderRows(ptr);

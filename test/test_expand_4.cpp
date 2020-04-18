@@ -90,7 +90,7 @@ void test_expand_4(bool raw)
 	
 }
 
-int main(int argc, char *argv[])
+int main(int /*argc*/, char */*argv*/[])
 {
 	DEB_GLOBAL_FUNCT();
 

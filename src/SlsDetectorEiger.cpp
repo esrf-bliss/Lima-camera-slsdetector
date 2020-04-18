@@ -153,7 +153,7 @@ void Eiger::InterModGapCorr::prepareAcq()
 	}
 }
 
-void Eiger::InterModGapCorr::correctFrame(FrameType frame, void *ptr)
+void Eiger::InterModGapCorr::correctFrame(FrameType /*frame*/, void *ptr)
 {
 	DEB_MEMBER_FUNCT();
 	
@@ -203,7 +203,8 @@ Eiger::Geometry::Recv::FrameData::FrameData()
 {
 }
 
-Eiger::Geometry::Recv::FrameData::FrameData(const RecvImageData& image, char *d)
+Eiger::Geometry::Recv::FrameData::FrameData(const RecvImageData& /*image*/,
+					    char *d)
 	: dst(d)
 {
 }
@@ -407,7 +408,7 @@ void Eiger::Geometry::Recv::expandPixelDepth4(const FrameData& data)
 	const int gap_bits = ChipGap * 8;
 	const __m128i block64_bits128 = _mm_set_epi64x(0, 64);
 	const __m128i gap_bits128 = _mm_set_epi64x(0, gap_bits);
-	int shift_l;
+	int shift_l = 0;
 	__m128i shift_l128, shift_r128;
 	__m128i m64_0 = _mm_set_epi64x(0, -1);
 	__m128i m64_1 = _mm_set_epi64x(-1, 0);
@@ -817,7 +818,7 @@ void Eiger::getADCInfo(NameList& name_list, IntList& idx_list,
 
 #define EIGER_TEMP_FACTOR		(1 / 1000.0)
 
-#define EIGER_TEMP(x)			{x, EIGER_TEMP_FACTOR}
+#define EIGER_TEMP(x)			{x, EIGER_TEMP_FACTOR, 0}
 
 	static struct ADCData {
 		ADCIndex idx;
@@ -942,7 +943,7 @@ void Eiger::calcTimeRanges(PixelDepth pixel_depth, ClockDiv clock_div,
 				 time_ranges.max_frame_period);
 }
 
-void Eiger::measureReadoutTime(double& readout_time)
+void Eiger::measureReadoutTime(double& /*readout_time*/)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -974,6 +975,7 @@ void Eiger::measureReadoutTime(double& readout_time)
 	DEB_ALWAYS() << "calling stopAcquisition";
 	cam->m_det->stopAcquisition();
 
+	readout_time = 0;
 	 */
 }
 
@@ -1336,7 +1338,8 @@ void Eiger::processOneFrame(AutoMutex& l)
 
 		void startFinish()
 		{
-			while (!in_proc.empty() && (*in_proc.begin() < frame))
+			while (!in_proc.empty()
+			       && (*in_proc.begin() < int(frame)))
 				eiger.wait();
 		}
 
@@ -1363,7 +1366,7 @@ void Eiger::processOneFrame(AutoMutex& l)
 				m_recv_list[i]->processBadFrame(frame, bptr);
 	}
 
-	if ((m_last_frame == -1) || (frame > m_last_frame))
+	if ((int(m_last_frame) == -1) || (frame > m_last_frame))
 		m_last_frame = frame;
 
 	sync.startFinish();
@@ -1453,7 +1456,7 @@ void Eiger::removeAllCorr()
 		delete *m_corr_list.rbegin();
 }
 
-double Eiger::getBorderCorrFactor(int det, int line)
+double Eiger::getBorderCorrFactor(int /*det*/, int line)
 {
 	DEB_MEMBER_FUNCT();
 	switch (line) {
@@ -1467,7 +1470,7 @@ void Eiger::getFpgaFramePtrDiff(PtrDiffList& ptr_diff)
 {
 	DEB_MEMBER_FUNCT();
 	Camera::BebList& beb_list = getCamera()->m_beb_list;
-	for (int i = 0; i != beb_list.size(); ++i) {
+	for (unsigned int i = 0; i != beb_list.size(); ++i) {
 		BebFpgaMem& fpga_mem = beb_list[i]->fpga_mem;
 		unsigned long wr_ptr = fpga_mem.read(BebFpgaWritePtrAddr);
 		unsigned long rd_ptr = fpga_mem.read(BebFpgaReadPtrAddr);

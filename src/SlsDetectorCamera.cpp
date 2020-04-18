@@ -1115,7 +1115,7 @@ void Camera::setNetworkParameter(NetworkParameter net_param, string& val)
 	THROW_HW_ERROR(NotSupported) << "Not implemented by slsDetector API";
 }
 
-void Camera::getNetworkParameter(NetworkParameter net_param, string& val)
+void Camera::getNetworkParameter(NetworkParameter net_param, string& /*val*/)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(net_param);

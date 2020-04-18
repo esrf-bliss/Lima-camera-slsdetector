@@ -337,7 +337,9 @@ void test_slsdetector_control(string config_fname, bool enable_debug = false)
 	SlsDetectorAcq acq(config_fname);
 	DEB_ALWAYS() << "Done!";
 
-	system("mkdir -p data");
+	int ret = system("mkdir -p data");
+	if (ret != 0)
+		THROW_HW_ERROR(Error) << "Could not create data directory";
 
 	acq.initSaving("data", "img", ".edf", 0, CtSaving::EDF, 
 		       CtSaving::AutoFrame, 1, true);

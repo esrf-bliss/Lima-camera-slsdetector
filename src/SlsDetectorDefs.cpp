@@ -43,6 +43,7 @@ ostream& lima::SlsDetector::Defs::operator <<(ostream& os, TrigMode trig_mode)
 	case Gating:		name = "Gating";		break;
 	case TriggeredGating:	name = "TriggeredGating";	break;
 	case BurstTrigger:	name = "BurstTrigger";		break;
+	case SoftTriggerExposure: name = "SoftTriggerExposure";	break;
 	}
 	return os << name;
 }

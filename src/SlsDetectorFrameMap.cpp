@@ -71,7 +71,7 @@ FrameMap::Item::frameFinished(FrameType frame, bool no_check, bool valid)
 			int idx = f % m_map->m_buffer_size;
 			CounterList& cl = m_map->m_frame_item_count_list;
 			AtomicCounter& count = cl[idx];
-			double delay;
+			double delay = 0;
 			bool finished = count.dec_test_and_reset(nb_items, delay);
 			if (finished)
 				m_map->m_delay_stat.add(frame, delay);
