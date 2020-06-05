@@ -824,6 +824,8 @@ void Camera::prepareAcq()
 		if (m_skip_frame_freq)
 			for (int i = 0; i < getNbRecvs(); ++i)
 				m_missing_last_skipped_frame.insert(i);
+
+		m_next_ready_ts = Timestamp();
 	}
 
 	m_model->prepareAcq();
@@ -875,6 +877,24 @@ void Camera::triggerFrame()
 		THROW_HW_ERROR(Error) << "Camera not Running";
 
 	m_det->sendSoftwareTrigger();
+	m_next_ready_ts = Timestamp::now();
+	m_next_ready_ts += m_exp_time;
+}
+
+Camera::DetStatus Camera::getDetTrigStatus()
+{
+	DEB_MEMBER_FUNCT();
+
+	if (m_trig_mode != Defs::SoftTriggerExposure)
+		THROW_HW_ERROR(InvalidValue) << "Wrong trigger mode";
+
+	Timestamp t = Timestamp::now();
+
+	AutoMutex l = lock();
+	bool ready = !m_next_ready_ts.isSet() || (m_next_ready_ts < t);
+	DetStatus trig_status = ready ? Defs::Waiting : Defs::Running;
+	DEB_RETURN() << DEB_VAR1(trig_status);
+	return trig_status;
 }
 
 bool Camera::checkLostPackets()

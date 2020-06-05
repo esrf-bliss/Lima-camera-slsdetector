@@ -421,7 +421,16 @@ void Interface::getStatus(StatusType& status)
 
 	AcqState state = m_cam.getAcqState();
 	status.acq = (state == Idle) ? AcqReady : AcqRunning;
-	status.det = DetIdle;
+
+	Defs::TrigMode trig_mode;
+	m_cam.getTrigMode(trig_mode);
+	if (trig_mode == Defs::SoftTriggerExposure) {
+		Defs::DetStatus trig_status = m_cam.getDetTrigStatus();
+		bool ready = (trig_status == Defs::Waiting);
+		status.det = ready ? DetIdle : DetExposure;
+	} else {
+		status.det = DetIdle;
+	}
 
 	DEB_RETURN() << DEB_VAR1(status);
 }

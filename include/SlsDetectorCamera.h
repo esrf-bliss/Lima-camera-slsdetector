@@ -109,6 +109,7 @@ public:
 
 	int getFramesCaught();
 	DetStatus getDetStatus();
+	DetStatus getDetTrigStatus();
 
 	void setTrigMode(TrigMode  trig_mode);
 	void getTrigMode(TrigMode& trig_mode);
@@ -317,6 +318,7 @@ private:
 	ImageType m_image_type;
 	bool m_raw_mode;
 	AcqState m_state;
+	Timestamp m_next_ready_ts;
 	double m_new_frame_timeout;
 	double m_abort_sleep_time;
 	bool m_tol_lost_packets;

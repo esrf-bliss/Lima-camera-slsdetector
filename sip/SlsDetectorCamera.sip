@@ -62,6 +62,7 @@ public:
 
 	int getFramesCaught();
 	SlsDetector::Defs::DetStatus getDetStatus();
+	SlsDetector::Defs::DetStatus getDetTrigStatus();
 
 	void setTrigMode(SlsDetector::Defs::TrigMode  trig_mode);
 	void getTrigMode(SlsDetector::Defs::TrigMode& trig_mode /Out/);
