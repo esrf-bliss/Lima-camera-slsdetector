@@ -49,9 +49,9 @@ public:
 	void setRawMode(bool  raw_mode);
 	void getRawMode(bool& raw_mode /Out/);
 
-	SlsDetector::State getState();
-	void waitState(SlsDetector::State state);
-	SlsDetector::State waitNotState(SlsDetector::State state);
+	SlsDetector::AcqState getAcqState();
+	void waitAcqState(SlsDetector::AcqState state);
+	SlsDetector::AcqState waitNotAcqState(SlsDetector::AcqState state);
 
 	void getFrameDim(FrameDim& frame_dim /Out/, bool raw = false);
 

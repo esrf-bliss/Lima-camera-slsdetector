@@ -234,7 +234,7 @@ std::ostream& operator <<(std::ostream& os, const PrettyList<T>& pl)
 }
 
 
-enum State {
+enum AcqState {
 	Idle, Init, Starting, Running, StopReq, Stopping, Stopped,
 };
 
@@ -249,7 +249,7 @@ enum PixelDepth {
 	PixelDepth32 = 32,
 };
 
-std::ostream& operator <<(std::ostream& os, State state);
+std::ostream& operator <<(std::ostream& os, AcqState state);
 std::ostream& operator <<(std::ostream& os, Type type);
 
 

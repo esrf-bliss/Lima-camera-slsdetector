@@ -570,7 +570,7 @@ FrameType lima::SlsDetector::getOldestFrame(const FrameArray& l)
 	return first_frame;
 }
 
-ostream& lima::SlsDetector::operator <<(ostream& os, State state)
+ostream& lima::SlsDetector::operator <<(ostream& os, AcqState state)
 {
 	const char *name = "Unknown";
 	switch (state) {

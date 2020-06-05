@@ -169,9 +169,9 @@ void TestApp::run()
 		m_cam->prepareAcq();
 		m_last_msg_timestamp = Timestamp::now();
 
-		m_state.set(AcqState::Acquiring);
+		m_state.set(lima::AcqState::Acquiring);
 		m_cam->startAcq();
-		m_state.waitNot(AcqState::Acquiring);
+		m_state.waitNot(lima::AcqState::Acquiring);
 
 		int first = max(0, m_pars.nb_frames - nb_buffers);
 		int save_frames = min(m_pars.nb_frames, nb_buffers);
@@ -194,7 +194,7 @@ bool TestApp::newFrameReady(const HwFrameInfoType& frame_info)
 	DEB_MEMBER_FUNCT();
 
 	if (frame_info.acq_frame_nb == m_pars.nb_frames - 1)
-		m_state.set(AcqState::Finished);
+		m_state.set(lima::AcqState::Finished);
 
 	Timestamp timestamp = Timestamp::now();
 	if (timestamp - m_last_msg_timestamp > WAIT_SLEEP_TIME) {

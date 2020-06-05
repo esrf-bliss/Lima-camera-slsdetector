@@ -91,9 +91,9 @@ public:
 	void setRawMode(bool  raw_mode);
 	void getRawMode(bool& raw_mode);
 
-	State getState();
-	void waitState(State state);
-	State waitNotState(State state);
+	AcqState getAcqState();
+	void waitAcqState(AcqState state);
+	AcqState waitNotAcqState(AcqState state);
 
 	ImageType getImageType() const
 	{ return m_image_type; }
@@ -228,7 +228,7 @@ private:
 
 		Camera *m_cam;
 		Cond& m_cond;
-		State& m_state;
+		AcqState& m_state;
 		FrameQueue m_frame_queue;
 	};
 
@@ -251,7 +251,7 @@ private:
 	static int64_t NSec(double x)
 	{ return int64_t(x * 1e9); }
 
-	State getEffectiveState();
+	AcqState getEffectiveState();
 
 	StdBufferCbMgr *getBufferCbMgr()
 	{ return &m_buffer_ctrl_obj->getBuffer(); }
@@ -316,7 +316,7 @@ private:
 	PixelDepth m_pixel_depth;
 	ImageType m_image_type;
 	bool m_raw_mode;
-	State m_state;
+	AcqState m_state;
 	double m_new_frame_timeout;
 	double m_abort_sleep_time;
 	bool m_tol_lost_packets;

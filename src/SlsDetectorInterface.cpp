@@ -403,7 +403,7 @@ void Interface::startAcq()
 	Defs::TrigMode trig_mode;
 	m_cam.getTrigMode(trig_mode);
 	bool int_trig_multi = (trig_mode == Defs::SoftTriggerExposure);
-	if (!int_trig_multi || (m_cam.getState() != Running))
+	if (!int_trig_multi || (m_cam.getAcqState() != Running))
 		m_cam.startAcq();
 	if (int_trig_multi)
 		m_cam.triggerFrame();
@@ -419,7 +419,7 @@ void Interface::getStatus(StatusType& status)
 {
 	DEB_MEMBER_FUNCT();
 
-	State state = m_cam.getState();
+	AcqState state = m_cam.getAcqState();
 	status.acq = (state == Idle) ? AcqReady : AcqRunning;
 	status.det = DetIdle;
 

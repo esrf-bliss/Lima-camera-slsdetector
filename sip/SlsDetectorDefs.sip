@@ -297,7 +297,7 @@ enum NetworkParameter {
 }; // namespace Defs
 
 
-enum State {
+enum AcqState {
 	Idle, Init, Starting, Running, StopReq, Stopping, Stopped,
 };
 

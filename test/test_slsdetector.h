@@ -164,7 +164,7 @@ class TestApp
 	AutoPtr<NumaSoftBufferCtrlObj> m_buffer_ctrl_obj;
 	AutoPtr<Camera> m_cam;
 	AutoPtr<Model> m_model;
-	AcqState m_state;
+	lima::AcqState m_state;
 	FrameCallback m_cb;
 	Timestamp m_last_msg_timestamp;
 };

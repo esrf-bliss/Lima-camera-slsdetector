@@ -113,7 +113,7 @@ bool Receiver::getImage(ImageData& image_data)
 	try {
 		++image_data.frame;
 		int ret = m_recv->getImage(image_data);
-		if ((ret != 0) || (m_cam->getState() == Stopping))
+		if ((ret != 0) || (m_cam->getAcqState() == Stopping))
 			return false;
 		
 		sls_receiver_header& header = image_data.header;

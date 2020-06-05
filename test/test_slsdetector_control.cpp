@@ -43,7 +43,7 @@ class ImageStatusCallback : public CtControl::ImageStatusCallback
 	DEB_CLASS(DebModTest, "ImageStatusCallback");
 
 public:
-	ImageStatusCallback(CtControl& ct, AcqState& acq_state);
+	ImageStatusCallback(CtControl& ct, lima::AcqState& acq_state);
 	virtual ~ImageStatusCallback();
 
 protected:
@@ -52,12 +52,12 @@ protected:
 
 private:
 	CtControl& m_ct;
-	AcqState& m_acq_state;
+	lima::AcqState& m_acq_state;
 
 	int m_nb_frames;
 };
 
-ImageStatusCallback::ImageStatusCallback(CtControl& ct, AcqState& acq_state)
+ImageStatusCallback::ImageStatusCallback(CtControl& ct, lima::AcqState& acq_state)
 	: m_ct(ct), m_acq_state(acq_state), m_nb_frames(0)
 {
 	DEB_CONSTRUCTOR();
@@ -85,14 +85,14 @@ void ImageStatusCallback::imageStatusChanged(
 	}
 
 	if ((last_acq_frame_nb == m_nb_frames - 1) &&
-	    (m_acq_state.get() == AcqState::Acquiring)) {
+	    (m_acq_state.get() == lima::AcqState::Acquiring)) {
 		DEB_ALWAYS() << "All frames acquired!";
-		m_acq_state.set(AcqState::Saving);
+		m_acq_state.set(lima::AcqState::Saving);
 	}
 
 	if (last_saved_frame_nb == m_nb_frames - 1) {
 		DEB_ALWAYS() << "All frames saved!";
-		m_acq_state.set(AcqState::Finished);
+		m_acq_state.set(lima::AcqState::Finished);
 	}
 }
 
@@ -127,7 +127,7 @@ private:
 
 	Camera			m_cam;
 	Interface		m_hw_inter;
-	AcqState		m_acq_state;
+	lima::AcqState		m_acq_state;
 
 	AutoPtr<Eiger>		m_eiger;
 	AutoPtr<Eiger::Correction> m_corr;
@@ -230,7 +230,7 @@ void SlsDetectorAcq::start()
 	DEB_MEMBER_FUNCT();
 
 	m_ct->prepareAcq();
-	m_acq_state.set(AcqState::Acquiring);
+	m_acq_state.set(lima::AcqState::Acquiring);
 	DEB_TRACE() << "Starting acquisition";
    	m_ct->startAcq();
 }
@@ -238,9 +238,9 @@ void SlsDetectorAcq::start()
 void SlsDetectorAcq::wait()
 {
 	DEB_MEMBER_FUNCT();
-	m_acq_state.waitNot(AcqState::Acquiring | AcqState::Saving);
+	m_acq_state.waitNot(lima::AcqState::Acquiring | lima::AcqState::Saving);
 	DEB_TRACE() << "Acquisition finished";
-	m_cam.waitState(Idle);
+	m_cam.waitAcqState(Idle);
 	DEB_TRACE() << "Camera finished";
 
 }

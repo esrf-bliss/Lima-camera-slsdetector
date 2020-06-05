@@ -191,7 +191,7 @@ void Camera::AcqThread::threadFunction()
 			}
 		}
 	} while ((m_state != StopReq) && cont_acq);
-	State prev_state = m_state;
+	AcqState prev_state = m_state;
 
 	if (acq_end && m_cam->m_skip_frame_freq) {
 		AutoMutexUnlock u(l);
@@ -248,7 +248,7 @@ void Camera::AcqThread::cleanUp(AutoMutex& l)
 	if ((m_state == Stopped) || (m_state == Idle))
 		return;
 
-	State prev_state = m_state;
+	AcqState prev_state = m_state;
 	if ((m_state == Running) || (m_state == StopReq)) {
 		m_state = Stopping;
 		AutoMutexUnlock u(l);
@@ -506,7 +506,7 @@ void Camera::setTrigMode(TrigMode trig_mode)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(trig_mode);
-	waitState(Idle);
+	waitAcqState(Idle);
 	TrigMode cam_trig_mode = trig_mode;
 	if (trig_mode == Defs::SoftTriggerExposure)
 		cam_trig_mode = Defs::TriggerExposure;
@@ -535,7 +535,7 @@ void Camera::setNbFrames(FrameType nb_frames)
 		THROW_HW_ERROR(InvalidValue) << "too high " 
 					     <<	DEB_VAR2(nb_frames, MaxFrames);
 
-	waitState(Idle);
+	waitAcqState(Idle);
 	FrameType det_nb_frames = nb_frames;
 	if (m_skip_frame_freq)
 		det_nb_frames += nb_frames / m_skip_frame_freq;
@@ -576,7 +576,7 @@ void Camera::setExpTime(double exp_time)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(exp_time);
-	waitState(Idle);
+	waitAcqState(Idle);
 	m_det->setExposureTime(NSec(exp_time));
 	m_exp_time = exp_time;
 }
@@ -619,7 +619,7 @@ void Camera::setFramePeriod(double frame_period)
 					    time_ranges.max_frame_period);
 	}
 
-	waitState(Idle);
+	waitAcqState(Idle);
 	m_det->setExposurePeriod(NSec(frame_period));
 	m_frame_period = frame_period;
 }
@@ -698,10 +698,10 @@ void Camera::setPixelDepth(PixelDepth pixel_depth)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(pixel_depth);
 
-	if (getState() != Idle)
+	if (getAcqState() != Idle)
 		THROW_HW_FATAL(Error) << "Camera is not idle";
 
-	waitState(Idle);
+	waitAcqState(Idle);
 	switch (pixel_depth) {
 	case PixelDepth4:
 	case PixelDepth8:
@@ -749,16 +749,16 @@ void Camera::getRawMode(bool& raw_mode)
 	DEB_RETURN() << DEB_VAR1(raw_mode);
 }
 
-State Camera::getState()
+AcqState Camera::getAcqState()
 {
 	DEB_MEMBER_FUNCT();
 	AutoMutex l = lock();
-	State state = getEffectiveState();
+	AcqState state = getEffectiveState();
 	DEB_RETURN() << DEB_VAR1(state);
 	return state;
 }
 
-State Camera::getEffectiveState()
+AcqState Camera::getEffectiveState()
 {
 	if (m_state == Stopped) {
 		m_acq_thread = NULL;
@@ -767,7 +767,7 @@ State Camera::getEffectiveState()
 	return m_state;
 }
 
-void Camera::waitState(State state)
+void Camera::waitAcqState(AcqState state)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(state);
@@ -776,7 +776,7 @@ void Camera::waitState(State state)
 		m_cond.wait();
 }
 
-State Camera::waitNotState(State state)
+AcqState Camera::waitNotAcqState(AcqState state)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(state);
@@ -798,8 +798,8 @@ void Camera::prepareAcq()
 	if (!m_model)
 		THROW_HW_ERROR(Error) << "No BufferCbMgr defined";
 
-	waitNotState(Stopping);
-	if (getState() != Idle)
+	waitNotAcqState(Stopping);
+	if (getAcqState() != Idle)
 		THROW_HW_ERROR(Error) << "Camera is not idle";
 
 	bool need_period = !m_lima_nb_frames || (m_lima_nb_frames > 1);
