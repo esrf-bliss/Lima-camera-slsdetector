@@ -1637,8 +1637,18 @@ void GlobalCPUAffinityMgr::recvFinished()
 	DEB_MEMBER_FUNCT();
 
 	AutoMutex l = lock();
-	if (!m_proc_finished)
+	if (!m_proc_finished) {
 		m_state = Ready;
+	} else {
+		PoolThreadMgr& pool_thread_mgr = PoolThreadMgr::get();
+		int nb_threads = pool_thread_mgr.getNumberOfThread();
+		int nb_cpus = m_curr.lima.getNbCPUs();
+		DEB_TRACE() << DEB_VAR2(nb_threads, nb_cpus);
+		if (nb_threads == nb_cpus) {
+			DEB_ALWAYS() << "Skipping processing";
+			m_state = Ready;
+		}
+	}
 	if (m_state == Ready) 
 		return;
 
