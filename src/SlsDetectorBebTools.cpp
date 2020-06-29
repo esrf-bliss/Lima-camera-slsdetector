@@ -53,7 +53,7 @@ BebShell::~BebShell()
 	DEB_DESTRUCTOR();
 	AutoMutex l = lock();
 	Pipe& in = m_cmd->getPipe(SystemCmdPipe::StdIn);
-	in.close(Pipe::WriteFd);
+	in.write("exit\n");
 }
 
 string BebShell::exec(string cmd)

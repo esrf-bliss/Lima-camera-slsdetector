@@ -301,6 +301,22 @@ void SlsDetectorAcq::setRoi(Roi& roi)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(roi);
 
+	Size max_size;
+	m_ct_image->getMaxImageSize(max_size);
+	Bin bin;
+	m_ct_image->getBin(bin);
+	max_size /= bin;
+	Roi max_roi(Point(0, 0), max_size);
+	DEB_TRACE() << DEB_VAR2(roi, max_roi);
+	if (!max_roi.containsRoi(roi)) {
+		Point tl = roi.getTopLeft();
+		if (!max_roi.containsPoint(tl))
+			THROW_HW_ERROR(InvalidValue) << DEB_VAR2(roi, max_roi);
+		Point br = max_roi.getBottomRight();
+		roi.setCorners(tl, br);
+		DEB_WARNING() << "Restricting roi: " << DEB_VAR2(roi, max_roi);
+	}
+
 	m_ct_image->setRoi(roi);
 
 }
@@ -350,7 +366,7 @@ void test_slsdetector_control(string config_fname, bool enable_debug = false)
 	acq.run();
 	DEB_ALWAYS() << "Done!";
 
-	Roi roi = Roi(Point(256, 512), Size(256, 512));
+	Roi roi = Roi(Point(256, 128), Size(256, 512));
 	acq.setRoi(roi);
 
 	DEB_ALWAYS() << "Run " << DEB_VAR1(roi);
