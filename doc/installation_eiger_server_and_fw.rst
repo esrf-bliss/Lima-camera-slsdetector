@@ -32,12 +32,7 @@ is included:
         EIGER_MODULE_TOP=$(echo ${EIGER_MODULES} | cut -f1 -d" ")
         cat ~/.ssh/id_dsa.pub
         echo
-        if [ $(echo ${EIGER_MODULES} | wc -w) -eq 2 ]; then
-            det_name="500k$(echo ${EIGER_MODULES} | sed 's/ \?beb/_/g')"
-        else
-            det_name="2m"
-        fi;
-        base_dir="${HOME}/eiger/psi_eiger_${det_name}"
+        base_dir="${HOME}/eiger/log/${EIGER_DETECTOR}"
         this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
         mkdir -p ${this_dir} && cd ${this_dir}
         for m in ${EIGER_MODULES}; do
@@ -281,171 +276,146 @@ Firmware flash
 
 .. note:: older modules *beb021/020* (Eiger-500k #1) and *beb074/071/064/102/072/073/087/088*
    (Eiger-2M) use bigger Xilinx Virtex5 FX70T FPGAs in Front-End-Board (FEB). New modules
-   like *beb024/025* (Eiger-500k #2) use in their FEBs Xilinx Virtex5 FX30T FPGAs. For the
-   moment **no automatic determination of the FPGA type is performed by the *eiger_flash*
-   utility**. **To-Do**: investigate if the */febl* and */febr banks* can be read through *tftp*
-   and add a mapping of the FW MD5 signatures in order to identify the good type.
+   like *beb024/025* (Eiger-500k #2) use in their FEBs Xilinx Virtex5 FX30T FPGAs.
+   **Updated**: The module *beb024/025* FEBs were changed during its front-end update with
+   Xilinx Virtex5 FX70T FPGAs. No automatic determination of the FPGA type can be performed by
+   software. **Solved**: the *flash.config* file includes the *Feb* section with the
+   *FpgaType*, which is used by the code below.
 
-The new FWs (v18 and later) allow entering into flash mode from the Linux environment,
+The current FWs (v18 and later) allow entering into flash mode from the Linux environment,
 without the need of pressing the button in the rear panel. The latestversion of the 
 *eiger_flash* utility exploits this and enters into flash mode automatically.
 
-.. note:: In case the FW in the detector is too old (pre v18) and does not
-   support software reset into flash mode, the *eiger_flash* utility will ask to
-   manually push the internal buttons in the detector rear panel with a clip:
-
-   ::
-
-       lisgeiger1:~ % cd ~/eiger/fw_v18
-       lisgeiger1:~/eiger/fw_v18 % \
-           this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
-           mkdir -p ${this_dir}
-           eiger_flash -m beb_fiber.bit \
-                       -l feb_l_fx70t.bit -r feb_r_fx70t.bit \
-                       -k simpleImage.virtex440-eiger-beb-hwid1_local \
-                       -o ${this_dir}/eiger_flash.log ${EIGER_MODULES}
-
-       b69de7bbcb445d281f4ade4836028d1f  beb_fiber.bit
-       da44706da1f11a39c2eebb2c63fff752  feb_l_fx70t.bit
-       d34fb69a1e4272d824bc2dea26efdd45  feb_r_fx70t.bit
-       1f27879faa7082f9ed2bb2b24b84ea99  simpleImage.virtex440-eiger-beb-hwid1_local
-       
-       [beb021] Executing: nc -p 3000 -u beb021 3000
-       [beb020] Executing: nc -p 3000 -u beb020 3000
-       [beb021] Not in firmware flash mode ... ping'ing ...
-       [beb020] Not in firmware flash mode ... ping'ing ...
-       [beb021] ping OK ... Check ssh ...
-       [beb020] ping OK ... Check ssh ...
-       [beb021] Checking flash-mode setup files ...
-       [beb020] Checking flash-mode setup files ...
-       [beb021] Remote and local files differ!
-       [beb021] Local: 7f0e3fb00aa722d1b9c0b943b1870c70  boot_recovery
-       [beb021] Local: 89d25988ed13fbb94dd48ed4d6b49e0d  z_mem
-       [beb021] Local: 3f95900e1928d3c59a6ec3afbc5373b0  z_mem_write
-       [beb021] remote: No file found!
-       [beb021] Copying flash-mode setup files ...
-       [beb020] Remote and local files differ!
-       [beb020] Local: 7f0e3fb00aa722d1b9c0b943b1870c70  boot_recovery
-       [beb020] Local: 89d25988ed13fbb94dd48ed4d6b49e0d  z_mem
-       [beb020] Local: 3f95900e1928d3c59a6ec3afbc5373b0  z_mem_write
-       [beb020] remote: No file found!
-       [beb020] Copying flash-mode setup files ...
-       [beb020] Starting flash-mode (boot_recovery) ...
-       [beb021] Starting flash-mode (boot_recovery) ...
-       [beb020] Waiting for flash-mode (20 sec) ...
-       [beb021] Waiting for flash-mode (20 sec) ...
-       [beb020] Restarting Ethernet connection ...
-       [beb020] Waiting for connection (10 sec) ...
-       [beb021] Restarting Ethernet connection ...
-       [beb021] Waiting for connection (10 sec) ...
-       [beb020] Executing: nc -p 3000 -u beb020 3000
-       [beb021] Executing: nc -p 3000 -u beb021 3000
-       Hosts beb021,beb020 are not in firmware flash mode!
-       Please insert a clip into the rear panel hole until all LEDs are red,
-         and then wait until LED #4 blinks gren/red
-       Press any key to quit ...
+.. note:: two BEB FWs variants allow using fiber optic or twisted-pair (copper) transceivers:
+   *beb_fiber.bit* and *beb_copper.bit*. The good file must be specified in the command below.
 
 Run the *eiger_flash* utility to update the FEB left/right and BEB FWs,
 as well as the kernel image:
 
 ::
 
-    lisgeiger1:~ % cd ~/eiger/fw_v20
-    lisgeiger1:~/eiger/fw_v20 % which eiger_flash
-    /users/opid00/esrf/sls_detectors/eiger/scripts/eiger_flash
+    lisgeiger1:~ % (
+        . ${EIGER_HOME}/eiger_setup.sh
+        base_dir="${HOME}/eiger/log/${EIGER_DETECTOR}"
 
-    lisgeiger1:~/eiger/fw_v20 % md5sum *
-    b2b66c1acae90e3f2b4c4488e99d6b42  beb_copper.bit
-    f9e6e360cfa696957cf4fd5035bed5e1  beb_fiber.bit
-    fe59229e8ebdb5e8d76ff315cd28cc7d  feb_l_fx30t.bit
-    eb42ebe9a3c580ab12de0b2c2a7c8c5d  feb_l_fx70t.bit
-    7a988f0e39930bf86d9af9dee060ef04  feb_r_fx30t.bit
-    4bf1f88d376fd9651b45c2b5b2b021eb  feb_r_fx70t.bit
-    1f27879faa7082f9ed2bb2b24b84ea99  simpleImage.virtex440-eiger-beb-hwid1_local
+        cd ${SLS_DETECTORS}/eiger/config
+        fw_ver=$(cat detector/${EIGER_DETECTOR}/setup/${EIGER_DETECTOR_SETUP}/\
+    detector/fw)
+        fw_dir="fw/${fw_ver}"
+        flash_config="detector/${EIGER_DETECTOR}/setup/${EIGER_DETECTOR_SETUP}/\
+    detector/flash.config"
 
-    lisgeiger1:~/eiger/fw_v20 % \
+        fpga_type=$(python <<EOF
+    from configparser import ConfigParser
+    c = ConfigParser()
+    c.read("${flash_config}")
+    print(f'{c["Feb"]["FpgaType"].lower()}')
+    EOF
+    )
+
         this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
         mkdir -p ${this_dir}
-        eiger_flash -m beb_fiber.bit \
-                    -l feb_l_fx30t.bit -r feb_r_fx30t.bit \
-                    -k simpleImage.virtex440-eiger-beb-hwid1_local \
+        eiger_flash -c ${flash_config} \
+                    -m ${fw_dir}/beb_fiber.bit \
+                    -l ${fw_dir}/feb_l_${fpga_type}.bit \
+                    -r ${fw_dir}/feb_r_${fpga_type}.bit \
+                    -k ${fw_dir}/simpleImage.virtex440-eiger-beb-hwid1_local \
                     -o ${this_dir}/eiger_flash.log ${EIGER_MODULES}
-    Eiger flash - Sun Apr 1 20:28:31 2018
-    f9e6e360cfa696957cf4fd5035bed5e1  beb_fiber.bit
-    fe59229e8ebdb5e8d76ff315cd28cc7d  feb_l_fx30t.bit
-    7a988f0e39930bf86d9af9dee060ef04  feb_r_fx30t.bit
-    1f27879faa7082f9ed2bb2b24b84ea99  simpleImage.virtex440-eiger-beb-hwid1_local
+    )
+    Eiger flash - Fri Sep 11 16:17:11 2020
+    9ad0445fc4958ff780cc85998b5bf968  fw/v24/beb_fiber.bit
+    0e872295daaf42278219dc938550daba  fw/v24/feb_l_fx70t.bit
+    437976fee26a47bb6e9884adf10d5d77  fw/v24/feb_r_fx70t.bit
+    1f27879faa7082f9ed2bb2b24b84ea99  fw/v24/simpleImage.virtex440-eiger-beb-hwid1_local
 
-    [beb024] Executing: nc -p 3000 -u beb024 3000
-    [beb025] Executing: nc -p 3000 -u beb025 3000
-    [beb024] Not in firmware flash mode ... ping'ing ...
-    [beb025] Not in firmware flash mode ... ping'ing ...
-    [beb024] ping OK ... Check ssh ...
-    [beb025] ping OK ... Check ssh ...
-    [beb024] Checking flash-mode setup files ...
-    [beb025] Checking flash-mode setup files ...
-    [beb024] Starting flash-mode (boot_recovery) ...
-    [beb025] Starting flash-mode (boot_recovery) ...
-    [beb025] Waiting for flash-mode (20 sec) ...
-    [beb024] Waiting for flash-mode (20 sec) ...
-    [beb025] Restarting Ethernet connection ...
-    [beb025] Disabling eth4 ...
-    [beb024] Restarting Ethernet connection ...
-    [beb024] Disabling eth2 ...
-    [beb025] Enabling eth4 ...
-    [beb025] Waiting for connection (10 sec) ...
-    [beb024] Enabling eth2 ...
-    [beb024] Waiting for connection (10 sec) ...
-    [beb025] Executing: nc -p 3000 -u beb025 3000
-    [beb025] Entered into flash-mode OK!
-    [beb024] Executing: nc -p 3000 -u beb024 3000
-    [beb024] Entered into flash-mode OK!
-    [beb024] Uploading MAIN_BIT beb_fiber.bit to /fw0 (4923823 bytes)
-    [beb025] Uploading MAIN_BIT beb_fiber.bit to /fw0 (4923823 bytes)
-    [beb024] Transferred MAIN_BIT bit file beb_fiber.bit (took 1.4 sec)
-    [beb024] Waiting for firmware flash to finish ...
-    [beb025] Transferred MAIN_BIT bit file beb_fiber.bit (took 1.4 sec)
-    [beb025] Waiting for firmware flash to finish ...
-    [beb025] Firmware flash finished OK (took 44.1 sec)
-    [beb024] Firmware flash finished OK (took 47.1 sec)
-    [beb024] Uploading LEFT_BIT feb_l_fx30t.bit to /febl (1689721 bytes)
-    [beb025] Uploading LEFT_BIT feb_l_fx30t.bit to /febl (1689721 bytes)
-    [beb024] Transferred LEFT_BIT bit file feb_l_fx30t.bit (took 0.5 sec)
-    [beb024] Waiting for firmware flash to finish ...
-    [beb025] Transferred LEFT_BIT bit file feb_l_fx30t.bit (took 0.5 sec)
-    [beb025] Waiting for firmware flash to finish ...
-    [beb024] Firmware flash finished OK (took 94.4 sec)
-    [beb025] Firmware flash finished OK (took 95.5 sec)
-    [beb024] Uploading RIGHT_BIT feb_r_fx30t.bit to /febr (1689721 bytes)
-    [beb025] Uploading RIGHT_BIT feb_r_fx30t.bit to /febr (1689721 bytes)
-    [beb025] Transferred RIGHT_BIT bit file feb_r_fx30t.bit (took 0.5 sec)
-    [beb025] Waiting for firmware flash to finish ...
-    [beb024] Transferred RIGHT_BIT bit file feb_r_fx30t.bit (took 0.5 sec)
-    [beb024] Waiting for firmware flash to finish ...
-    [beb025] Firmware flash finished OK (took 94.0 sec)
-    [beb024] Firmware flash finished OK (took 94.3 sec)
-    [beb024] Uploading KERNEL_LOCAL simpleImage.virtex440-eiger-beb-hwid1_local to /kernel (2068980 bytes)
-    [beb025] Uploading KERNEL_LOCAL simpleImage.virtex440-eiger-beb-hwid1_local to /kernel (2068980 bytes)
-    [beb024] Transferred KERNEL_LOCAL bit file simpleImage.virtex440-eiger-beb-hwid1_local (took 0.6 sec)
-    [beb024] Waiting for firmware flash to finish ...
-    [beb025] Transferred KERNEL_LOCAL bit file simpleImage.virtex440-eiger-beb-hwid1_local (took 0.6 sec)
-    [beb025] Waiting for firmware flash to finish ...
-    [beb025] Firmware flash finished OK (took 16.2 sec)
-    [beb024] Firmware flash finished OK (took 17.3 sec)
+    Connecting to Extreme Switch esmgmt ...
+    Getting status of ports 1,2 ...
+    Quitting ...
+    Done!
+    [beb109] Executing: nc -p 3000 -u beb109 3000
+    [beb116] Executing: nc -p 3000 -u beb116 3000
+    [beb109] Not in firmware flash mode ... ping'ing ...
+    [beb116] Not in firmware flash mode ... ping'ing ...
+    [beb109] ping OK ... Check ssh ...
+    [beb116] ping OK ... Check ssh ...
+    [beb109] Checking flash-mode setup files ...
+    [beb116] Checking flash-mode setup files ...
+    [beb109] Starting flash-mode (boot_recovery) ...
+    [beb116] Starting flash-mode (boot_recovery) ...
+    [beb109] Waiting for flash-mode (20 sec) ...
+    [beb116] Waiting for flash-mode (20 sec) ...
+    [beb109] Restarting Ethernet connection ...
+    [beb116] Restarting Ethernet connection ...
+    Connecting to Extreme Switch esmgmt ...
+    Restarting ports 1,2 ...
+    Quitting ...
+    Done!
+    Connecting to Extreme Switch esmgmt ...
+    Disabling Auto-Negotiation on ports 1,2 ...
+    Quitting ...
+    Done!
+    [beb116] Waiting for connection (10 sec) ...
+    [beb109] Waiting for connection (10 sec) ...
+    Connecting to Extreme Switch esmgmt ...
+    Getting status of ports 1,2 ...
+    Quitting ...
+    Done!
+    [beb109] Executing: nc -p 3000 -u beb109 3000
+    [beb116] Executing: nc -p 3000 -u beb116 3000
+    [beb109] Entered into flash-mode OK!
+    [beb116] Entered into flash-mode OK!
+    [beb116] Executing: xterm -title Eiger beb116 console -e cat /tmp/eiger_flash_con_pipe.beb116
+    [beb109] Executing: xterm -title Eiger beb109 console -e cat /tmp/eiger_flash_con_pipe.beb109
+    [beb116] Uploading MAIN_BIT fw/v24/beb_fiber.bit to /fw0 (4923823 bytes)
+    [beb109] Uploading MAIN_BIT fw/v24/beb_fiber.bit to /fw0 (4923823 bytes)
+    [beb116] Transferred MAIN_BIT bit file fw/v24/beb_fiber.bit (took 2.1 sec)
+    [beb116] Waiting for firmware flash to finish ...
+    [beb109] Transferred MAIN_BIT bit file fw/v24/beb_fiber.bit (took 2.4 sec)
+    [beb109] Waiting for firmware flash to finish ...
+    [beb109] Firmware flash finished OK (took 35.1 sec)
+    [beb116] Firmware flash finished OK (took 38.8 sec)
+    [beb116] Uploading LEFT_BIT fw/v24/feb_l_fx70t.bit to /febl (3378270 bytes)
+    [beb109] Uploading LEFT_BIT fw/v24/feb_l_fx70t.bit to /febl (3378270 bytes)
+    [beb116] Transferred LEFT_BIT bit file fw/v24/feb_l_fx70t.bit (took 1.7 sec)
+    [beb116] Waiting for firmware flash to finish ...
+    [beb109] Transferred LEFT_BIT bit file fw/v24/feb_l_fx70t.bit (took 1.8 sec)
+    [beb109] Waiting for firmware flash to finish ...
+    [beb109] Firmware flash finished OK (took 181.3 sec)
+    [beb116] Firmware flash finished OK (took 182.2 sec)
+    [beb116] Uploading RIGHT_BIT fw/v24/feb_r_fx70t.bit to /febr (3378271 bytes)
+    [beb109] Uploading RIGHT_BIT fw/v24/feb_r_fx70t.bit to /febr (3378271 bytes)
+    [beb116] Transferred RIGHT_BIT bit file fw/v24/feb_r_fx70t.bit (took 1.7 sec)
+    [beb116] Waiting for firmware flash to finish ...
+    [beb109] Transferred RIGHT_BIT bit file fw/v24/feb_r_fx70t.bit (took 1.7 sec)
+    [beb109] Waiting for firmware flash to finish ...
+    [beb109] Firmware flash finished OK (took 185.5 sec)
+    [beb116] Firmware flash finished OK (took 186.8 sec)
+    [beb116] Uploading KERNEL_LOCAL fw/v24/simpleImage.virtex440-eiger-beb-hwid1_local to /kernel (2068980 bytes)
+    [beb109] Uploading KERNEL_LOCAL fw/v24/simpleImage.virtex440-eiger-beb-hwid1_local to /kernel (2068980 bytes)
+    [beb116] Transferred KERNEL_LOCAL bit file fw/v24/simpleImage.virtex440-eiger-beb-hwid1_local (took 1.1 sec)
+    [beb116] Waiting for firmware flash to finish ...
+    [beb109] Transferred KERNEL_LOCAL bit file fw/v24/simpleImage.virtex440-eiger-beb-hwid1_local (took 1.1 sec)
+    [beb109] Waiting for firmware flash to finish ...
+    [beb109] Firmware flash finished OK (took 13.5 sec)
+    [beb116] Firmware flash finished OK (took 14.2 sec)
+    Connecting to Extreme Switch esmgmt ...
+    Enabling Auto-Negotiation on ports 1,2 ...
+    Quitting ...
+    Done!
     Press any key to quit ...
 
-Showing in the console for the FX30T FW:
+Showing in the console for the FX70T FW:
 
 ::
 
-    *** Output from beb024 console ***
+    *** Output from beb116 console ***
     TFTP WRQ (write request): /fw0
     Receiving bitfile for parallel flash location 0
     transfer done: total len = 4923823 
     field 3  key='a' len=  46  system.ncd;HW_TIMEOUT=FALSE;UserID=0xFFFFFFFF
     field 4  key='b' len=  15  5vfx100tff1136
-    field 5  key='c' len=  11  2017/08/17
-    field 6  key='d' len=   9  14:08:39
+    field 5  key='c' len=  11  2019/12/18
+    field 6  key='d' len=   9  15:29:55
     field 7  len=4923712 
     Doing bitswap for Parallel Flash...done
     XFlash_Unlock()
@@ -456,86 +426,11 @@ Showing in the console for the FX30T FW:
     Success
     TFTP WRQ (write request): /febl
     Receiving bitfile for spi flash feb left
-    transfer done: total len = 1689721 
-    field 3  key='a' len=  26  feb.ncd;UserID=0xFFFFFFFF
-    field 4  key='b' len=  13  5vfx30tff665
-    ERROR: Bitfile is for wrong FPGA type: 5vfx30tff665  expected: 5vfx70tff665
-    Something went wrong. Perhaps it is a bit file for the smaller Front End FPGA, trying that...
-    field 3  key='a' len=  26  feb.ncd;UserID=0xFFFFFFFF
-    field 4  key='b' len=  13  5vfx30tff665
-    field 5  key='c' len=  11  2017/08/17
-    field 6  key='d' len=   9  11:19:48
-    field 7  len=1689632 
-    Copying to WriteBuffer...done
-    Chip Erase Starting
-    address     = 0x00000000
-    end_address = 0x00190000
-    len         = 1689632
-    Chip Erase Complete
-    Writing
-    done.. Now reading back
-    Compare
-    Success
-    TFTP WRQ (write request): /febr
-    Receiving bitfile for spi flash feb right
-    transfer done: total len = 1689721 
-    field 3  key='a' len=  26  feb.ncd;UserID=0xFFFFFFFF
-    field 4  key='b' len=  13  5vfx30tff665
-    ERROR: Bitfile is for wrong FPGA type: 5vfx30tff665  expected: 5vfx70tff665
-    Something went wrong. Perhaps it is a bit file for the smaller Front End FPGA, trying that...
-    field 3  key='a' len=  26  feb.ncd;UserID=0xFFFFFFFF
-    field 4  key='b' len=  13  5vfx30tff665
-    field 5  key='c' len=  11  2017/08/17
-    field 6  key='d' len=   9  11:06:48
-    field 7  len=1689632 
-    Copying to WriteBuffer...done
-    Chip Erase Starting
-    address     = 0x00000000
-    end_address = 0x00190000
-    len         = 1689632
-    Chip Erase Complete
-    Writing
-    done.. Now reading back
-    Compare
-    Success
-    TFTP WRQ (write request): /kernel
-    Receiving linux kernel
-    transfer done: total len = 2068980 
-    Linux Kernel:  len=2068980
-    XFlash_Unlock()
-    XFlash_Erase()
-    XFlash_Write()
-    Compare
-    XFlash_Lock()
-    Success
-
-Console output on the FX70T FW:
-
-::
-
-    *** Output from beb024 console ***
-    TFTP WRQ (write request): /fw0
-    Receiving bitfile for parallel flash location 0
-    transfer done: total len = 4923823 
-    field 3  key='a' len=  46  system.ncd;HW_TIMEOUT=FALSE;UserID=0xFFFFFFFF
-    field 4  key='b' len=  15  5vfx100tff1136
-    field 5  key='c' len=  11  2017/08/17
-    field 6  key='d' len=   9  14:08:39
-    field 7  len=4923712 
-    Doing bitswap for Parallel Flash...done
-    XFlash_Unlock()
-    XFlash_Erase()
-    XFlash_Write()
-    Compare
-    XFlash_Lock()
-    Success
-    TFTP WRQ (write request): /febl
-    Receiving bitfile for spi flash feb left
-    transfer done: total len = 3378265 
-    field 3  key='a' len=  26  feb.ncd;UserID=0xFFFFFFFF
+    transfer done: total len = 3378270 
+    field 3  key='a' len=  31  feb_left.ncd;UserID=0xFFFFFFFF
     field 4  key='b' len=  13  5vfx70tff665
-    field 5  key='c' len=  11  2017/08/17
-    field 6  key='d' len=   9  11:06:42
+    field 5  key='c' len=  11  2019/07/29
+    field 6  key='d' len=   9  14:54:29
     field 7  len=3378176 
     Copying to WriteBuffer...done
     Chip Erase Starting
@@ -549,11 +444,11 @@ Console output on the FX70T FW:
     Success
     TFTP WRQ (write request): /febr
     Receiving bitfile for spi flash feb right
-    transfer done: total len = 3378265 
-    field 3  key='a' len=  26  feb.ncd;UserID=0xFFFFFFFF
+    transfer done: total len = 3378271 
+    field 3  key='a' len=  32  feb_right.ncd;UserID=0xFFFFFFFF
     field 4  key='b' len=  13  5vfx70tff665
-    field 5  key='c' len=  11  2017/08/17
-    field 6  key='d' len=   9  11:06:39
+    field 5  key='c' len=  11  2019/07/29
+    field 6  key='d' len=   9  14:57:22
     field 7  len=3378176 
     Copying to WriteBuffer...done
     Chip Erase Starting
@@ -575,11 +470,7 @@ Console output on the FX70T FW:
     Compare
     XFlash_Lock()
     Success
-
-.. note:: **To-Do** add a *ManualEthernetConnection* restart in case the modules are not 
-   directly connected to the backend computer, or just not defined in the 
-   *eiger_flash* utility.
-
+    
 Start the *eigerDetectorServer* and check that everything is OK:
 
 ::
