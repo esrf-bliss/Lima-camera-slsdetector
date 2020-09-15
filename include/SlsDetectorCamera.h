@@ -201,8 +201,8 @@ private:
 		AcqThread(Camera *cam);
 
 		void queueFinishedFrame(FrameType frame);
-		virtual void start();
-		void stop(bool wait);
+		virtual void start(AutoMutex& l);
+		void stop(AutoMutex& l, bool wait);
 
 	protected:
 		virtual void threadFunction();

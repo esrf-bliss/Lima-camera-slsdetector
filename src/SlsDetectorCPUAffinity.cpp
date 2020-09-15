@@ -1649,8 +1649,10 @@ void GlobalCPUAffinityMgr::recvFinished()
 			m_state = Ready;
 		}
 	}
-	if (m_state == Ready) 
+	if (m_state == Ready) {
+		m_cond.broadcast();
 		return;
+	}
 
 	CPUAffinity recv_all = RecvCPUAffinityList_all(m_curr.recv);
 	DEB_TRACE() << DEB_VAR2(m_curr.lima, recv_all);
