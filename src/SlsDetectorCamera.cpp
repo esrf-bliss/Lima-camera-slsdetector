@@ -109,9 +109,12 @@ Camera::AcqThread::AcqThread(Camera *cam)
 	DEB_CONSTRUCTOR();
 }
 
-void Camera::AcqThread::start()
+void Camera::AcqThread::start(AutoMutex& l)
 {
 	DEB_MEMBER_FUNCT();
+
+	if ((&l.mutex() != &m_cond.mutex()) || !l.locked())
+		THROW_HW_ERROR(Error) << "Invalid AutoMutex";
 
 	m_state = Starting;
 	Thread::start();
@@ -122,13 +125,16 @@ void Camera::AcqThread::start()
 	if (ret != 0)
 		DEB_ERROR() << "Could not set AcqThread real-time priority!!";
 
-	while (m_state != Running)
+	while (m_state == Starting)
 		m_cond.wait();
 }
 
-void Camera::AcqThread::stop(bool wait)
+void Camera::AcqThread::stop(AutoMutex& l, bool wait)
 {
 	DEB_MEMBER_FUNCT();
+	if ((&l.mutex() != &m_cond.mutex()) || !l.locked())
+		THROW_HW_ERROR(Error) << "Invalid AutoMutex";
+
 	m_state = StopReq;
 	m_cond.broadcast();
 	while (wait && (m_state != Stopped) && (m_state != Idle))
@@ -847,7 +853,7 @@ void Camera::startAcq()
 	cb_mgr->setStartTimestamp(Timestamp::now());
 
 	m_acq_thread = new AcqThread(this);
-	m_acq_thread->start();
+	m_acq_thread->start(l);
 }
 
 void Camera::stopAcq()
@@ -860,7 +866,7 @@ void Camera::stopAcq()
 	if (getEffectiveState() != Running)
 		return;
 
-	m_acq_thread->stop(true);
+	m_acq_thread->stop(l, true);
 	if (getEffectiveState() != Idle)
 		THROW_HW_ERROR(Error) << "Camera not Idle";
 }
