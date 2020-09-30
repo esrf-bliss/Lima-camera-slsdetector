@@ -1859,3 +1859,86 @@ interfaces.
 
 .. note:: the 30 seconds timeout is necessary for large memory 
    allocations (long sequences)
+
+Ethernet Switch
+---------------
+
+Some configuration must be made on the network switch in order ensure *Eiger* DAQ:
+
+* Separation of VLANs for *Control* and *Data*
+* The detector sends Ethernet/UDP data packets with the destination MAC/IP addresses.
+  This information is sent by the *slsDetector* client to the *eigerDetectorServer*
+  without the need of ARP transactions. The switch has no mean to know which ports
+  the data packets must be dispatched to, so they are sent to all the active ports.
+  This creates in important ammount of unnecessary traffic (~ N\ :superscript:`2`,
+  where N is the number of modules), with the corresponding activity on the Linux
+  network stack. A static *MAC -> port* mapping table for 10/40 Gbit backend
+  interfaces avoids this issue.
+
+Mellanox Switch
+~~~~~~~~~~~~~~~
+
+The configuration of static *MAC -> port* mapping table is performed in the
+*configure terminal* environment with the *mac-address-table static* command:
+
+::
+
+   switch-5d071c [standalone: unknown] > enable
+   switch-5d071c [standalone: unknown] # 
+   
+   switch-5d071c [standalone: unknown] # configure terminal 
+   switch-5d071c [standalone: unknown] (config) # 
+   
+   switch-5d071c [standalone: unknown] (config) # mac-address-table static E4:1D:2D:7C:18:72 vlan 1 interface ethernet 1/2
+   
+   switch-5d071c [standalone: unknown] (config) # write memory
+
+and can be verified with the *show mac-address-table* command:
+
+::
+   
+   switch-5d071c [standalone: unknown] > show mac-address-table 
+   
+   Switch ethernet-default
+   
+   Vlan    Mac Address         Type         Port                                  
+   ----    -----------         ----         ------------                          
+   1       E4:1D:2D:7C:18:41   Static       Eth1/3                                
+   1       E4:1D:2D:7C:18:42   Static       Eth1/5                                
+   1       E4:1D:2D:7C:18:71   Static       Eth1/1                                
+   1       E4:1D:2D:7C:18:72   Static       Eth1/2                                
+   Number of unicast:    4                                                        
+   Number of multicast:    0                                                      
+
+eXtreme Networks Switch
+~~~~~~~~~~~~~~~~~~~~~~~
+
+The configuration of static *MAC -> port* mapping table is performed by adding entries
+in the *Forwarding Database (FDB)* with the *create fdb vlan ports* command:
+
+::
+
+   * X620-16x.37 # create fdb 90:e2:ba:c9:a4:a9 vlan data ports 11 
+   * X620-16x.38 # create fdb 90:e2:ba:cb:ad:55 vlan data ports 12
+
+and can be verified with the *show fdb* command:
+
+::
+
+   * X620-16x.39 # show fdb
+   MAC                                      VLAN Name( Tag)  Age  Flags          Port / Virtual Port List
+   ------------------------------------------------------------------------------------------------------
+   90:e2:ba:c9:a4:a8                          control(1000) 0027  d m            3
+   90:e2:ba:c9:a4:a9                             data(1020) 0000  spm            11
+   90:e2:ba:cb:ad:55                             data(1020) 0000  spm            12
+   
+   Flags : d - Dynamic, s - Static, p - Permanent, n - NetLogin, m - MAC, i - IP,
+           x - IPX, l - lockdown MAC, L - lockdown-timeout MAC, M- Mirror, B - Egress Blackhole,
+           b - Ingress Blackhole, v - MAC-Based VLAN, P - Private VLAN, T - VLAN translation,
+           D - drop packet, h - Hardware Aging, o - IEEE 802.1ah Backbone MAC,
+           S - Software Controlled Deletion, r - MSRP,
+           X - VXLAN, Z - OpenFlow, E - EVPN
+   
+   Total: 3 Static: 2  Perm: 2  Dyn: 1  Dropped: 0  Locked: 0  Locked with Timeout: 0
+   FDB Aging time: 300
+   
