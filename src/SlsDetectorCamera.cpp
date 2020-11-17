@@ -565,8 +565,6 @@ void Camera::setSkipFrameFreq(FrameType skip_frame_freq)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(skip_frame_freq);
-	if (skip_frame_freq)
-		THROW_HW_ERROR(NotSupported) << "Skip frame not supported yet";
 	m_skip_frame_freq = skip_frame_freq;
 	setNbFrames(m_lima_nb_frames);
 }

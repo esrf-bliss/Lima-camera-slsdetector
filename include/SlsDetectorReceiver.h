@@ -74,7 +74,10 @@ private:
 			last_t0 = last_t1 = Timestamp();
 		}
 	};
-	
+
+	bool readRecvImage(FrameType lima_frame, FrameType det_frame,
+			   ImageData *image_data=NULL);
+
 	Camera *m_cam;
 	int m_idx;
 	int m_rx_port;

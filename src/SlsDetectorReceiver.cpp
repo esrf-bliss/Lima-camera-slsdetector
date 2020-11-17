@@ -97,6 +97,38 @@ void Receiver::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
 	m_recv->setFifoNodeAffinity(fifo_node_mask, max_node);
 }
 
+inline bool Receiver::readRecvImage(FrameType lima_frame, FrameType det_frame,
+				    ImageData *image_data)
+{
+	DEB_MEMBER_FUNCT();
+
+	ImageData skip_image_data;
+	const char *action = "read";
+	if (!image_data) {
+		image_data = &skip_image_data;
+		image_data->buffer = NULL;
+		action = "skip";
+	}
+
+	DEB_TRACE() << "To " << action << ": "
+		    << DEB_VAR3(m_idx, lima_frame, det_frame);
+	image_data->frame = det_frame;
+	int ret = m_recv->getImage(*image_data);
+	if ((ret != 0) || (m_cam->getAcqState() == Stopping))
+		return false;
+
+	sls_receiver_header& header = image_data->header;
+	FrameType recv_frame = header.detHeader.frameNumber;
+	if (recv_frame > m_cam->m_det_nb_frames)
+		THROW_HW_ERROR(Error) << "Invalid frame: " 
+				      << DEB_VAR3(m_idx, recv_frame,
+						  DebHex(recv_frame));
+	else if (recv_frame != det_frame)
+		THROW_HW_ERROR(Error) << "Bad frame: "
+				      << DEB_VAR3(m_idx, recv_frame, det_frame);
+	return true;
+}
+
 bool Receiver::getImage(ImageData& image_data)
 {
 	DEB_MEMBER_FUNCT();
@@ -109,38 +141,37 @@ bool Receiver::getImage(ImageData& image_data)
 		m_stats.stats.recv_exec.add(t0 - m_stats.last_t1);
 	m_stats.last_t0 = t0;
 
-	FrameType det_frame;
+	FrameType lima_frame = image_data.frame;
 	try {
-		++image_data.frame;
-		int ret = m_recv->getImage(image_data);
-		if ((ret != 0) || (m_cam->getAcqState() == Stopping))
-			return false;
-		
-		sls_receiver_header& header = image_data.header;
-		det_frame = header.detHeader.frameNumber - 1;
-		if (det_frame >= m_cam->m_det_nb_frames)
-			THROW_HW_ERROR(Error) << "Invalid frame: " 
-					      << DEB_VAR3(m_idx,
-							  det_frame,
-							  DebHex(det_frame));
+		FrameType det_frame = lima_frame + 1;  // Eiger first frame is 1
+		bool skip_prev = false;
+		bool skip_last = false;
 		FrameType skip_freq = m_cam->m_skip_frame_freq;
-		bool skip_frame = false;
-		FrameType lima_frame = det_frame;
 		if (skip_freq) {
-			skip_frame = ((det_frame + 1) % (skip_freq + 1) == 0);
-			lima_frame -= det_frame / (skip_freq + 1);
-			DEB_TRACE() << DEB_VAR4(m_idx, det_frame,
-						skip_frame, lima_frame);
+			det_frame += lima_frame / skip_freq;
+			skip_prev = (lima_frame &&
+				     (lima_frame % skip_freq == 0));
+			skip_last = ((det_frame + 1) == m_cam->m_det_nb_frames);
+			DEB_TRACE() << DEB_VAR5(m_idx, lima_frame, det_frame,
+						skip_prev, skip_last);
 		}
-		if (skip_frame) {
-			if (det_frame == m_cam->m_det_nb_frames - 1)
-				m_cam->processLastSkippedFrame(m_idx);
+
+		if (skip_prev && !readRecvImage(lima_frame, det_frame - 1))
 			return false;
+
+		if (!readRecvImage(lima_frame, det_frame, &image_data))
+			return false;
+
+		if (skip_last) {
+			if (!readRecvImage(lima_frame, det_frame + 1))
+				return false;
+			m_cam->processLastSkippedFrame(m_idx);
 		}
+
 		image_data.frame = lima_frame;
 	} catch (Exception& e) {
 		ostringstream name;
-		name << "Receiver::getImage: " << DEB_VAR2(m_idx, det_frame);
+		name << "Receiver::getImage: " << DEB_VAR2(m_idx, lima_frame);
 		m_cam->reportException(e, name.str());
 		return false;
 	}

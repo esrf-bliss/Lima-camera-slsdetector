@@ -1352,16 +1352,17 @@ void Eiger::processOneFrame(AutoMutex& l)
 	{
 		AutoMutexUnlock u(l);
 		std::bitset<64> ok;
-		if (getNbRecvs() > 64)
+		int nb_recvs = getNbRecvs();
+		if (nb_recvs > 64)
 			THROW_HW_ERROR(Error) << "Too many receivers";
 		char *bptr = getFrameBufferPtr(frame);
-		for (int i = 0; i < getNbRecvs(); ++i)
+		for (int i = 0; i < nb_recvs; ++i)
 			ok[i] = m_recv_list[i]->processOneFrame(frame, bptr);
 
 		if (ok.none())
 			return;
 
-		for (int i = 0; i < getNbRecvs(); ++i)
+		for (int i = 0; i < nb_recvs; ++i)
 			if (!ok[i])
 				m_recv_list[i]->processBadFrame(frame, bptr);
 	}
