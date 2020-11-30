@@ -732,6 +732,31 @@ void Camera::clearAllBuffers()
 		(*it)->clearAllBuffers();
 }
 
+void Camera::setModuleActive(int mod_idx, bool  active)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(mod_idx, active);
+
+	if ((mod_idx < 0) || (mod_idx >= getNbDetModules()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(mod_idx);
+
+	Positions pos = Idx2Pos(mod_idx);
+	EXC_CHECK(m_det->setActive(active, pos));
+}
+
+void Camera::getModuleActive(int mod_idx, bool& active)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(mod_idx);
+
+	if ((mod_idx < 0) || (mod_idx >= getNbDetModules()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(mod_idx);
+
+	Positions pos = Idx2Pos(mod_idx);
+	EXC_CHECK(active = m_det->getActive(pos).front());
+	DEB_RETURN() << DEB_VAR1(active);
+}
+
 void Camera::setPixelDepth(PixelDepth pixel_depth)
 {
 	DEB_MEMBER_FUNCT();
@@ -1058,7 +1083,7 @@ Camera::DetStatus Camera::getDetStatus()
 {
 	DEB_MEMBER_FUNCT();
 	slsDetectorDefs::runStatus det_status;
-	const char *err_msg = "Detector status are different";;
+	const char *err_msg = "Detector status are different";
 	EXC_CHECK(det_status = m_det->getDetectorStatus().tsquash(err_msg));
 	DetStatus status = DetStatus(det_status);
 	DEB_RETURN() << DEB_VAR1(status);

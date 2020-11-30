@@ -40,6 +40,9 @@ public:
 
 //	void setBufferCtrlObj(NumaSoftBufferCtrlObj *buffer_ctrl_obj);
 
+	void setModuleActive(int mod_idx, bool  active);
+	void getModuleActive(int mod_idx, bool& active /Out/);
+
 	void clearAllBuffers();
 
 	void setPixelDepth(SlsDetector::PixelDepth  pixel_depth);

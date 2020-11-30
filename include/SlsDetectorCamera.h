@@ -79,6 +79,9 @@ public:
 	void setBufferCtrlObj(NumaSoftBufferCtrlObj *buffer_ctrl_obj)
 	{ m_buffer_ctrl_obj = buffer_ctrl_obj; }
 
+	void setModuleActive(int mod_idx, bool  active);
+	void getModuleActive(int mod_idx, bool& active);
+
 	void clearAllBuffers();
 
 	void setPixelDepth(PixelDepth  pixel_depth);

@@ -137,7 +137,7 @@ class SlsDetector(PyTango.Device_4Impl):
             self.cam.setPixelDepthCPUAffinityMap(aff_map)
 
     def init_list_attr(self):
-        nl = ['FullSpeed', 'HalfSpeed', 'QuarterSpeed', 'SuperSlowSpeed']
+        nl = ['FullSpeed', 'HalfSpeed', 'QuarterSpeed']
         self.__ClockDiv = ConstListAttr(nl)
 
         nl = ['NonParallel', 'Parallel']
@@ -149,7 +149,7 @@ class SlsDetector(PyTango.Device_4Impl):
 
     @Core.DEB_MEMBER_FUNCT
     def init_dac_adc_attr(self):
-        nb_modules = self.cam.getNbDetSubModules()
+        nb_modules = self.cam.getNbDetModules()
         name_list, idx_list, milli_volt_list = self.model.getDACInfo()
         attr_name_list = map(lambda n: 'dac_' + n, name_list)
         data_list = zip(idx_list, milli_volt_list)
@@ -300,7 +300,7 @@ class SlsDetector(PyTango.Device_4Impl):
             msg = 'Invalid %s: %s' % (attr_name, val_list)
         elif nb_val == 1:
             mod_idx_list = [-1]
-        elif nb_val == self.cam.getNbDetSubModules():
+        elif nb_val == self.cam.getNbDetModules():
             mod_idx_list = range(nb_val)
         else:
             msg = 'Invalid %s length: %s' % (att_name, val_list)
@@ -717,7 +717,7 @@ def get_control(config_fname, full_config_fname=None, apply_corrections=None,
         _SlsDetectorCam = SlsDetectorHw.Camera(config_fname, det_id)
         for i, n in enumerate(_SlsDetectorCam.getHostnameList()):
             print('Enabling: %s (%d)' % (n, i))
-            _SlsDetectorCam.putCmd('activate 1', i)
+            _SlsDetectorCam.setModuleActive(i, True)
 
         _SlsDetectorHwInter = SlsDetectorHw.Interface(_SlsDetectorCam)
         if _SlsDetectorCam.getType() == SlsDetectorHw.EigerDet:
@@ -762,5 +762,5 @@ def setup_partial_config(config_fname, full_config_fname):
     for i, n in enumerate(full_hostname_list):
         if n not in partial_hostname_list:
             print('Disabling: %s (%d)' % (n, i))
-            cam.putCmd('activate 0', i)
+            cam.setModuleActive(i, False)
     print('Partial config: Done!')

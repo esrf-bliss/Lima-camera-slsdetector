@@ -29,6 +29,7 @@ is included:
 ::
 
     lisgeiger1:~ % \
+        [ -n "${EIGER_MODULES}" ] || . ${EIGER_HOME}/eiger_setup.sh
         EIGER_MODULE_TOP=$(echo ${EIGER_MODULES} | cut -f1 -d" ")
         cat ~/.ssh/id_dsa.pub
         echo
@@ -295,7 +296,7 @@ as well as the kernel image:
 ::
 
     lisgeiger1:~ % (
-        . ${EIGER_HOME}/eiger_setup.sh
+        [ -n "${EIGER_MODULES}" ] || . ${EIGER_HOME}/eiger_setup.sh
         base_dir="${HOME}/eiger/log/${EIGER_DETECTOR}"
 
         cd ${SLS_DETECTORS}/eiger/config
