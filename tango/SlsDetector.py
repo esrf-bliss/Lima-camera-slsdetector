@@ -140,7 +140,7 @@ class SlsDetector(PyTango.Device_4Impl):
         nl = ['FullSpeed', 'HalfSpeed', 'QuarterSpeed', 'SuperSlowSpeed']
         self.__ClockDiv = ConstListAttr(nl)
 
-        nl = ['Parallel', 'NonParallel', 'Safe']
+        nl = ['NonParallel', 'Parallel']
         self.__ParallelMode = ConstListAttr(nl, namespc=SlsDetectorHw.Eiger)
 
         nl = ['PixelDepth4', 'PixelDepth8', 'PixelDepth16', 'PixelDepth32']

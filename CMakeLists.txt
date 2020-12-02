@@ -82,6 +82,7 @@ find_package(Numa REQUIRED)
 
 # slsDetectorPackage
 set(SLS_DETECTOR_DIR ${CMAKE_CURRENT_SOURCE_DIR}/slsDetectorPackage)
+set(SLS_DETECTOR_SUPPORT ${SLS_DETECTOR_DIR}/slsSupportLib)
 set(SLS_DETECTOR_SW ${SLS_DETECTOR_DIR}/slsDetectorSoftware)
 set(SLS_DETECTOR_RECV ${SLS_DETECTOR_DIR}/slsReceiverSoftware)
 
@@ -116,16 +117,13 @@ set_target_properties(slsdetector PROPERTIES
   VERSION "${PROJECT_VERSION}"
   SOVERSION "${PACKAGE_VERSION_MAJOR}.${PACKAGE_VERSION_MINOR}")
 
+MESSAGE(STATUS "SLS_DETECTOR_SW=${SLS_DETECTOR_SW}")
+
 # Add dependencies
 target_include_directories(slsdetector
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+    PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SUPPORT}/include>"
     PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SW}/include>"
-    PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SW}/commonFiles>"
-    PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SW}/slsDetector>"
-    PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SW}/multiSlsDetector>"
-    PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SW}/slsDetectorServer>"
-    PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SW}/slsDetectorAnalysis>"
-    PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SW}/slsReceiverInterface>"
     PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_RECV}/include>"
     PUBLIC "$<BUILD_INTERFACE:${NUMA_INCLUDE_DIR}>"
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>"           # For export header

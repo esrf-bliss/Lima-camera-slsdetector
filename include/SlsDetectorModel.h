@@ -28,7 +28,7 @@
 
 #include "lima/SizeUtils.h"
 
-#include "slsDetectorUsers.h"
+#include "sls/Detector.h"
 
 namespace lima 
 {
@@ -60,9 +60,6 @@ class Model
 
 	int getNbDetModules()
 	{ return m_nb_det_modules; }
-
-	int getNbDetSubModules()
-	{ return m_nb_det_submodules; }
 
 	virtual std::string getName() = 0;
 	virtual void getPixelSize(double& x_size, double& y_size) = 0;
@@ -110,10 +107,9 @@ class Model
 	Camera *m_cam;
 	Type m_type;
 	int m_nb_det_modules;
-	int m_nb_det_submodules;
 
  protected:
-	AutoPtr<slsDetectorUsers> m_det;
+	AutoPtr<sls::Detector> m_det;
 };
 
 

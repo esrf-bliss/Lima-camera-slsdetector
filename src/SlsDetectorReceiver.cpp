@@ -27,7 +27,7 @@ using namespace lima;
 using namespace lima::SlsDetector;
 
 Receiver::Receiver(Camera *cam, int idx, int rx_port)
-	: m_cam(cam), m_idx(idx), m_rx_port(rx_port)
+	: m_cam(cam), m_idx(idx), m_rx_port(rx_port), m_gap_pixels_enable(false)
 {
 	DEB_CONSTRUCTOR();
 
@@ -42,24 +42,19 @@ Receiver::Receiver(Camera *cam, int idx, int rx_port)
 Receiver::~Receiver()
 {
 	DEB_DESTRUCTOR();
-	m_recv->stop();
 }
 
 void Receiver::start()
 {	
 	DEB_MEMBER_FUNCT();
-	int init_ret;
-	m_recv = new slsReceiverUsers(m_args.size(), m_args, init_ret);
-	if (init_ret == slsReceiverDefs::FAIL)
-		THROW_HW_ERROR(Error) << "Error creating slsReceiver";
+	EXC_CHECK(m_recv = new sls::Receiver(m_args.size(), m_args));
 	m_recv->setPassiveMode(true);
-	if (m_recv->start() == slsReceiverDefs::FAIL) 
-		THROW_HW_ERROR(Error) << "Error starting slsReceiver";
 }
 
 void Receiver::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
+	m_recv->enableGap(m_gap_pixels_enable);
 	m_stats.reset();
 }
 
@@ -68,8 +63,8 @@ void Receiver::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
 	DEB_MEMBER_FUNCT();
 
 	const CPUAffinityList& aff_list = recv_affinity.listeners;
-	slsReceiverDefs::CPUMaskList cpu_masks(aff_list.size());
-	slsReceiverDefs::CPUMaskList::iterator mit = cpu_masks.begin();
+	slsDetectorDefs::CPUMaskList cpu_masks(aff_list.size());
+	slsDetectorDefs::CPUMaskList::iterator mit = cpu_masks.begin();
 	CPUAffinityList::const_iterator it, end = aff_list.end();
 	for (it = aff_list.begin(); it != end; ++it, ++mit)
 		it->initCPUSet(*mit);
@@ -94,7 +89,7 @@ void Receiver::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
 		DEB_WARNING() << deb_head << "Fifo NUMA node mask has "
 			      << c << " nodes";
 	DEB_ALWAYS() << deb_head << DEB_VAR2(DEB_HEX(fifo_node_mask), max_node);
-	m_recv->setFifoNodeAffinity(fifo_node_mask, max_node);
+	m_recv->setBufferNodeAffinity(fifo_node_mask, max_node);
 }
 
 inline bool Receiver::readRecvImage(FrameType lima_frame, FrameType det_frame,
@@ -114,8 +109,10 @@ inline bool Receiver::readRecvImage(FrameType lima_frame, FrameType det_frame,
 		    << DEB_VAR3(m_idx, lima_frame, det_frame);
 	image_data->frame = det_frame;
 	int ret = m_recv->getImage(*image_data);
-	if ((ret != 0) || (m_cam->getAcqState() == Stopping))
+	if ((ret != 0) || (m_cam->getAcqState() == Stopping)) {
+		DEB_RETURN() << DEB_VAR1(false);
 		return false;
+	}
 
 	sls_receiver_header& header = image_data->header;
 	FrameType recv_frame = header.detHeader.frameNumber;
@@ -126,6 +123,7 @@ inline bool Receiver::readRecvImage(FrameType lima_frame, FrameType det_frame,
 	else if (recv_frame != det_frame)
 		THROW_HW_ERROR(Error) << "Bad frame: "
 				      << DEB_VAR3(m_idx, recv_frame, det_frame);
+	DEB_RETURN() << DEB_VAR1(true);
 	return true;
 }
 
@@ -143,7 +141,7 @@ bool Receiver::getImage(ImageData& image_data)
 
 	FrameType lima_frame = image_data.frame;
 	try {
-		FrameType det_frame = lima_frame + 1;  // Eiger first frame is 1
+		FrameType det_frame = lima_frame + 1;  // first frame is set to 1
 		bool skip_prev = false;
 		bool skip_last = false;
 		FrameType skip_freq = m_cam->m_skip_frame_freq;

@@ -784,11 +784,6 @@ void Eiger::getDACInfo(NameList& name_list, IntList& idx_list,
 		DACIndex idx;
 		int milli_volt;
 	} EigerDACList[] = {
-		EIGER_DAC(EigerVrf),
-		EIGER_DAC(EigerVrs),
-		EIGER_DAC(EigerVtr),
-		EIGER_DAC(EigerVcal),
-		EIGER_DAC(EigerVcp),
 		EIGER_DAC(EigerVcmpLL),
 		EIGER_DAC(EigerVcmpLR),
 		EIGER_DAC(EigerVcmpRL),
@@ -1073,14 +1068,17 @@ void Eiger::setParallelMode(ParallelMode mode)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(mode);
-	m_det->setParallelMode(mode);
+	EXC_CHECK(m_det->setParallelMode(mode));
 	updateTimeRanges();
 }
 
 void Eiger::getParallelMode(ParallelMode& mode)
 {
 	DEB_MEMBER_FUNCT();
-	mode = ParallelMode(m_det->setParallelMode(-1));
+	bool sls_mode;
+	const char *err_msg = "Parallel mode is different";
+	EXC_CHECK(sls_mode = m_det->getParallelMode().tsquash(err_msg));
+	mode = ParallelMode(sls_mode);
 	DEB_RETURN() << DEB_VAR1(mode);
 }
 
@@ -1102,15 +1100,14 @@ void Eiger::setClockDiv(ClockDiv clock_div)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(clock_div);
-	if (clock_div == SuperSlowSpeed)
-		THROW_HW_ERROR(NotSupported) << "SuperSlowSpeed not tested yet";
 	PixelDepth pixel_depth;
 	Camera* cam = getCamera();
 	cam->getPixelDepth(pixel_depth);
 	if ((pixel_depth == PixelDepth32) && (clock_div != QuarterSpeed))
 		THROW_HW_ERROR(InvalidValue) << "32-bit works only on "
 					     << "QuarterSpeed";
-	m_det->setClockDivider(clock_div);
+	typedef slsDetectorDefs::speedLevel Speed;
+	EXC_CHECK(m_det->setSpeed(Speed(clock_div)));
 	m_clock_div = clock_div;
 	updateTimeRanges();
 }
@@ -1118,10 +1115,8 @@ void Eiger::setClockDiv(ClockDiv clock_div)
 void Eiger::getClockDiv(ClockDiv& clock_div)
 {
 	DEB_MEMBER_FUNCT();
-	int ret = m_det->setClockDivider(-1);
-	if (ret == MultiSlsDetectorErr)
-		THROW_HW_ERROR(Error) << "Error getting clock divider";
-	clock_div = ClockDiv(ret);
+	const char *err_msg = "Speed is different";
+	EXC_CHECK(clock_div = ClockDiv(m_det->getSpeed().tsquash(err_msg)));
 	DEB_RETURN() << DEB_VAR1(clock_div);
 }
 
@@ -1141,42 +1136,37 @@ void Eiger::getSubExpTime(double& sub_exp_time)
 	DEB_RETURN() << DEB_VAR1(sub_exp_time);
 }
 
-void Eiger::setAllTrimBits(int sub_mod_idx, int val)
+void Eiger::setAllTrimBits(int mod_idx, int val)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(sub_mod_idx, val);
+	DEB_PARAM() << DEB_VAR2(mod_idx, val);
 
-	if ((sub_mod_idx < -1) || (sub_mod_idx >= getNbDetSubModules()))
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(sub_mod_idx);
+	if ((mod_idx < -1) || (mod_idx >= getNbDetModules()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(mod_idx);
 
-	int ret = m_det->setAllTrimbits(val, sub_mod_idx);
-	if (ret == MultiSlsDetectorErr)
-		THROW_HW_ERROR(Error) << "Error setting all trim bits"
-				      << " on (sub)module " << sub_mod_idx;
+	Positions pos = Idx2Pos(mod_idx);
+	EXC_CHECK(m_det->setAllTrimbits(val, pos));
 }
 
-void Eiger::getAllTrimBits(int sub_mod_idx, int& val)
+void Eiger::getAllTrimBits(int mod_idx, int& val)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(sub_mod_idx);
+	DEB_PARAM() << DEB_VAR1(mod_idx);
 
-	if ((sub_mod_idx < 0) || (sub_mod_idx >= getNbDetSubModules()))
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(sub_mod_idx);
+	if ((mod_idx < 0) || (mod_idx >= getNbDetModules()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(mod_idx);
 
-	int ret = m_det->setAllTrimbits(-1, sub_mod_idx);
-	if (ret == MultiSlsDetectorErr)
-		THROW_HW_ERROR(Error) << "Error getting all trim bits"
-				      << " on (sub)module " << sub_mod_idx;
-	val = ret;
+	Positions pos = Idx2Pos(mod_idx);
+	EXC_CHECK(val = m_det->getAllTrimbits(pos).front());
 	DEB_RETURN() << DEB_VAR1(val);
 }
 
 void Eiger::getAllTrimBitsList(IntList& val_list)
 {
 	DEB_MEMBER_FUNCT();
-	int nb_sub_modules = getNbDetSubModules();
-	val_list.resize(nb_sub_modules);
-	for (int i = 0; i < nb_sub_modules; ++i)
+	int nb_modules = getNbDetModules();
+	val_list.resize(nb_modules);
+	for (int i = 0; i < nb_modules; ++i)
 		getAllTrimBits(i, val_list[i]);
 }
 
@@ -1185,13 +1175,14 @@ void Eiger::setHighVoltage(int hvolt)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(hvolt);
 	DEB_ALWAYS() << "Setting high voltage (" << DEB_VAR1(hvolt) << ") ...";
-	m_det->setHighVoltage(hvolt);
+	EXC_CHECK(m_det->setHighVoltage(hvolt));
 }
 
 void Eiger::getHighVoltage(int& hvolt)
 {
 	DEB_MEMBER_FUNCT();
-	hvolt = m_det->setHighVoltage(-1);
+	Positions pos = Idx2Pos(0);
+	EXC_CHECK(hvolt = m_det->getHighVoltage(pos).front());
 	DEB_RETURN() << DEB_VAR1(hvolt);
 }
 
@@ -1199,13 +1190,13 @@ void Eiger::setThresholdEnergy(int thres)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(thres);
-	m_det->setThresholdEnergy(thres);
+	EXC_CHECK(m_det->setThresholdEnergy(thres));
 }
 
 void Eiger::getThresholdEnergy(int& thres)
 {
 	DEB_MEMBER_FUNCT();
-	thres = m_det->getThresholdEnergy();
+	EXC_CHECK(thres = m_det->getThresholdEnergy().squash(-1));
 	DEB_RETURN() << DEB_VAR1(thres);
 }
 
@@ -1213,15 +1204,16 @@ void Eiger::setTxFrameDelay(int tx_frame_delay)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(tx_frame_delay);
-	Camera* cam = getCamera();
-	cam->putNbCmd<int>("txndelay_frame", tx_frame_delay);
+	EXC_CHECK(m_det->setTransmissionDelayFrame(tx_frame_delay));
 }
 
 void Eiger::getTxFrameDelay(int& tx_frame_delay)
 {
 	DEB_MEMBER_FUNCT();
-	Camera* cam = getCamera();
-	tx_frame_delay = cam->getNbCmd<int>("txndelay_frame");
+	sls::Result<int> res;
+	EXC_CHECK(res = m_det->getTransmissionDelayFrame());
+	const char *err_msg = "Tx frame delay is different";
+	EXC_CHECK(tx_frame_delay = res.tsquash(err_msg));
 	DEB_RETURN() << DEB_VAR1(tx_frame_delay);
 }
 
@@ -1502,7 +1494,6 @@ ostream& lima::SlsDetector::operator <<(ostream& os, Eiger::ParallelMode mode)
 	switch (mode) {
 	case Eiger::NonParallel:	name = "NonParallel";	break;
 	case Eiger::Parallel:		name = "Parallel";	break;
-	case Eiger::Safe:		name = "Safe";		break;
 	}
 	return os << name;
 }

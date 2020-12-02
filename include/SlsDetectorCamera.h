@@ -28,7 +28,7 @@
 #include "SlsDetectorCPUAffinity.h"
 #include "SlsDetectorBebTools.h"
 
-#include "slsDetectorUsers.h"
+#include "sls/Detector.h"
 
 #include "lima/HwBufferMgr.h"
 #include "lima/HwMaxImageSizeCallback.h"
@@ -54,7 +54,6 @@ public:
 	typedef Defs::DACIndex DACIndex;
 	typedef Defs::ADCIndex ADCIndex;
 	typedef Defs::DetStatus DetStatus;
-	typedef Defs::NetworkParameter NetworkParameter;
 
 	Camera(std::string config_fname, int det_id = 0);
 	Camera(const Camera& o) = delete;
@@ -70,9 +69,6 @@ public:
 
 	int getNbDetModules()
 	{ return m_input_data->host_name_list.size(); }
-
-	int getNbDetSubModules()
-	{ return m_det->getNMods(); }
 
 	int getNbRecvs()
 	{ return m_recv_list.size(); }
@@ -125,22 +121,19 @@ public:
 	void setSkipFrameFreq(FrameType  skip_frame_freq);
 	void getSkipFrameFreq(FrameType& skip_frame_freq);
 
-	// setDAC: sub_mod_idx: 0-N=sub_module, -1=all
-	void setDAC(int sub_mod_idx, DACIndex dac_idx, int  val, 
+	// setDAC: mod_idx: 0-N=module, -1=all
+	void setDAC(int mod_idx, DACIndex dac_idx, int  val, 
 		    bool milli_volt = false);
-	void getDAC(int sub_mod_idx, DACIndex dac_idx, int& val, 
+	void getDAC(int mod_idx, DACIndex dac_idx, int& val, 
 		    bool milli_volt = false);
 	void getDACList(DACIndex dac_idx, IntList& val_list,
 			bool milli_volt = false);
 
-	void getADC(int sub_mod_idx, ADCIndex adc_idx, int& val);
+	void getADC(int mod_idx, ADCIndex adc_idx, int& val);
 	void getADCList(ADCIndex adc_idx, IntList& val_list);
 
 	void setSettings(Settings  settings);
 	void getSettings(Settings& settings);
-
-	void setNetworkParameter(NetworkParameter net_param, std::string& val);
-	void getNetworkParameter(NetworkParameter net_param, std::string& val);
 
 	void setTolerateLostPackets(bool  tol_lost_packets);
 	void getTolerateLostPackets(bool& tol_lost_packets);
@@ -249,8 +242,11 @@ private:
 	void updateCPUAffinity(bool recv_restarted);
 	void setRecvCPUAffinity(const RecvCPUAffinityList& recv_affinity_list);
 
-	static int64_t NSec(double x)
-	{ return int64_t(x * 1e9); }
+	static sls::ns NSec(double x)
+	{
+		std::chrono::duration<double> sec(x);
+		return std::chrono::duration_cast<sls::ns>(sec);
+	}
 
 	AcqState getEffectiveState();
 
@@ -271,6 +267,8 @@ private:
 				   IntList& bad_frame_list );
 	void getSortedBadFrameList(IntList& bad_frame_list)
 	{ getSortedBadFrameList(IntList(), IntList(), bad_frame_list); }
+
+	std::string execCmd(const std::string& s, bool put, int idx = -1);
 
 	template <class T>
 	void putNbCmd(const std::string& cmd, T val, int idx = -1)
@@ -299,7 +297,7 @@ private:
 	Model *m_model;
 	Cond m_cond;
 	AutoPtr<AppInputData> m_input_data;
-	AutoPtr<slsDetectorUsers> m_det;
+	AutoPtr<sls::Detector> m_det;
 	BebList m_beb_list;
 	FrameMap m_frame_map;
 	RecvList m_recv_list;

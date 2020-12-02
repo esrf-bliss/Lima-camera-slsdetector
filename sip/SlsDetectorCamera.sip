@@ -37,7 +37,6 @@ public:
 	SlsDetector::Model *getModel();
 	std::vector<std::string> getHostnameList();
 	int getNbDetModules();
-	int getNbDetSubModules();
 
 //	void setBufferCtrlObj(NumaSoftBufferCtrlObj *buffer_ctrl_obj);
 
@@ -78,27 +77,22 @@ public:
 	void setSkipFrameFreq(unsigned long  skip_frame_freq);
 	void getSkipFrameFreq(unsigned long& skip_frame_freq /Out/);
 
-	// setDAC: sub_mod_idx: 0-N=module, -1=all
-	void setDAC(int sub_mod_idx, SlsDetector::Defs::DACIndex dac_idx,
+	// setDAC: mod_idx: 0-N=module, -1=all
+	void setDAC(int mod_idx, SlsDetector::Defs::DACIndex dac_idx,
 		    int  val,       bool milli_volt = false);
-	void getDAC(int sub_mod_idx, SlsDetector::Defs::DACIndex dac_idx,
+	void getDAC(int mod_idx, SlsDetector::Defs::DACIndex dac_idx,
 	     	    int& val /Out/, bool milli_volt = false);
 	void getDACList(SlsDetector::Defs::DACIndex dac_idx,
 			std::vector<int>& val_list /Out/,
 			bool milli_volt = false);
 
-	void getADC(int sub_mod_idx, SlsDetector::Defs::ADCIndex adc_idx,
+	void getADC(int mod_idx, SlsDetector::Defs::ADCIndex adc_idx,
 		    int& val /Out/);
 	void getADCList(SlsDetector::Defs::ADCIndex adc_idx,
 		        std::vector<int>& val_list /Out/);
 
 	void setSettings(SlsDetector::Defs::Settings  settings);
 	void getSettings(SlsDetector::Defs::Settings& settings /Out/);
-
-	void setNetworkParameter(SlsDetector::Defs::NetworkParameter net_param,
-				 std::string& val /In,Out/);
-	void getNetworkParameter(SlsDetector::Defs::NetworkParameter net_param,
-				 std::string& val /Out/);
 
 	void setTolerateLostPackets(bool  tol_lost_packets);
 	void getTolerateLostPackets(bool& tol_lost_packets /Out/);

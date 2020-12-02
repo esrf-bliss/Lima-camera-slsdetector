@@ -22,11 +22,12 @@
 
 #include "SlsDetectorCamera.h"
 
-#include "multiSlsDetectorCommand.h"
-
 #include <limits.h>
 #include <algorithm>
+#include <numeric>
 #include <cmath>
+#include <iostream>
+#include <fstream>
 
 using namespace std;
 using namespace lima;
@@ -44,7 +45,7 @@ void Camera::AppInputData::parseConfigFile()
 {
 	DEB_MEMBER_FUNCT();
 
-	ifstream config_file(config_file_name.c_str());
+	ifstream config_file(config_file_name);
 	while (config_file) {
 		string s;
 		config_file >> s;
@@ -280,25 +281,25 @@ void Camera::AcqThread::cleanUp(AutoMutex& l)
 void Camera::AcqThread::startAcq()
 {
 	DEB_MEMBER_FUNCT();
-	slsDetectorUsers *det = m_cam->m_det;
+	sls::Detector *det = m_cam->m_det;
 	DEB_TRACE() << "calling startReceiver";
 	det->startReceiver();
 	DEB_TRACE() << "calling Model::startAcq";
 	m_cam->m_model->startAcq();
-	DEB_TRACE() << "calling startAcquisition";
-	det->startAcquisition();
+	DEB_TRACE() << "calling startDetector";
+	det->startDetector();
 }
 
 void Camera::AcqThread::stopAcq()
 {
 	DEB_MEMBER_FUNCT();
-	slsDetectorUsers *det = m_cam->m_det;
+	sls::Detector *det = m_cam->m_det;
 	DetStatus det_status = m_cam->getDetStatus();
 	bool xfer_active = m_cam->m_model->isXferActive();
 	DEB_ALWAYS() << DEB_VAR2(det_status, xfer_active);
 	if ((det_status == Defs::Running) || xfer_active) {
-		DEB_TRACE() << "calling stopAcquisition";
-		det->stopAcquisition();
+		DEB_TRACE() << "calling stopDetector";
+		det->stopDetector();
 		Timestamp t0 = Timestamp::now();
 		while (m_cam->getDetStatus() != Defs::Idle)
 			Sleep(m_cam->m_abort_sleep_time);
@@ -353,20 +354,21 @@ Camera::Camera(string config_fname, int det_id)
 		removeSharedMem();
 	createReceivers();
 
-	DEB_TRACE() << "Creating the slsDetectorUsers object";
-	int ret;
-	m_det = new slsDetectorUsers(ret, m_det_id);
+	DEB_TRACE() << "Creating the sls::Detector object";
+	m_det = new sls::Detector(m_det_id);
 	DEB_TRACE() << "Reading configuration file";
 	const char *fname = m_input_data->config_file_name.c_str();
-	m_det->readConfigurationFile(fname);
+	EXC_CHECK(m_det->loadConfig(fname));
 
-	m_det->setReceiverSilentMode(1);
-	m_det->setReceiverFramesDiscardPolicy("discardpartial");
+	EXC_CHECK(m_det->setRxSilentMode(1));
+	EXC_CHECK(m_det->setRxFrameDiscardPolicy(
+				  slsDetectorDefs::DISCARD_PARTIAL_FRAMES));
 	setReceiverFifoDepth(1);
 
-	m_pixel_depth = PixelDepth(m_det->setBitDepth(-1));
+	sls::Result<int> dr_res;
+	EXC_CHECK(dr_res = m_det->getDynamicRange());
+	m_pixel_depth = PixelDepth(dr_res.squash(-1));
 
-	setSettings(Defs::Standard);
 	setTrigMode(Defs::Auto);
 	setNbFrames(1);
 	setExpTime(0.99);
@@ -401,22 +403,22 @@ Camera::~Camera()
 Type Camera::getType()
 {
 	DEB_MEMBER_FUNCT();
-	string type_resp = m_det->getDetectorType();
-	ostringstream os;
-	os << "(([^+]+)\\+){" << getNbDetModules() << "}";
-	DEB_TRACE() << DEB_VAR1(os.str());
-	RegEx re(os.str());
-	FullMatch full_match;
-	if (!re.match(type_resp, full_match))
-		THROW_HW_ERROR(Error) << "Invalid type response: " << type_resp;
-	string type_str = full_match[2];
-	Type det_type = UnknownDet;
-	if (type_str == "Generic") {
+	slsDetectorDefs::detectorType sls_type;
+	const char *err_msg = "Detector types are different";
+	EXC_CHECK(sls_type = m_det->getDetectorType().tsquash(err_msg));
+	Type det_type;
+	switch (sls_type) {
+	case slsDetectorDefs::GENERIC:
 		det_type = GenericDet;
-	} else if (type_str == "Eiger") {
+		break;
+	case slsDetectorDefs::EIGER:
 		det_type = EigerDet;
-	} else if (type_str == "Jungfrau") {
+		break;
+	case slsDetectorDefs::JUNGFRAU:
 		det_type = JungfrauDet;
+		break;
+	default:
+		det_type = UnknownDet;
 	}
 	DEB_RETURN() << DEB_VAR1(det_type);
 	return det_type;
@@ -443,7 +445,6 @@ void Camera::setModel(Model *model)
 	m_model->updateFrameMapItems(&m_frame_map);
 
 	setPixelDepth(m_pixel_depth);
-	setSettings(m_settings);
 }
 
 char *Camera::getFrameBufferPtr(FrameType frame_nb)
@@ -490,21 +491,53 @@ void Camera::createReceivers()
 	}
 }
 
+string Camera::execCmd(const string& s, bool put, int idx)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << "s=\"" << s << "\", " << DEB_VAR2(put, idx);
+
+	string prog_name = string("sls_detector_") + (put ? "put" : "get");
+	ostringstream os;
+	os << prog_name << " ";
+	if (idx >= 0)
+		os << idx << ':';
+	os << s;
+	SystemCmdPipe cmd(os.str(), prog_name, false);
+	cmd.setPipe(SystemCmdPipe::StdOut, SystemCmdPipe::DoPipe);
+	cmd.setPipe(SystemCmdPipe::StdErr, SystemCmdPipe::DoPipe);
+	StringList out, err;
+	int ret = cmd.execute(out, err);
+	DEB_TRACE() << DEB_VAR3(ret, out, err);
+	string err_str = accumulate(err.begin(), err.end(), string());
+	if ((ret != 0) || (err_str.find("ERROR") != string::npos))
+		THROW_HW_ERROR(Error) << prog_name << "(" << ret << "): "
+				      << err_str;
+	else if (!err_str.empty())
+		cerr << err_str;
+	string out_str = accumulate(out.begin(), out.end(), string());
+	DEB_RETURN() << DEB_VAR1(out_str);
+	return out_str;
+}
+
 void Camera::putCmd(const string& s, int idx)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << "s=\"" << s << "\"";
-	Args args(s);
-	m_det->putCommand(args.size(), args, idx);
+	execCmd(s, true, idx);
 }
 
 string Camera::getCmd(const string& s, int idx)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << "s=\"" << s << "\"";
-	Args args(s);
-	string r = m_det->getCommand(args.size(), args, idx);
-	DEB_RETURN() << "r=\"" << r << "\"";
+	string r = execCmd(s, false, idx);
+	string::size_type p = s.find(':');
+	string raw_s = s.substr((p == string::npos) ? 0 : (p + 1));
+	DEB_TRACE() << DEB_VAR2(s, raw_s);
+	if (r.find(raw_s + ' ') != 0)
+		THROW_HW_ERROR(Error) << "Invalid response: " << r;
+	string::size_type e = raw_s.size() + 1;
+	p = r.find('\n', e);
+	r = r.substr(e, (p == string::npos) ? p : (p - e));
+	DEB_RETURN() << DEB_VAR1(r);
 	return r;
 }
 
@@ -516,9 +549,9 @@ void Camera::setTrigMode(TrigMode trig_mode)
 	TrigMode cam_trig_mode = trig_mode;
 	if (trig_mode == Defs::SoftTriggerExposure)
 		cam_trig_mode = Defs::TriggerExposure;
-	typedef slsDetectorDefs::externalCommunicationMode ExtComMode;
-	ExtComMode mode = static_cast<ExtComMode>(cam_trig_mode);
-	m_det->setTimingMode(mode);
+	typedef slsDetectorDefs::timingMode TimingMode;
+	TimingMode mode = static_cast<TimingMode>(cam_trig_mode);
+	EXC_CHECK(m_det->setTimingMode(mode));
 	m_trig_mode = trig_mode;
 	setNbFrames(m_lima_nb_frames);
 }
@@ -548,8 +581,8 @@ void Camera::setNbFrames(FrameType nb_frames)
 	bool trig_exp = (m_trig_mode == Defs::TriggerExposure);
 	int cam_frames = trig_exp ? 1 : det_nb_frames;
 	int cam_triggers = trig_exp ? det_nb_frames : 1;
-	m_det->setNumberOfFrames(cam_frames);
-	m_det->setNumberOfCycles(cam_triggers);
+	EXC_CHECK(m_det->setNumberOfFrames(cam_frames));
+	EXC_CHECK(m_det->setNumberOfTriggers(cam_triggers));
 	m_lima_nb_frames = nb_frames;
 	m_det_nb_frames = det_nb_frames;
 }
@@ -581,7 +614,7 @@ void Camera::setExpTime(double exp_time)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(exp_time);
 	waitAcqState(Idle);
-	m_det->setExposureTime(NSec(exp_time));
+	EXC_CHECK(m_det->setExptime(NSec(exp_time)));
 	m_exp_time = exp_time;
 }
 
@@ -624,7 +657,7 @@ void Camera::setFramePeriod(double frame_period)
 	}
 
 	waitAcqState(Idle);
-	m_det->setExposurePeriod(NSec(frame_period));
+	EXC_CHECK(m_det->setPeriod(NSec(frame_period)));
 	m_frame_period = frame_period;
 }
 
@@ -638,7 +671,9 @@ void Camera::getFramePeriod(double& frame_period)
 void Camera::updateImageSize()
 {
 	DEB_MEMBER_FUNCT();
-	m_det->enableGapPixels(!m_raw_mode);
+	RecvList::iterator it, end = m_recv_list.end();
+	for (it = m_recv_list.begin(); it != end; ++it)
+		(*it)->setGapPixelsEnable(!m_raw_mode);
 	m_model->updateImageSize();
 	FrameDim frame_dim;
 	getFrameDim(frame_dim, m_raw_mode);
@@ -717,7 +752,7 @@ void Camera::setPixelDepth(PixelDepth pixel_depth)
 	default:
 		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(pixel_depth);
 	}
-	m_det->setBitDepth(pixel_depth);
+	EXC_CHECK(m_det->setDynamicRange(pixel_depth));
 	m_pixel_depth = pixel_depth;
 
 	if (m_model) {
@@ -836,7 +871,8 @@ void Camera::prepareAcq()
 	m_global_cpu_affinity_mgr.prepareAcq();
 
 	resetFramesCaught();
-	m_det->enableWriteToFile(0);
+	EXC_CHECK(m_det->setFileWrite(0));
+	EXC_CHECK(m_det->setNextFrameNumber(1));
 }
 
 void Camera::startAcq()
@@ -880,7 +916,7 @@ void Camera::triggerFrame()
 	if (getEffectiveState() != Running)
 		THROW_HW_ERROR(Error) << "Camera not Running";
 
-	m_det->sendSoftwareTrigger();
+	EXC_CHECK(m_det->sendSoftwareTrigger());
 	m_next_ready_ts = Timestamp::now();
 	m_next_ready_ts += m_exp_time;
 }
@@ -1008,7 +1044,12 @@ int Camera::getFramesCaught()
 {
 	DEB_MEMBER_FUNCT();
 	// recv->getTotalFramesCaught()
-	int frames_caught = getNbCmd<int>("framescaught");
+	sls::Result<int64_t> res;
+	EXC_CHECK(res = m_det->getFramesCaught());
+	int64_t frames_caught = 0;
+	sls::Result<int64_t>::iterator it, end = res.end();
+	for (it = res.begin(); it != end; ++it)
+		frames_caught = max(frames_caught, *it);
 	DEB_RETURN() << DEB_VAR1(frames_caught);
 	return frames_caught;
 }
@@ -1016,54 +1057,40 @@ int Camera::getFramesCaught()
 Camera::DetStatus Camera::getDetStatus()
 {
 	DEB_MEMBER_FUNCT();
-	DetStatus status = DetStatus(m_det->getDetectorStatus());
+	slsDetectorDefs::runStatus det_status;
+	const char *err_msg = "Detector status are different";;
+	EXC_CHECK(det_status = m_det->getDetectorStatus().tsquash(err_msg));
+	DetStatus status = DetStatus(det_status);
 	DEB_RETURN() << DEB_VAR1(status);
 	return status;
 }
 
-void Camera::setDAC(int sub_mod_idx, DACIndex dac_idx, int val, bool milli_volt)
+void Camera::setDAC(int mod_idx, DACIndex dac_idx, int val, bool milli_volt)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR4(sub_mod_idx, dac_idx, val, milli_volt);
+	DEB_PARAM() << DEB_VAR4(mod_idx, dac_idx, val, milli_volt);
 
-	if (milli_volt)
-		THROW_HW_ERROR(InvalidValue) << "milli-volt not supported";
-	if ((sub_mod_idx < -1) || (sub_mod_idx >= getNbDetSubModules()))
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(sub_mod_idx);
+	if ((mod_idx < -1) || (mod_idx >= getNbDetModules()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(mod_idx);
 
-	Defs::DACCmdMapType::const_iterator it = Defs::DACCmdMap.find(dac_idx);
-	if (it == Defs::DACCmdMap.end())
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(dac_idx);
-	const string& dac_cmd = it->second;
-	dacs_t ret = m_det->setDAC(dac_cmd, val, sub_mod_idx);
-	if (ret == MultiSlsDetectorErr)
-		THROW_HW_ERROR(Error) << "Error setting DAC " << dac_idx 
-				      << " on (sub)module " << sub_mod_idx;
-	else if (ret == SlsDetectorBadIndexErr)
-		THROW_HW_ERROR(Error) << "Bad value: " << DEB_VAR1(dac_idx);
+	typedef slsDetectorDefs::dacIndex DAC;
+	DAC sls_idx = DAC(dac_idx);
+	Positions pos = Idx2Pos(mod_idx);
+	EXC_CHECK(m_det->setDAC(sls_idx, val, milli_volt, pos));
 }
 
-void Camera::getDAC(int sub_mod_idx, DACIndex dac_idx, int& val, bool milli_volt)
+void Camera::getDAC(int mod_idx, DACIndex dac_idx, int& val, bool milli_volt)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR3(sub_mod_idx, dac_idx, milli_volt);
+	DEB_PARAM() << DEB_VAR3(mod_idx, dac_idx, milli_volt);
 
-	if (milli_volt)
-		THROW_HW_ERROR(InvalidValue) << "milli-volt not supported";
-	if ((sub_mod_idx < 0) || (sub_mod_idx >= getNbDetSubModules()))
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(sub_mod_idx);
+	if ((mod_idx < 0) || (mod_idx >= getNbDetModules()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(mod_idx);
 
-	Defs::DACCmdMapType::const_iterator it = Defs::DACCmdMap.find(dac_idx);
-	if (it == Defs::DACCmdMap.end())
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(dac_idx);
-	const string& dac_cmd = it->second;
-	dacs_t ret = m_det->setDAC(dac_cmd, -1, sub_mod_idx);
-	if (ret == MultiSlsDetectorErr)
-		THROW_HW_ERROR(Error) << "Error getting DAC " << dac_idx 
-				      << " on (sub)module " << sub_mod_idx;
-	else if (ret == SlsDetectorBadIndexErr)
-		THROW_HW_ERROR(Error) << "Bad value: " << DEB_VAR1(dac_idx);
-	val = ret;
+	typedef slsDetectorDefs::dacIndex DAC;
+	DAC sls_idx = DAC(dac_idx);
+	Positions pos = Idx2Pos(mod_idx);
+	EXC_CHECK(val = m_det->getDAC(sls_idx, milli_volt, pos).squash(-1));
 	DEB_RETURN() << DEB_VAR1(val);
 }
 
@@ -1072,31 +1099,24 @@ void Camera::getDACList(DACIndex dac_idx, IntList& val_list, bool milli_volt)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR2(dac_idx, milli_volt);
 
-	int nb_sub_modules = getNbDetSubModules();
-	val_list.resize(nb_sub_modules);
-	for (int i = 0; i < nb_sub_modules; ++i)
+	int nb_modules = getNbDetModules();
+	val_list.resize(nb_modules);
+	for (int i = 0; i < nb_modules; ++i)
 		getDAC(i, dac_idx, val_list[i], milli_volt);
 }
 
-void Camera::getADC(int sub_mod_idx, ADCIndex adc_idx, int& val)
+void Camera::getADC(int mod_idx, ADCIndex adc_idx, int& val)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(sub_mod_idx, adc_idx);
+	DEB_PARAM() << DEB_VAR2(mod_idx, adc_idx);
 
-	if ((sub_mod_idx < 0) || (sub_mod_idx >= getNbDetSubModules()))
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(sub_mod_idx);
+	if ((mod_idx < 0) || (mod_idx >= getNbDetModules()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(mod_idx);
 
-	Defs::ADCCmdMapType::const_iterator it = Defs::ADCCmdMap.find(adc_idx);
-	if (it == Defs::ADCCmdMap.end())
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(adc_idx);
-	const string& adc_cmd = it->second;
-	dacs_t ret = m_det->getADC(adc_cmd, sub_mod_idx);
-	if (ret == MultiSlsDetectorErr)
-		THROW_HW_ERROR(Error) << "Error getting ADC " << adc_idx 
-				      << " on (sub)module " << sub_mod_idx;
-	else if (ret == SlsDetectorBadIndexErr)
-		THROW_HW_ERROR(Error) << "Bad value: " << DEB_VAR1(adc_idx);
-	val = ret;
+	typedef slsDetectorDefs::dacIndex DAC;
+	DAC sls_idx = DAC(adc_idx);
+	Positions pos = Idx2Pos(mod_idx);
+	EXC_CHECK(val = m_det->getTemperature(sls_idx, pos).squash(-1));
 	DEB_RETURN() << DEB_VAR1(val);
 }
 
@@ -1105,9 +1125,9 @@ void Camera::getADCList(ADCIndex adc_idx, IntList& val_list)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(adc_idx);
 
-	int nb_sub_modules = getNbDetSubModules();
-	val_list.resize(nb_sub_modules);
-	for (int i = 0; i < nb_sub_modules; ++i)
+	int nb_modules = getNbDetModules();
+	val_list.resize(nb_modules);
+	for (int i = 0; i < nb_modules; ++i)
 		getADC(i, adc_idx, val_list[i]);
 }
 
@@ -1120,7 +1140,7 @@ void Camera::setSettings(Settings settings)
 			THROW_HW_ERROR(InvalidValue) << DEB_VAR1(settings);
 		typedef slsDetectorDefs::detectorSettings  DetSettings;
 		DetSettings cam_settings = DetSettings(settings);
-		m_det->setSettings(cam_settings);
+		EXC_CHECK(m_det->setSettings(cam_settings));
 	}
 	m_settings = settings;
 }
@@ -1130,20 +1150,6 @@ void Camera::getSettings(Settings& settings)
 	DEB_MEMBER_FUNCT();
 	settings = m_settings;
 	DEB_RETURN() << DEB_VAR1(settings);
-}
-
-void Camera::setNetworkParameter(NetworkParameter net_param, string& val)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(net_param, val);
-	THROW_HW_ERROR(NotSupported) << "Not implemented by slsDetector API";
-}
-
-void Camera::getNetworkParameter(NetworkParameter net_param, string& /*val*/)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(net_param);
-	THROW_HW_ERROR(NotSupported) << "Not implemented by slsDetector API";
 }
 
 void Camera::setTolerateLostPackets(bool tol_lost_packets)
@@ -1293,14 +1299,15 @@ void Camera::setReceiverFifoDepth(int fifo_depth)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(fifo_depth);
-	// recv->setFifoDepth()
-	putNbCmd<int>("rx_fifodepth", fifo_depth);
+	EXC_CHECK(m_det->setRxFifoDepth(fifo_depth));
 }
 
 bool Camera::isTenGigabitEthernetEnabled()
 {
 	DEB_MEMBER_FUNCT();
-	bool enabled = getNbCmd<int>("tengiga");
+	bool enabled;
+	const char *err_msg = "Ten-giga is different";
+	EXC_CHECK(enabled = m_det->getTenGiga().tsquash(err_msg));
 	DEB_RETURN() << DEB_VAR1(enabled);
 	return enabled;
 }
@@ -1309,14 +1316,13 @@ void Camera::setFlowControl10G(bool enabled)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(enabled);
-	putNbCmd<int>("flowcontrol_10g", enabled);
+	EXC_CHECK(m_det->setTenGigaFlowControl(enabled));
 }
 
 void Camera::resetFramesCaught()
 {
 	DEB_MEMBER_FUNCT();
-	// recv->resetAcquisitionCount()
-	putCmd("resetframescaught");
+	// nothing to do
 }
 
 void Camera::reportException(Exception& e, string name)

@@ -52,7 +52,7 @@ class Eiger : public Model
 	typedef Defs::ClockDiv ClockDiv;
 
 	enum ParallelMode {
-		NonParallel, Parallel, Safe,
+		NonParallel, Parallel,
 	};
 
 	class Correction : public LinkTask
@@ -251,8 +251,8 @@ class Eiger : public Model
 	void setSubExpTime(double  sub_exp_time);
 	void getSubExpTime(double& sub_exp_time);
 
-	void setAllTrimBits(int sub_mod_idx, int  val);
-	void getAllTrimBits(int sub_mod_idx, int& val);
+	void setAllTrimBits(int mod_idx, int  val);
+	void getAllTrimBits(int mod_idx, int& val);
 	void getAllTrimBitsList(IntList& val_list);
 
 	void setHighVoltage(int  hvolt);

@@ -209,6 +209,10 @@ void SystemCmdPipe::start()
 
 	m_child_pid = fork();
 	if (m_child_pid == 0) {
+		// if reading the output, disable debug
+		if (m_pipe_list[StdOut].ptr)
+			DebParams::setTypeFlags(0);
+
 		m_pipe_list[StdIn].close(Pipe::WriteFd);
 		m_pipe_list[StdOut].close(Pipe::ReadFd);
 		m_pipe_list[StdErr].close(Pipe::ReadFd);
@@ -223,15 +227,59 @@ void SystemCmdPipe::start()
 	}
 }
 
-void SystemCmdPipe::wait()
+int SystemCmdPipe::wait()
 {
 	DEB_MEMBER_FUNCT();
 	if (m_child_pid < 0)
 		THROW_HW_ERROR(Error) << "cmd not running";
 	int child_ret;
 	waitpid(m_child_pid, &child_ret, 0);
-	DEB_TRACE() << DEB_VAR1(child_ret);
 	m_child_pid = -1;
+	DEB_RETURN() << DEB_VAR1(child_ret);
+	return child_ret;
+}
+
+int SystemCmdPipe::wait(StringList& out, StringList& err)
+{
+	DEB_MEMBER_FUNCT();
+
+	struct Reader {
+		StringList& out;
+		Pipe *pipe;
+		
+		const int buffer_len = 1024;
+		const char *term = "\n";
+
+		Reader(SystemCmdPipe& c, PipeIdx i, StringList& l)
+			: out(l), pipe(c.m_pipe_list[i] ? &c.getPipe(i) : NULL)
+		{ out.clear(); }
+
+		bool read()
+		{
+			if (!pipe)
+				return false;
+			string s = pipe->readLine(buffer_len, term);
+			bool had_data = !s.empty();
+			if (had_data)
+				out.push_back(s);
+			return had_data;
+		}
+	};
+	std::vector<Reader> reader = {Reader(*this, StdOut, out),
+				      Reader(*this, StdErr, err)};
+	if (!reader[0].pipe && !reader[1].pipe)
+		THROW_HW_ERROR(InvalidValue) << "Cmd has no pipe";
+
+	while (true) {
+		bool had_out = reader[0].read();
+		bool had_err = reader[1].read();
+		if (!had_out && !had_err)
+			break;
+	}
+
+	int ret = wait();
+	DEB_RETURN() << DEB_VAR3(ret, out, err);
+	return ret;
 }
 
 void SystemCmdPipe::setPipe(PipeIdx idx, PipeType type)
@@ -895,18 +943,15 @@ IntList NetDevRxQueueMgr::getRxQueueList()
 	SystemCmdPipe ethtool("ethtool");
 	ethtool.args() << "-S " << m_dev;
 	ethtool.setPipe(SystemCmdPipe::StdOut, SystemCmdPipe::DoPipe);
-	ethtool.start();
-	Pipe& child_out = ethtool.getPipe(SystemCmdPipe::StdOut);
+	StringList out, err;
+	ethtool.execute(out, err);
 
 	RegEx re("^[ \t]*rx_queue_(?P<queue>[0-9]+)_packets:[ \t]+"
 		 "(?P<packets>[0-9]+)\n$");
-	while (true) {
-		string s = child_out.readLine(1024, "\n");
-		if (s.empty())
-			break;
-
+	StringList::iterator it, end = out.end();
+	for (it = out.begin(); it != end; ++it) {
 		RegEx::FullNameMatchType match;
-		if (!re.matchName(s, match))
+		if (!re.matchName(*it, match))
 			continue;
 
 		int queue;

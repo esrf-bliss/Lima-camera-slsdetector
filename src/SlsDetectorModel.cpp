@@ -34,7 +34,6 @@ Model::Model(Camera *cam, Type type)
 	DEB_PARAM() << DEB_VAR1(type);
 
 	m_nb_det_modules = m_cam->getNbDetModules();
-	m_nb_det_submodules = m_cam->getNbDetSubModules();
 }
 
 Model::~Model()

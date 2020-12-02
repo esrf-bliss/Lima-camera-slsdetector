@@ -196,7 +196,7 @@ static const TrigPair Lima2CamTrigModeCList[] = {
 	TrigPair(IntTrigMult,	Defs::SoftTriggerExposure),
 	TrigPair(ExtTrigSingle, Defs::BurstTrigger),
 	TrigPair(ExtTrigMult,	Defs::TriggerExposure),
-	TrigPair(ExtGate,	Defs::Gating),
+	TrigPair(ExtGate,	Defs::Gated),
 };
 SyncCtrlObj::TrigModeMap
 SyncCtrlObj::Lima2CamTrigModeMap(C_LIST_ITERS(Lima2CamTrigModeCList));

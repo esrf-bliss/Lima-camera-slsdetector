@@ -92,8 +92,15 @@ class SystemCmdPipe
 	{ return m_cmd.args(); }
 
 	void start();
-	void wait();
+	int wait();
+	int wait(StringList& out, StringList& err);
 
+	int execute()
+	{ start(); return wait(); }
+	int execute(StringList& out, StringList& err)
+	{ start(); return wait(out, err); }
+
+	
 	void setPipe(PipeIdx idx, PipeType type);
 	Pipe& getPipe(PipeIdx idx);
  

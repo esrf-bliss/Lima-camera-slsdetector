@@ -25,7 +25,8 @@
 
 #include "SlsDetectorFrameMap.h"
 #include "SlsDetectorModel.h"
-#include "slsReceiverUsers.h"
+
+#include "sls/Receiver.h"
 
 namespace lima 
 {
@@ -40,14 +41,17 @@ class Receiver
 	DEB_CLASS_NAMESPC(DebModCamera, "Receiver", "SlsDetector");
 
 public:
-	typedef slsReceiverDefs::sls_detector_header sls_detector_header;
-	typedef slsReceiverDefs::sls_receiver_header sls_receiver_header;
-	typedef slsReceiverDefs::receiver_image_data ImageData;
+	typedef slsDetectorDefs::sls_detector_header sls_detector_header;
+	typedef slsDetectorDefs::sls_receiver_header sls_receiver_header;
+	typedef slsDetectorDefs::receiver_image_data ImageData;
 
 	Receiver(Camera *cam, int idx, int rx_port);
 	~Receiver();
 
 	void start();
+
+	void setGapPixelsEnable(bool enable)
+	{ m_gap_pixels_enable = enable; }
 
 	void prepareAcq();
 
@@ -82,7 +86,8 @@ private:
 	int m_idx;
 	int m_rx_port;
 	Args m_args;
-	AutoPtr<slsReceiverUsers> m_recv;
+	bool m_gap_pixels_enable;
+	AutoPtr<sls::Receiver> m_recv;
 	Stats m_stats;
 }; 
 

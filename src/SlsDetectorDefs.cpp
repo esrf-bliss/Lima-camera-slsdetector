@@ -39,10 +39,9 @@ ostream& lima::SlsDetector::Defs::operator <<(ostream& os, TrigMode trig_mode)
 	switch (trig_mode) {
 	case Auto:		name = "Auto";			break;
 	case TriggerExposure:	name = "TriggerExposure";	break;
-	case TriggerReadout:	name = "TriggerReadout";	break;
-	case Gating:		name = "Gating";		break;
-	case TriggeredGating:	name = "TriggeredGating";	break;
+	case Gated:		name = "Gated";			break;
 	case BurstTrigger:	name = "BurstTrigger";		break;
+	case TriggeredGated:	name = "TriggeredGated";	break;
 	case SoftTriggerExposure: name = "SoftTriggerExposure";	break;
 	}
 	return os << name;
@@ -59,7 +58,6 @@ ostream& lima::SlsDetector::Defs::operator <<(ostream& os, Settings settings)
 	case LowGain:		name = "LowGain";		break;
 	case MediumGain:	name = "MediumGain";		break;
 	case VeryHighGain:	name = "VeryHighGain";		break;
-	case LowNoise:		name = "LowNoise";		break;
 	case DynamicHG0:	name = "DynamicHG0";		break;
 	case FixGain1:		name = "FixGain1";		break;
 	case FixGain2:		name = "FixGain2";		break;
@@ -73,95 +71,18 @@ ostream& lima::SlsDetector::Defs::operator <<(ostream& os, Settings settings)
 }
 
 
-typedef pair<DACIndex, string> DACCmdPair;
-static const DACCmdPair DACCmdCList[] = {
-	DACCmdPair(EigerVcmpLL, "vcmp_ll"),
-	DACCmdPair(EigerVcmpLR, "vcmp_lr"),
-	DACCmdPair(EigerVcmpRL, "vcmp_rl"),
-	DACCmdPair(EigerVcmpRR, "vcmp_rr"),
-	DACCmdPair(Threshold,   "vthreshold"),
-	DACCmdPair(EigerVrf,    "vrf"),
-	DACCmdPair(EigerVrs,    "vrs"),
-	DACCmdPair(EigerVtr,    "vtr"),
-	DACCmdPair(EigerVcal,   "vcall"),
-	DACCmdPair(EigerVcp,    "vcp"),
-};
-DACCmdMapType lima::SlsDetector::Defs::DACCmdMap(C_LIST_ITERS(DACCmdCList));
-
 ostream& lima::SlsDetector::Defs::operator <<(ostream& os, DACIndex dac_idx)
 {
 	const char *name = "Unknown";
 	switch (dac_idx) {
-	case Threshold:        name = "Threshold";        break;
-	case CalibPulse:       name = "CalibPulse";       break;
-	case TrimBitSize:      name = "TrimBitSize";      break;
-	case PreAmp:           name = "PreAmp";           break;
-	case Shaper1:          name = "Shaper1";          break;
-	case Shaper2:          name = "Shaper2";          break;
-	case Humidity:         name = "Humidity";         break;
-	case DetectorBias:     name = "DetectorBias";     break;
-	case PowerVa:          name = "PowerVa";          break;
-	case PowerVdd:         name = "PowerVdd";         break;
-	case PowerVsh:         name = "PowerVsh";         break;
-	case PowerVio:         name = "PowerVio";         break;
-	case PowerHV:          name = "PowerHV";          break;
-	case GotthardVrefDS:   name = "GotthardVrefDS";   break;
-	case GotthardVcascnPB: name = "GotthardVcascnPB"; break;
-	case GotthardVcascpPB: name = "GotthardVcascpPB"; break;
-	case GotthardVoutCM:   name = "GotthardVoutCM";   break;
-	case GotthardVcascOut: name = "GotthardVcascOut"; break;
-	case GotthardVinCM:    name = "GotthardVinCM";    break;
-	case GotthardVrefComp: name = "GotthardVrefComp"; break;
-	case GotthardIBTestC:  name = "GotthardIBTestC";  break;
-	case VoltDAC0:         name = "VoltDAC0";         break;
-	case VoltDAC1:         name = "VoltDAC1";         break;
-	case VoltDAC2:         name = "VoltDAC2";         break;
-	case VoltDAC3:         name = "VoltDAC3";         break;
-	case VoltDAC4:         name = "VoltDAC4";         break;
-	case VoltDAC5:         name = "VoltDAC5";         break;
-	case VoltDAC6:         name = "VoltDAC6";         break;
-	case VoltDAC7:         name = "VoltDAC7";         break;
-	case EigerSvP:         name = "EigerSvP";         break;
-	case EigerSvN:         name = "EigerSvN";         break;
-	case EigerVtr:         name = "EigerVtr";         break;
-	case EigerVrf:         name = "EigerVrf";         break;
-	case EigerVrs:         name = "EigerVrs";         break;
-	case EigerVtgstv:      name = "EigerVtgstv";      break;
 	case EigerVcmpLL:      name = "EigerVcmpLL";      break;
 	case EigerVcmpLR:      name = "EigerVcmpLR";      break;
-	case EigerVcal:        name = "EigerVcal";         break;
 	case EigerVcmpRL:      name = "EigerVcmpRL";      break;
 	case EigerVcmpRR:      name = "EigerVcmpRR";      break;
-	case EigerRxbRB:       name = "EigerRxbRB";       break;
-	case EigerRxbLB:       name = "EigerRxbLB";       break;
-	case EigerVcp:         name = "EigerVcp";         break;
-	case EigerVcn:         name = "EigerVcn";         break;
-	case EigerVis:         name = "EigerVis";         break;
-	case IODelay:          name = "IODelay";          break;
-	case ADCVpp:           name = "ADCVpp";           break;
-	case HVNew:            name = "HVNew";            break;
-	case PowerA:           name = "PowerA";           break;
-	case PowerB:           name = "PowerB";           break;
-	case PowerC:           name = "PowerC";           break;
-	case PowerD:           name = "PowerD";           break;
-	case PowerIO:          name = "PowerIO";          break;
-	case PowerChip:        name = "PowerChip";        break;
+	case Threshold:        name = "Threshold";        break;
 	}
 	return os << name;
 }
-
-typedef pair<ADCIndex, string> ADCCmdPair;
-static const ADCCmdPair ADCCmdCList[] = {
-	ADCCmdPair(TempFPGA, "temp_fpga"),
-	ADCCmdPair(TempFPGAExt, "temp_fpgaext"),
-	ADCCmdPair(Temp10GE, "temp_10ge"),
-	ADCCmdPair(TempDCDC, "temp_dcdc"),
-	ADCCmdPair(TempSODL, "temp_sodl"),
-	ADCCmdPair(TempSODR, "temp_sodr"),
-	ADCCmdPair(TempFPGAFL, "temp_fpgafl"),
-	ADCCmdPair(TempFPGAFR, "temp_fpgafr"),
-};
-ADCCmdMapType lima::SlsDetector::Defs::ADCCmdMap(C_LIST_ITERS(ADCCmdCList));
 
 ostream& lima::SlsDetector::Defs::operator <<(ostream& os, ADCIndex adc_idx)
 {
@@ -187,7 +108,6 @@ ostream& lima::SlsDetector::Defs::operator <<(ostream& os, ClockDiv clock_div)
 	case FullSpeed:		name = "FullSpeed";		break;
 	case HalfSpeed:		name = "HalfSpeed";		break;
 	case QuarterSpeed:	name = "QuarterSpeed";		break;
-	case SuperSlowSpeed:	name = "SuperSlowSpeed";	break;
 	}
 	return os << name;
 }
@@ -203,28 +123,6 @@ ostream& lima::SlsDetector::Defs::operator <<(ostream& os, DetStatus status)
 	case Transmitting:	name = "Transmitting";		break;
 	case Running:		name = "Running";		break;
 	case Stopped:		name = "Stopped";		break;
-	}
-	return os << name;
-}
-
-ostream& lima::SlsDetector::Defs::operator <<(ostream& os, 
-					      NetworkParameter net_param)
-{
-	const char *name = "Unknown";
-	switch (net_param) {
-	case DetectorMAC:	name = "DetectorMAC";		break;
-	case DetectorIP:	name = "DetectorIP";		break;
-	case RecvHostName:	name = "RecvHostName";		break;
-	case RecvUDPIP:		name = "RecvUDPIP";		break;
-	case RecvUDPPort:	name = "RecvUDPPort";		break;
-	case RecvUDPMAC:	name = "RecvUDPMAC";		break;
-	case RecvUDPPort2:	name = "RecvUDPPort2";		break;
-	case DetTxDelayLeft:	name = "DetTxDelayLeft";	break;
-	case DetTxDelayRight:	name = "DetTxDelayRight";	break;
-	case DetTxDelayFrame:	name = "DetTxDelayFrame";	break;
-	case FlowCtrl10G:	name = "FlowCtrl10G";		break;
-	case FlowCtrlWrPtr:	name = "FlowCtrlWrPtr";		break;
-	case FlowCtrlRdPtr:	name = "FlowCtrlRdPtr";		break;
 	}
 	return os << name;
 }

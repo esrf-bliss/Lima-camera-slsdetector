@@ -37,7 +37,7 @@ class Eiger : public SlsDetector::Model
 
  public:
 	enum ParallelMode {
-		NonParallel, Parallel, Safe,
+		NonParallel, Parallel,
 	};
 
 	class Correction : public LinkTask
@@ -80,8 +80,8 @@ class Eiger : public SlsDetector::Model
 	void setSubExpTime(double  sub_exp_time);
 	void getSubExpTime(double& sub_exp_time /Out/);
 
-	void setAllTrimBits(int sub_mod_idx, int  val);
-	void getAllTrimBits(int sub_mod_idx, int& val /Out/);
+	void setAllTrimBits(int mod_idx, int  val);
+	void getAllTrimBits(int mod_idx, int& val /Out/);
 	void getAllTrimBitsList(std::vector<int>& val_list /Out/);
 
 	void setHighVoltage(int  hvolt);
