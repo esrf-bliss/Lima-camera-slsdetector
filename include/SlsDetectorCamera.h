@@ -26,7 +26,6 @@
 #include "SlsDetectorArgs.h"
 #include "SlsDetectorReceiver.h"
 #include "SlsDetectorCPUAffinity.h"
-#include "SlsDetectorBebTools.h"
 
 #include "sls/Detector.h"
 
@@ -170,13 +169,6 @@ private:
 	typedef std::queue<int> FrameQueue;
 	typedef std::vector<AutoPtr<Receiver> > RecvList;
 
-	struct Beb {
-		BebShell shell;
-		BebFpgaMem fpga_mem;
-		Beb(const std::string& host_name);
-	};
-	typedef std::vector<AutoPtr<Beb> > BebList;
-
 	struct AppInputData
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Camera::AppInputData", 
@@ -292,8 +284,6 @@ private:
 	}
 
 	void setReceiverFifoDepth(int fifo_depth);
-	bool isTenGigabitEthernetEnabled();
-	void setFlowControl10G(bool enabled);
 	void resetFramesCaught();
 
 	int m_det_id;
@@ -301,7 +291,6 @@ private:
 	Cond m_cond;
 	AutoPtr<AppInputData> m_input_data;
 	AutoPtr<sls::Detector> m_det;
-	BebList m_beb_list;
 	FrameMap m_frame_map;
 	RecvList m_recv_list;
 	TrigMode m_trig_mode;

@@ -24,6 +24,7 @@
 #define __SLS_DETECTOR_EIGER_H
 
 #include "SlsDetectorCamera.h"
+#include "SlsDetectorBebTools.h"
 
 #include "processlib/LinkTask.h"
 
@@ -264,6 +265,9 @@ class Eiger : public Model
 	void setTxFrameDelay(int  tx_frame_delay);
 	void getTxFrameDelay(int& tx_frame_delay);
 
+	bool isTenGigabitEthernetEnabled();
+	void setFlowControl10G(bool enabled);
+
 	Geometry *getGeometry()
 	{ return &m_geom; }
 
@@ -290,6 +294,13 @@ class Eiger : public Model
  private:
 	friend class Correction;
 	friend class CorrBase;
+
+	struct Beb {
+		BebShell shell;
+		BebFpgaMem fpga_mem;
+		Beb(const std::string& host_name);
+	};
+	typedef std::vector<AutoPtr<Beb> > BebList;
 
 	class Recv
 	{
@@ -601,6 +612,7 @@ class Eiger : public Model
 	static const unsigned long BebFpgaPtrRange;
 
 	Cond m_cond;
+	BebList m_beb_list;
 	Geometry m_geom;
 	CorrList m_corr_list;
 	RecvList m_recv_list;

@@ -682,12 +682,14 @@ class SlsDetectorClass(PyTango.DeviceClass):
 _SlsDetectorCam = None
 _SlsDetectorHwInter = None
 _SlsDetectorEiger = None
+_SlsDetectorJungfrau = None
 _SlsDetectorCorrection = None
 _SlsDetectorControl = None
 
 def get_control(config_fname, full_config_fname=None, apply_corrections=None,
                 **keys) :
-    global _SlsDetectorCam, _SlsDetectorHwInter, _SlsDetectorEiger
+    global _SlsDetectorCam, _SlsDetectorHwInter
+    global _SlsDetectorEiger, _SlsDetectorJungfrau
     global _SlsDetectorCorrection, _SlsDetectorControl
 
     def to_bool(x, default_val=False):
@@ -715,15 +717,19 @@ def get_control(config_fname, full_config_fname=None, apply_corrections=None,
 
         det_id = 0
         _SlsDetectorCam = SlsDetectorHw.Camera(config_fname, det_id)
-        for i, n in enumerate(_SlsDetectorCam.getHostnameList()):
-            print('Enabling: %s (%d)' % (n, i))
-            _SlsDetectorCam.setModuleActive(i, True)
+        det_type = _SlsDetectorCam.getType()
+        if det_type == SlsDetectorHw.EigerDet:
+            for i, n in enumerate(_SlsDetectorCam.getHostnameList()):
+                print('Enabling: %s (%d)' % (n, i))
+                _SlsDetectorCam.setModuleActive(i, True)
 
         _SlsDetectorHwInter = SlsDetectorHw.Interface(_SlsDetectorCam)
-        if _SlsDetectorCam.getType() == SlsDetectorHw.EigerDet:
+        if det_type == SlsDetectorHw.EigerDet:
             _SlsDetectorEiger = SlsDetectorHw.Eiger(_SlsDetectorCam)
             if apply_corrections:
                 _SlsDetectorCorrection = _SlsDetectorEiger.createCorrectionTask()
+        elif det_type == SlsDetectorHw.JungfrauDet:
+            _SlsDetectorJungfrau = SlsDetectorHw.Jungfrau(_SlsDetectorCam)
         else:
             raise ValueError("Unknown detector type: %s" %
                              _SlsDetectorCam.getType())

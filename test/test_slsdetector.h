@@ -24,7 +24,6 @@
 #define __TEST_SLS_DETECTOR_H
 
 #include "SlsDetectorCamera.h"
-#include "SlsDetectorEiger.h"
 #include "lima/AcqState.h"
 
 #include <cstdlib>

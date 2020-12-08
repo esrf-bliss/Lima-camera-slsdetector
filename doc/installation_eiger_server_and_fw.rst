@@ -299,12 +299,11 @@ as well as the kernel image:
         [ -n "${EIGER_MODULES}" ] || . ${EIGER_HOME}/eiger_setup.sh
         base_dir="${HOME}/eiger/log/${EIGER_DETECTOR}"
 
-        cd ${SLS_DETECTORS}/eiger/config
-        fw_ver=$(cat detector/${EIGER_DETECTOR}/setup/${EIGER_DETECTOR_SETUP}/\
-    detector/fw)
+        cd ${SLS_DETECTORS}/config/eiger
+        detector_dir="detector/${EIGER_DETECTOR}/setup/${EIGER_DETECTOR_SETUP}/detector"
+        fw_ver=$(cat ${detector_dir}/fw)
         fw_dir="fw/${fw_ver}"
-        flash_config="detector/${EIGER_DETECTOR}/setup/${EIGER_DETECTOR_SETUP}/\
-    detector/flash.config"
+        flash_config="${detector_dir}/flash.config"
 
         fpga_type=$(python <<EOF
     from configparser import ConfigParser

@@ -600,6 +600,11 @@ FrameDim Eiger::Geometry::getRecvFrameDim(bool raw)
 	return frame_dim;
 }
 
+Eiger::Beb::Beb(const std::string& host_name)
+	: shell(host_name), fpga_mem(shell)
+{
+}
+
 Eiger::Recv::Recv(Eiger *eiger, int idx)
 	: m_eiger(eiger), m_idx(idx)
 {
@@ -719,6 +724,13 @@ Eiger::Eiger(Camera *cam)
 	int nb_det_modules = getNbDetModules();
 	DEB_TRACE() << "Using Eiger detector, " << DEB_VAR1(nb_det_modules);
 
+	NameList host_name_list = getCamera()->getHostnameList();
+	NameList::const_iterator it, end = host_name_list.end();
+	for (it = host_name_list.begin(); it != end; ++it) {
+		Beb *beb = new Beb(*it);
+		m_beb_list.push_back(beb);
+	}
+
 	m_geom.setNbRecvs(nb_det_modules);
 
 	for (int i = 0; i < nb_det_modules; ++i) {
@@ -727,6 +739,11 @@ Eiger::Eiger(Camera *cam)
 	}
 
 	setNbProcessingThreads(1);
+
+	if (isTenGigabitEthernetEnabled()) {
+		DEB_TRACE() << "Forcing 10G Ethernet flow control";
+		setFlowControl10G(true);
+	}
 
 	updateCameraModel();
 
@@ -1265,6 +1282,23 @@ void Eiger::setThreadCPUAffinity(const CPUAffinityList& aff_list)
 		(*it)->setCPUAffinity(*rit);
 }
 
+bool Eiger::isTenGigabitEthernetEnabled()
+{
+	DEB_MEMBER_FUNCT();
+	bool enabled;
+	const char *err_msg = "Ten-giga is different";
+	EXC_CHECK(enabled = m_det->getTenGiga().tsquash(err_msg));
+	DEB_RETURN() << DEB_VAR1(enabled);
+	return enabled;
+}
+
+void Eiger::setFlowControl10G(bool enabled)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(enabled);
+	EXC_CHECK(m_det->setTenGigaFlowControl(enabled));
+}
+
 void Eiger::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
@@ -1462,9 +1496,8 @@ double Eiger::getBorderCorrFactor(int /*det*/, int line)
 void Eiger::getFpgaFramePtrDiff(PtrDiffList& ptr_diff)
 {
 	DEB_MEMBER_FUNCT();
-	Camera::BebList& beb_list = getCamera()->m_beb_list;
-	for (unsigned int i = 0; i != beb_list.size(); ++i) {
-		BebFpgaMem& fpga_mem = beb_list[i]->fpga_mem;
+	for (unsigned int i = 0; i != m_beb_list.size(); ++i) {
+		BebFpgaMem& fpga_mem = m_beb_list[i]->fpga_mem;
 		unsigned long wr_ptr = fpga_mem.read(BebFpgaWritePtrAddr);
 		unsigned long rd_ptr = fpga_mem.read(BebFpgaReadPtrAddr);
 		if (rd_ptr > wr_ptr)

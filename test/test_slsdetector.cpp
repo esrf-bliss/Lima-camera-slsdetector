@@ -22,6 +22,9 @@
 
 #include "test_slsdetector.h"
 
+#include "SlsDetectorEiger.h"
+#include "SlsDetectorJungfrau.h"
+
 using namespace std;
 using namespace lima;
 using namespace lima::SlsDetector;
@@ -46,7 +49,7 @@ TestApp::Pars::Pars()
 void TestApp::Pars::loadDefaults()
 {
 	DEB_MEMBER_FUNCT();
-	config_fname = getenv("EIGER_CONFIG");
+	config_fname = getenv("SLSDETECTOR_CONFIG");
 	nb_frames = 10;
 	exp_time = 2.0e-3;
 	frame_period = 2.5e-3;
@@ -142,10 +145,13 @@ TestApp::TestApp(int argc, char *argv[])
 	m_cam->setBufferCtrlObj(m_buffer_ctrl_obj);
 
 	Type det_type = m_cam->getType();
-	if (det_type != EigerDet)
+	if (det_type == EigerDet) {
+		m_model = new Eiger(m_cam);
+	} else if (det_type == JungfrauDet) {
+		m_model = new Jungfrau(m_cam);
+	} else
 		THROW_HW_ERROR(Error) << "Unknown detector: " << det_type;
 
-	m_model = new Eiger(m_cam);
 }
 
 void TestApp::run()
@@ -159,7 +165,7 @@ void TestApp::run()
 		m_cam->setRawMode(m_pars.raw_mode);
 
 		FrameDim frame_dim;
-		m_cam->getFrameDim(frame_dim);
+		m_cam->getFrameDim(frame_dim, m_pars.raw_mode);
 		m_buffer_ctrl_obj->setFrameDim(frame_dim);
 		int max_buffers;
 		m_buffer_ctrl_obj->getMaxNbBuffers(max_buffers);
@@ -218,7 +224,7 @@ void TestApp::save_raw_data(int start_frame, int nb_frames)
 
 	for (int i = 0; i < nb_frames; ++i) {
 		ostringstream os;
-		os << m_pars.out_dir << "/eiger.bin." << i;
+		os << m_pars.out_dir << "/slsdetector.bin." << i;
 		DEB_TRACE() << "Saving raw to " << os.str();
 		ofstream of(os.str().c_str());
 		void *buffer = m_buffer_ctrl_obj->getFramePtr(start_frame + i);
@@ -230,7 +236,7 @@ void TestApp::save_edf_data(int start_frame, int nb_frames)
 {
 	DEB_MEMBER_FUNCT();
 	ostringstream os;
-	os << m_pars.out_dir << "/eiger.edf";
+	os << m_pars.out_dir << "/slsdetector.edf";
 	DEB_TRACE() << "Saving EDF to " << os.str();
 	ofstream of(os.str().c_str());
 	for (int i = 0; i < nb_frames; ++i)

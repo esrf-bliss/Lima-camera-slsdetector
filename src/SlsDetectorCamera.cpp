@@ -66,28 +66,26 @@ void Camera::AppInputData::parseConfigFile()
 				const SingleMatch& single_match = full_match[1];
 				host_name_list.push_back(single_match);
 			}
+			DEB_TRACE() << DEB_VAR1(host_name_list);
 			continue;
 		}
 
-		re = "([0-9]+):rx_tcpport";
+		re = "(([0-9]+):)?rx_tcpport";
 		if (re.match(s, full_match)) {
-			istringstream is(full_match[1]);
-			int id;
-			is >> id;
-			if (id < 0)
-				THROW_HW_FATAL(InvalidValue) << 
-					"Invalid detector id: " << id;
+			int id = 0;
+			if (full_match[2].found()) {
+				istringstream is(full_match[2]);
+				is >> id;
+				if (id < 0)
+					THROW_HW_FATAL(InvalidValue) << 
+						"Invalid detector id: " << id;
+			}
 			int rx_tcpport;
 			config_file >> rx_tcpport;
 			recv_port_map[id] = rx_tcpport;
 			continue;
 		}
 	}
-}
-
-Camera::Beb::Beb(const std::string& host_name)
-	: shell(host_name), fpga_mem(shell)
-{
 }
 
 Camera::AcqThread::ExceptionCleanUp::ExceptionCleanUp(AcqThread& thread,
@@ -373,17 +371,6 @@ Camera::Camera(string config_fname, int det_id)
 	setNbFrames(1);
 	setExpTime(0.99);
 	setFramePeriod(1.0);
-
-	if (isTenGigabitEthernetEnabled()) {
-		DEB_TRACE() << "Forcing 10G Ethernet flow control";
-		setFlowControl10G(true);
-	}
-
-	for (int i = 0; i < getNbDetModules(); ++i) {
-		const string& host_name = m_input_data->host_name_list[i];
-		Beb *beb = new Beb(host_name);
-		m_beb_list.push_back(beb);
-	}
 }
 
 Camera::~Camera()
@@ -1325,23 +1312,6 @@ void Camera::setReceiverFifoDepth(int fifo_depth)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(fifo_depth);
 	EXC_CHECK(m_det->setRxFifoDepth(fifo_depth));
-}
-
-bool Camera::isTenGigabitEthernetEnabled()
-{
-	DEB_MEMBER_FUNCT();
-	bool enabled;
-	const char *err_msg = "Ten-giga is different";
-	EXC_CHECK(enabled = m_det->getTenGiga().tsquash(err_msg));
-	DEB_RETURN() << DEB_VAR1(enabled);
-	return enabled;
-}
-
-void Camera::setFlowControl10G(bool enabled)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(enabled);
-	EXC_CHECK(m_det->setTenGigaFlowControl(enabled));
 }
 
 void Camera::resetFramesCaught()
