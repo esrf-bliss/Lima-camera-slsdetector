@@ -445,8 +445,11 @@ class SystemCPUAffinityMgr
 				} netdev_affinity;
 			} u;
 
-			Packet(Cmd c=Init) : cmd(c)
-			{ memset(&u, 0, sizeof(u)); }
+			Packet(Cmd c=Init)
+			{
+				memset(this, 0, sizeof(Packet));
+				cmd = c;
+			}
 		};
 		typedef NetDevRxQueueAffinityMap NetDevAffinityMap;
 		typedef Packet::Union::NetDevAffinity PacketNetDevAffinity;
