@@ -525,11 +525,14 @@ string Camera::getCmd(const string& s, int idx)
 	string::size_type p = s.find(':');
 	string raw_s = s.substr((p == string::npos) ? 0 : (p + 1));
 	DEB_TRACE() << DEB_VAR2(s, raw_s);
-	if (r.find(raw_s + ' ') != 0)
-		THROW_HW_ERROR(Error) << "Invalid response: " << r;
-	string::size_type e = raw_s.size() + 1;
-	p = r.find('\n', e);
-	r = r.substr(e, (p == string::npos) ? p : (p - e));
+	bool multi_line = ((s == "list") || (s == "versions"));
+	if (!multi_line) {
+		if (r.find(raw_s + ' ') != 0)
+			THROW_HW_ERROR(Error) << "Invalid response: " << r;
+		string::size_type e = raw_s.size() + 1;
+		p = r.find('\n', e);
+		r = r.substr(e, (p == string::npos) ? p : (p - e));
+	}
 	DEB_RETURN() << DEB_VAR1(r);
 	return r;
 }
