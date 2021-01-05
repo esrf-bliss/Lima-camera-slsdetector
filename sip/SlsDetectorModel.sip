@@ -44,6 +44,9 @@ public:
 	SlsDetector::Camera *getCamera();
 	SlsDetector::Type getType();
 
+	virtual void setNbUDPInterfaces(int  nb_udp_ifaces);
+	virtual void getNbUDPInterfaces(int& nb_udp_ifaces /Out/);
+
 	virtual std::string getName() = 0;
 	virtual void getPixelSize(double& x_size /Out/,
 				  double& y_size /Out/) = 0;

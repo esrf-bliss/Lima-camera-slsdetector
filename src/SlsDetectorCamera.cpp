@@ -427,6 +427,12 @@ void Camera::setModel(Model *model)
 	if (!m_model)
 		return;
 
+	int nb_udp_ifaces;
+	m_model->getNbUDPInterfaces(nb_udp_ifaces);
+	DEB_ALWAYS() << "Using " << m_model->getName()
+		     << " with " << getNbDetModules() << "x" << nb_udp_ifaces
+		     << " UDP interfaces";
+
 	int nb_items = m_model->getNbFrameMapItems();
 	m_frame_map.setNbItems(nb_items);
 	m_model->updateFrameMapItems(&m_frame_map);

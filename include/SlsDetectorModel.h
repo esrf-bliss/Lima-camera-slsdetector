@@ -61,6 +61,9 @@ class Model
 	int getNbDetModules()
 	{ return m_nb_det_modules; }
 
+	virtual void setNbUDPInterfaces(int  nb_udp_ifaces);
+	virtual void getNbUDPInterfaces(int& nb_udp_ifaces);
+
 	virtual std::string getName() = 0;
 	virtual void getPixelSize(double& x_size, double& y_size) = 0;
 
@@ -107,6 +110,7 @@ class Model
 	Camera *m_cam;
 	Type m_type;
 	int m_nb_det_modules;
+	int m_nb_udp_ifaces;
 
  protected:
 	AutoPtr<sls::Detector> m_det;

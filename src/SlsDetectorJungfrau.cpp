@@ -171,7 +171,7 @@ void Jungfrau::getDACInfo(NameList& name_list, IntList& idx_list,
 	DEB_MEMBER_FUNCT();
 
 #define JUNGFRAU_DAC(x)			{x, 0}
-#define JUNGFRAU_DAC_MV(x)			{x, 1}
+#define JUNGFRAU_DAC_MV(x)		{x, 1}
 
 	static struct DACData {
 		DACIndex idx;
@@ -240,9 +240,12 @@ void Jungfrau::getTimeRanges(TimeRanges& time_ranges)
 {
 	DEB_MEMBER_FUNCT();
 
-	double min_exp = 10;
-	double min_period = 1000;
-	double min_lat = 500;
+	int nb_udp_ifaces;
+	getNbUDPInterfaces(nb_udp_ifaces);
+
+	double min_exp = 0.1;
+	double min_period = 1000 / nb_udp_ifaces;
+	double min_lat = 0.1;
 
 	time_ranges.min_exp_time = min_exp * 1e-6;
 	time_ranges.max_exp_time = 1e3;
@@ -374,12 +377,17 @@ void Jungfrau::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
 
-	m_in_process.clear();
-
+	FrameType nb_frames;
 	Camera *cam = getCamera();
-	cam->getNbFrames(m_nb_frames);
-	m_next_frame = 0;
-	m_last_frame = -1;
+	cam->getNbFrames(nb_frames);
+
+	{
+		AutoMutex l = lock();
+		m_in_process.clear();
+		m_nb_frames = nb_frames;
+		m_next_frame = 0;
+		m_last_frame = -1;
+	}
 
 	ThreadList::iterator tit, tend = m_thread_list.end();
 	for (tit = m_thread_list.begin(); tit != tend; ++tit)

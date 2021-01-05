@@ -34,6 +34,10 @@ Model::Model(Camera *cam, Type type)
 	DEB_PARAM() << DEB_VAR1(type);
 
 	m_nb_det_modules = m_cam->getNbDetModules();
+	sls::Result<int> res;
+	EXC_CHECK(res = m_det->getNumberofUDPInterfaces());
+	const char *err_msg = "Numbers of UDP interfaces are different";
+	EXC_CHECK(m_nb_udp_ifaces = res.tsquash(err_msg));
 }
 
 Model::~Model()
@@ -47,8 +51,26 @@ Model::~Model()
 void Model::updateCameraModel()
 {
 	DEB_MEMBER_FUNCT();
-	m_cam->setModel(this);	
+	m_cam->setModel(this);
 }
+
+void Model::setNbUDPInterfaces(int nb_udp_ifaces)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(nb_udp_ifaces);
+	if (nb_udp_ifaces != m_nb_udp_ifaces)
+		THROW_HW_ERROR(NotSupported)
+			<< "Invalid number of UDP interfaces: " << nb_udp_ifaces
+			<< ", only " << m_nb_udp_ifaces << " supported";
+}
+
+void Model::getNbUDPInterfaces(int& nb_udp_ifaces)
+{
+	DEB_MEMBER_FUNCT();
+	nb_udp_ifaces = m_nb_udp_ifaces;
+	DEB_RETURN() << DEB_VAR1(nb_udp_ifaces);
+}
+
 
 void Model::updateTimeRanges()
 {
