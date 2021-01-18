@@ -110,7 +110,8 @@ unsigned long BebFpgaMem::read(unsigned long addr)
 	is >> hex >> phys_addr >> virt_addr >> val;
 	if (phys_addr != addr)
 		THROW_HW_ERROR(Error) << "addr mismatch: " 
-				      << DEB_VAR2(phys_addr, addr);
+				      << DEB_VAR2(DebHex(phys_addr),
+						  DebHex(addr));
 	DEB_RETURN() << DEB_VAR1(DEB_HEX(val));
 	return val;
 }
