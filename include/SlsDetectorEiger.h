@@ -153,11 +153,7 @@ class Eiger : public Model
 			{
 				Port *port = m_port_list[0];
 				Port::LocationData& dst = port->m_dst;
-				int off = dst.off;
-				// do not include bottom-half interchip vert gap
-				if (!port->m_top_half_recv)
-					off -= (ChipGap / 2) * dst.lw;
-				return off;
+				return dst.off;
 			}
 
 		private:
