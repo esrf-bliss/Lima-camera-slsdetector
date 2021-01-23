@@ -115,6 +115,10 @@ inline bool Receiver::readRecvImage(FrameType lima_frame, FrameType det_frame,
 	}
 
 	sls_receiver_header& header = image_data->header;
+	DEB_TRACE() << DEB_VAR4(header.detHeader.frameNumber,
+				header.detHeader.modId,
+				header.detHeader.row,
+				header.detHeader.column);
 	FrameType recv_frame = header.detHeader.frameNumber;
 	if (recv_frame > m_cam->m_det_nb_frames)
 		THROW_HW_ERROR(Error) << "Invalid frame: " 
