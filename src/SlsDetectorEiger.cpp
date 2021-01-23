@@ -753,6 +753,7 @@ Eiger::Eiger(Camera *cam)
 Eiger::~Eiger()
 {
 	DEB_DESTRUCTOR();
+	getCamera()->waitAcqState(Idle);
 	removeAllCorr();
 }
 

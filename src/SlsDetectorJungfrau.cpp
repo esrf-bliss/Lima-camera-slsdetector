@@ -127,6 +127,7 @@ Jungfrau::Jungfrau(Camera *cam)
 Jungfrau::~Jungfrau()
 {
 	DEB_DESTRUCTOR();
+	getCamera()->waitAcqState(Idle);
 }
 
 void Jungfrau::getFrameDim(FrameDim& frame_dim, bool raw)
