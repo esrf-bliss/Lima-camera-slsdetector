@@ -105,6 +105,8 @@ enum DetStatus {
 	Stopped      = slsDetectorDefs::STOPPED,
 };
 
+typedef slsDetectorDefs::xy xy;
+
 std::ostream& operator <<(std::ostream& os, TrigMode trig_mode);
 std::ostream& operator <<(std::ostream& os, Settings settings);
 std::ostream& operator <<(std::ostream& os, DACIndex dac_idx);

@@ -83,6 +83,30 @@ class Jungfrau : public Model
 	virtual void stopAcq();
 
  private:
+	class Recv
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::Recv", "SlsDetector");
+	public:
+		typedef Receiver::ImageData RecvImageData;
+
+		Recv(Jungfrau *jungfrau, int idx);
+
+		void prepareAcq();
+
+		bool processOneFrame(FrameType frame, char *bptr);
+		void processBadFrame(FrameType frame, char *bptr);
+
+	private:
+		Jungfrau *m_jungfrau;
+		int m_idx;
+		bool m_raw;
+		Receiver *m_recv;
+		FrameDim m_frame_dim;
+		int m_data_offset;
+	};
+
+	typedef std::vector<AutoPtr<Recv> > RecvList;
+
 	class Thread : public lima::Thread
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::Thread", "SlsDetector");
@@ -134,6 +158,15 @@ class Jungfrau : public Model
 	};
 	typedef std::vector<AutoPtr<Thread> > ThreadList;
 
+	int getNbJungfrauModules()
+	{ return getNbDetModules(); }
+
+	template <class DG>
+	Defs::xy getModulePosition(const DG& det_geom, int idx);
+
+	FrameDim getModuleFrameDim(int idx, bool raw);
+	int getModuleDataOffset(int idx, bool raw);
+
 	AutoMutex lock()
 	{ return AutoMutex(m_cond.mutex()); }
 	void wait()
@@ -144,17 +177,15 @@ class Jungfrau : public Model
 	bool allFramesAcquired()
 	{ return m_next_frame == m_nb_frames; }
 
+	int getNbRecvs();
+
 	int getNbProcessingThreads();
 	void setNbProcessingThreads(int nb_proc_threads);
 
 	void processOneFrame(AutoMutex& l);
 
-	static const int ChipSize;
-	static const int ChipGap;
-	static const int HalfModuleChips;
-
 	Cond m_cond;
-	Receiver *m_recv;
+	RecvList m_recv_list;
 	FrameType m_nb_frames;
 	FrameType m_next_frame;
 	FrameType m_last_frame;

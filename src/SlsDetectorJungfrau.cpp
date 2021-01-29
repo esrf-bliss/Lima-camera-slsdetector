@@ -23,6 +23,8 @@
 #include "SlsDetectorJungfrau.h"
 #include "lima/MiscUtils.h"
 
+#include "sls/Geometry.h"
+
 #include <emmintrin.h>
 #include <sched.h>
 
@@ -31,9 +33,44 @@ using namespace lima;
 using namespace lima::SlsDetector;
 using namespace lima::SlsDetector::Defs;
 
-const int Jungfrau::ChipSize = 256;
-const int Jungfrau::ChipGap = 2;
-const int Jungfrau::HalfModuleChips = 4;
+
+Jungfrau::Recv::Recv(Jungfrau *jungfrau, int idx)
+	: m_jungfrau(jungfrau), m_idx(idx)
+{
+	DEB_CONSTRUCTOR();
+	DEB_PARAM() << DEB_VAR1(m_idx);
+
+	Camera *cam = m_jungfrau->getCamera(); 
+	m_recv = cam->getRecv(m_idx);
+}
+
+void Jungfrau::Recv::prepareAcq()
+{
+	DEB_MEMBER_FUNCT();
+	m_jungfrau->getCamera()->getRawMode(m_raw);
+	m_frame_dim = m_jungfrau->getModuleFrameDim(m_idx, m_raw);
+	m_data_offset = m_jungfrau->getModuleDataOffset(m_idx, m_raw);
+	DEB_TRACE() << DEB_VAR3(m_idx, m_frame_dim, m_data_offset);
+}
+
+bool Jungfrau::Recv::processOneFrame(FrameType frame, char *bptr)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(m_idx, frame);
+	RecvImageData data;
+	data.frame = frame;
+	data.buffer = bptr + m_data_offset;
+	return m_recv->getImage(data);
+}
+
+void Jungfrau::Recv::processBadFrame(FrameType frame, char *bptr)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(m_idx, frame);
+	if (!m_raw)
+		THROW_HW_ERROR(NotSupported) << "Bad Frames in assembled mode";
+	memset(bptr + m_data_offset, 0xff, m_frame_dim.getMemSize());
+}
 
 Jungfrau::Thread::Thread(Jungfrau *jungfrau, int idx)
 	: m_jungfrau(jungfrau), m_idx(idx)
@@ -112,12 +149,13 @@ Jungfrau::Jungfrau(Camera *cam)
 	DEB_CONSTRUCTOR();
 
 	int nb_det_modules = getNbDetModules();
-	if (nb_det_modules > 1)
-		THROW_HW_ERROR(NotSupported) << "Multimodule not supported yet";
 
 	DEB_TRACE() << "Using Jungfrau detector, " << DEB_VAR1(nb_det_modules);
 
-	m_recv = cam->getRecv(0);
+	for (int i = 0; i < nb_det_modules; ++i) {
+		Recv *r = new Recv(this, i);
+		m_recv_list.push_back(r);
+	}
 
 	setNbProcessingThreads(1);
 
@@ -130,15 +168,88 @@ Jungfrau::~Jungfrau()
 	getCamera()->waitAcqState(Idle);
 }
 
+#define applyDetGeom(f, raw)						\
+	using namespace sls::Geom::Jungfrau;				\
+	int ifaces;							\
+	getNbUDPInterfaces(ifaces);					\
+	auto any_nb_ifaces = AnyNbUDPIfacesFromNbUDPIfaces(ifaces);	\
+	std::visit([&](auto nb) {					\
+	    constexpr int nb_udp_ifaces = nb;				\
+	    Defs::xy det_size = m_det->getDetectorSize();		\
+	    auto any_geom = AnyDetGeomFromDetSize<nb_udp_ifaces>({det_size.x, \
+								  det_size.y});\
+	    std::visit([&](auto geom) {					\
+	        if (raw)						\
+			f(geom.raw_geom);				\
+		else							\
+			f(geom.asm_wg_geom);				\
+	      }, any_geom);						\
+	  }, any_nb_ifaces);
+
 void Jungfrau::getFrameDim(FrameDim& frame_dim, bool raw)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(raw);
-	Size size = Point(ChipSize, ChipSize) * Point(HalfModuleChips, 2);
-	if (!raw)
-		size += Point(ChipGap, ChipGap) * Point(3, 1);
+	Size size;
+	auto f = [&](auto det_geom) {
+		size = Size(det_geom.size.x, det_geom.size.y);
+		DEB_TRACE() << DEB_VAR1(size);
+	};
+	applyDetGeom(f, raw);
 	frame_dim = FrameDim(size, Bpp16);
 	DEB_RETURN() << DEB_VAR1(frame_dim);
+}
+
+template <class DG>
+Defs::xy Jungfrau::getModulePosition(const DG& det_geom, int idx)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(idx);
+	Defs::xy mod_pos;
+	auto det_mods = det_geom.det_mods;
+	// module ID is column-wise
+	mod_pos.x = idx / det_mods.y;
+	mod_pos.y = idx % det_mods.y;
+	DEB_RETURN() << DEB_VAR2(mod_pos.x, mod_pos.y);
+	return mod_pos;
+}
+
+FrameDim Jungfrau::getModuleFrameDim(int idx, bool raw)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(idx, raw);
+	Size size;
+	auto f = [&](auto det_geom) {
+		auto mod_geom = det_geom.getModGeom({0, 0});
+		bool last_x = true;  // only raw mode supported
+		bool last_y = (idx == getNbJungfrauModules() - 1);
+		size = Size(!last_x ? det_geom.mod_step.x : mod_geom.size.x,
+			    !last_y ? det_geom.mod_step.y : mod_geom.size.y);
+		DEB_TRACE() << DEB_VAR1(size);
+	};
+	applyDetGeom(f, raw);
+	FrameDim frame_dim(size, Bpp16);
+	DEB_RETURN() << DEB_VAR1(frame_dim);
+	return frame_dim;
+}
+
+int Jungfrau::getModuleDataOffset(int idx, bool raw)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(idx, raw);
+	int data_offset;
+	auto f = [&](auto det_geom) {
+		auto mod_pos = getModulePosition(det_geom, idx);
+		auto mod_view = det_geom.getModView({mod_pos.x,
+					mod_pos.y});
+		auto origin = mod_view.calcViewOrigin();
+		int pixel_offset = mod_view.calcMapPixelIndex(origin);
+		data_offset = pixel_offset * sls::Geom::Pixel16::depth();
+		DEB_TRACE() << DEB_VAR1(data_offset);
+	};
+	applyDetGeom(f, raw);
+	DEB_RETURN() << DEB_VAR1(data_offset);
+	return data_offset;
 }
 
 string Jungfrau::getName()
@@ -334,6 +445,14 @@ void Jungfrau::getThresholdEnergy(int& thres)
 	DEB_RETURN() << DEB_VAR1(thres);
 }
 
+int Jungfrau::getNbRecvs()
+{
+	DEB_MEMBER_FUNCT();
+	int nb_recvs = m_recv_list.size();
+	DEB_RETURN() << DEB_VAR1(nb_recvs);
+	return nb_recvs;
+}
+
 void Jungfrau::setNbProcessingThreads(int nb_proc_threads)
 {
 	DEB_MEMBER_FUNCT();
@@ -389,6 +508,10 @@ void Jungfrau::prepareAcq()
 		m_next_frame = 0;
 		m_last_frame = -1;
 	}
+
+	RecvList::iterator rit, rend = m_recv_list.end();
+	for (rit = m_recv_list.begin(); rit != rend; ++rit)
+		(*rit)->prepareAcq();
 
 	ThreadList::iterator tit, tend = m_thread_list.end();
 	for (tit = m_thread_list.begin(); tit != tend; ++tit)
@@ -447,11 +570,20 @@ void Jungfrau::processOneFrame(AutoMutex& l)
 
 	{
 		AutoMutexUnlock u(l);
-		Receiver::ImageData data;
-		data.frame = frame;
-		data.buffer = getFrameBufferPtr(frame);
-		if (!m_recv->getImage(data))
+		std::bitset<64> ok;
+		int nb_recvs = getNbRecvs();
+		if (nb_recvs > 64)
+			THROW_HW_ERROR(Error) << "Too many receivers";
+		char *bptr = getFrameBufferPtr(frame);
+		for (int i = 0; i < nb_recvs; ++i)
+			ok[i] = m_recv_list[i]->processOneFrame(frame, bptr);
+
+		if (ok.none())
 			return;
+
+		for (int i = 0; i < nb_recvs; ++i)
+			if (!ok[i])
+				m_recv_list[i]->processBadFrame(frame, bptr);
 	}
 
 	if ((int(m_last_frame) == -1) || (frame > m_last_frame))
