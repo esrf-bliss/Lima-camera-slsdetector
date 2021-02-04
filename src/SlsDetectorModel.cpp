@@ -115,3 +115,11 @@ void Model::processFinishInfo(const FinishInfo& finfo)
 		m_cam->reportException(e, "Model::processFinishInfo");
 	}
 }
+
+bool Model::isAcqActive()
+{
+	DEB_MEMBER_FUNCT();
+	bool acq_active = (m_cam->getDetStatus() == Defs::Running);
+	DEB_RETURN() << DEB_VAR1(acq_active);
+	return acq_active;
+}

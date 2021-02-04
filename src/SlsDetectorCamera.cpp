@@ -299,7 +299,7 @@ void Camera::AcqThread::stopAcq()
 		DEB_TRACE() << "calling stopDetector";
 		det->stopDetector();
 		Timestamp t0 = Timestamp::now();
-		while (m_cam->getDetStatus() != Defs::Idle)
+		while (m_cam->m_model->isAcqActive())
 			Sleep(m_cam->m_abort_sleep_time);
 		double milli_sec = (Timestamp::now() - t0) * 1e3;
 		DEB_TRACE() << "Abort -> Idle: " << DEB_VAR1(milli_sec);

@@ -80,6 +80,7 @@ class Model
 	virtual void processBadItemFrame(FrameType frame, int item,
 					 char *bptr) = 0;
 
+	virtual bool isAcqActive();
 	virtual bool isXferActive() = 0;
 
 	virtual void setThreadCPUAffinity(const CPUAffinityList& aff_list) = 0;
