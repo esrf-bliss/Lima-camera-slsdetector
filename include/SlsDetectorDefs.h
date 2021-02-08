@@ -204,6 +204,7 @@ std::ostream& operator <<(std::ostream& os, const FrameArray& a);
 typedef PrettyList<IntList> PrettyIntList;
 typedef PrettyList<SortedIntList> PrettySortedList;
 
+StringList SplitString(const std::string& s, const std::string& sep = ",");
 
 struct TimeRanges {
 	TimeRanges() :

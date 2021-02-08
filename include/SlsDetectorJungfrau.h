@@ -25,7 +25,7 @@
 
 #include "SlsDetectorCamera.h"
 
-#include "processlib/LinkTask.h"
+#include "processlib/SinkTask.h"
 
 namespace lima 
 {
@@ -41,6 +41,21 @@ class Jungfrau : public Model
 	typedef unsigned char Byte;
 	typedef unsigned short Word;
 	typedef unsigned int Long;
+
+	class ImgProcTask : public SinkTaskBase
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::ImgProcTask",
+				  "SlsDetector");
+	public:
+		ImgProcTask(Jungfrau *jungfrau);
+
+		void setConfig(std::string  config);
+		void getConfig(std::string &config);
+
+		virtual void process(Data& data);
+	private:
+		Jungfrau *m_jungfrau;
+	};
 
 	Jungfrau(Camera *cam);
 	~Jungfrau();
@@ -58,11 +73,19 @@ class Jungfrau : public Model
 
 	virtual void getTimeRanges(TimeRanges& time_ranges);
 
+	// the returned object must be deleted by the caller
+	ImgProcTask *createImgProcTask();
+
 	void setHighVoltage(int  hvolt);
 	void getHighVoltage(int& hvolt);
 
 	void setThresholdEnergy(int  thres);
 	void getThresholdEnergy(int& thres);
+
+	void setImgProcConfig(std::string  config);
+	void getImgProcConfig(std::string &config);
+
+	void readGainADCMaps(Data& gain_map, Data& adc_map);
 
 	virtual bool isXferActive();
 
@@ -158,6 +181,93 @@ class Jungfrau : public Model
 	};
 	typedef std::vector<AutoPtr<Thread> > ThreadList;
 
+	class ImgProcBase
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::ImgProcBase", 
+				  "SlsDetector");
+	public:
+		typedef std::vector<int> DataDims;
+
+		ImgProcBase(Jungfrau *jungfrau, std::string name);
+		virtual ~ImgProcBase();
+
+		int getNbJungfrauModules()
+		{ return m_nb_jungfrau_modules; }
+
+		virtual void updateImageSize(Size size, bool raw);
+		virtual void prepareAcq();
+		virtual void processFrame(Data& data) = 0;
+
+		static void updateDataSize(Data& d, Size size) {
+			DataDims data_dims{size.getWidth(), size.getHeight()};
+			if (d.empty() || (d.dimensions != data_dims)) {
+				d.dimensions = data_dims;
+				d.setBuffer(new Buffer(d.size()));
+			}
+		}
+
+		static void clearData(Data& d) {
+			memset(d.data(), 0, d.size());
+		}
+
+	protected:
+		friend class Jungfrau;
+		Jungfrau *m_jungfrau;
+		std::string m_name;
+		int m_nb_jungfrau_modules;
+		bool m_raw;
+		int m_pixels;
+		Size m_frame_size;
+		Point m_det_mods;
+	};
+
+	typedef std::vector<ImgProcBase *> ImgProcList;
+
+	class GainADCMapImgProc : public ImgProcBase
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::GainADCMapImgProc", 
+				  "SlsDetector");
+	public:
+		struct MapData {
+			Data gain_map;
+			Data adc_map;
+			Mutex mutex;
+
+			AutoMutex lock() { return mutex; }
+
+			MapData() {
+				gain_map.type = Data::UINT8;
+				adc_map.type = Data::UINT16;
+			}
+			void updateSize(Size size) {
+				AutoMutex l = lock();
+				updateDataSize(gain_map, size);
+				updateDataSize(adc_map, size);
+			};
+			void clear() {
+				AutoMutex l = lock();
+				clearData(gain_map);
+				clearData(adc_map);
+			}
+		};
+
+		GainADCMapImgProc(Jungfrau *jungfrau);
+
+		virtual void updateImageSize(Size size, bool raw);
+		virtual void prepareAcq();
+		virtual void processFrame(Data& data);
+
+	private:
+		friend class Jungfrau;
+		MapData m_data;
+	};
+
+	void addImgProc(ImgProcBase *img_proc);
+	void removeImgProc(ImgProcBase *img_proc);
+	void removeAllImgProc();
+
+	ImgProcBase *createGainADCMapImgProc();
+
 	int getNbJungfrauModules()
 	{ return getNbDetModules(); }
 
@@ -185,6 +295,8 @@ class Jungfrau : public Model
 	void processOneFrame(AutoMutex& l);
 
 	Cond m_cond;
+	std::string m_img_proc_config;
+	ImgProcList m_img_proc_list;
 	RecvList m_recv_list;
 	FrameType m_nb_frames;
 	FrameType m_next_frame;

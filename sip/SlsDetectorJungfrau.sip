@@ -36,9 +36,22 @@ class Jungfrau : public SlsDetector::Model
 %End
 
  public:
+	class ImgProcTask : public SinkTaskBase
+	{
+	public:
+		ImgProcTask(SlsDetector::Jungfrau *jungfrau);
+
+		void setConfig(std::string  config);
+		void getConfig(std::string &config /Out/);
+
+		virtual void process(Data& data);
+	};
+
 	Jungfrau(SlsDetector::Camera *cam);
 
 	virtual void getFrameDim(FrameDim& frame_dim /Out/, bool raw = false);
+
+	SlsDetector::Jungfrau::ImgProcTask *createImgProcTask() /Factory/;
 
 	virtual std::string getName();
 	virtual void getPixelSize(double& x_size /Out/, double& y_size /Out/);
@@ -58,6 +71,11 @@ class Jungfrau : public SlsDetector::Model
 
 	void setThresholdEnergy(int  thres);
 	void getThresholdEnergy(int& thres /Out/);
+
+	void setImgProcConfig(std::string  config);
+	void getImgProcConfig(std::string &config /Out/);
+
+	void readGainADCMaps(Data& gain_map /Out/, Data& adc_map /Out/);
 
 	virtual bool isXferActive();
 

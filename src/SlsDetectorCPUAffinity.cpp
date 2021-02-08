@@ -1150,16 +1150,7 @@ string SystemCPUAffinityMgr::WatchDog::concatStringList(StringList list)
 
 StringList SystemCPUAffinityMgr::WatchDog::splitStringList(string str)
 {
-	StringList list;
-	string::size_type i, p, n;
-	for (i = 0; (i != string::npos) && (i != str.size()); i = p) {
-		p = str.find(",", i);
-		n = (p == string::npos) ? p : (p - i);
-		list.push_back(string(str, i, n));
-		if (p != string::npos)
-			++p;
-	}
-	return list;
+	return SplitString(str);
 }
 
 NetDevGroupCPUAffinity

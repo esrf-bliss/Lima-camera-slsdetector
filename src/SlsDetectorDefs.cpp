@@ -127,6 +127,20 @@ ostream& lima::SlsDetector::Defs::operator <<(ostream& os, DetStatus status)
 	return os << name;
 }
 
+StringList lima::SlsDetector::SplitString(const std::string& s,
+					  const std::string& sep)
+{
+	StringList list;
+	string::size_type i, p, n;
+	for (i = 0; (i != string::npos) && (i != s.size()); i = p) {
+		p = s.find(sep, i);
+		n = (p == string::npos) ? p : (p - i);
+		list.push_back(string(s, i, n));
+		if (p != string::npos)
+			++p;
+	}
+	return list;
+}
 
 Glob::Glob(string pattern)
 	: m_pattern(pattern)

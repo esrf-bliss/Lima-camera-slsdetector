@@ -89,6 +89,7 @@ class SlsDetector(PyTango.Device_4Impl):
                   'threshold_energy',
                   'tx_frame_delay',
                   'fpga_frame_ptr_diff',
+                  'img_proc_config',
     ]
 
     def __init__(self,*args) :
@@ -509,6 +510,18 @@ class SlsDetector(PyTango.Device_4Impl):
         self.cam.setPixelDepthCPUAffinityMap(aff_map)
 
     @Core.DEB_MEMBER_FUNCT
+    def read_jungfrau_gain_map(self, attr):
+        jungfrau = _SlsDetectorJungfrau
+        gain_data, adc_data = jungfrau.readGainADCMaps()
+        attr.set_value(gain_data.buffer)
+
+    @Core.DEB_MEMBER_FUNCT
+    def read_jungfrau_adc_map(self, attr):
+        jungfrau = _SlsDetectorJungfrau
+        gain_data, adc_data = jungfrau.readGainADCMaps()
+        attr.set_value(adc_data.buffer)
+
+    @Core.DEB_MEMBER_FUNCT
     def clearAllBuffers(self):
         self.cam.clearAllBuffers()
 
@@ -597,6 +610,10 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevBoolean,
           PyTango.SCALAR,
           PyTango.READ]],
+        'img_proc_config':
+        [[PyTango.DevString,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
         'dac_name_list':
         [[PyTango.DevString,
           PyTango.SPECTRUM,
@@ -669,6 +686,14 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevULong,
           PyTango.SPECTRUM,
           PyTango.READ, 64]],
+        'jungfrau_gain_map':
+        [[PyTango.DevUChar,
+          PyTango.IMAGE,
+          PyTango.READ, 8192, 8192]],
+        'jungfrau_adc_map':
+        [[PyTango.DevUShort,
+          PyTango.IMAGE,
+          PyTango.READ, 8192, 8192]],
         }
 
     def __init__(self,name) :
@@ -684,13 +709,15 @@ _SlsDetectorHwInter = None
 _SlsDetectorEiger = None
 _SlsDetectorJungfrau = None
 _SlsDetectorCorrection = None
+_SlsDetectorImgProc = None
 _SlsDetectorControl = None
 
 def get_control(config_fname, full_config_fname=None, apply_corrections=None,
                 **keys) :
     global _SlsDetectorCam, _SlsDetectorHwInter
     global _SlsDetectorEiger, _SlsDetectorJungfrau
-    global _SlsDetectorCorrection, _SlsDetectorControl
+    global _SlsDetectorCorrection, _SlsDetectorImgProc
+    global _SlsDetectorControl
 
     def to_bool(x, default_val=False):
         if x is None:
@@ -730,13 +757,18 @@ def get_control(config_fname, full_config_fname=None, apply_corrections=None,
                 _SlsDetectorCorrection = _SlsDetectorEiger.createCorrectionTask()
         elif det_type == SlsDetectorHw.JungfrauDet:
             _SlsDetectorJungfrau = SlsDetectorHw.Jungfrau(_SlsDetectorCam)
+            _SlsDetectorImgProc = _SlsDetectorJungfrau.createImgProcTask()
         else:
             raise ValueError("Unknown detector type: %s" %
                              _SlsDetectorCam.getType())
         _SlsDetectorControl = Core.CtControl(_SlsDetectorHwInter)
         if _SlsDetectorCorrection:
             _SlsDetectorControl.setReconstructionTask(_SlsDetectorCorrection)
-
+        if _SlsDetectorImgProc:
+            ext_op_mgr = _SlsDetectorControl.externalOperation()
+            alias = 'SlsDetectorImgProc'
+            soft_op = ext_op_mgr.addOp(Core.USER_SINK_TASK, alias, 0)
+            soft_op.setSinkTask(_SlsDetectorImgProc)
     return _SlsDetectorControl 
 
 def get_tango_specific_class_n_device():
