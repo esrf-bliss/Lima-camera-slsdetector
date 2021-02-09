@@ -75,7 +75,8 @@ class Jungfrau : public SlsDetector::Model
 	void setImgProcConfig(std::string  config);
 	void getImgProcConfig(std::string &config /Out/);
 
-	void readGainADCMaps(Data& gain_map /Out/, Data& adc_map /Out/);
+	void readGainADCMaps(Data& gain_map /Out/, Data& adc_map /Out/,
+			     unsigned long& frame /In,Out/);
 
 	virtual bool isXferActive();
 

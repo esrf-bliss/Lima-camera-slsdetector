@@ -254,7 +254,7 @@ void Jungfrau::ImgProcBase::prepareAcq()
  */
 
 Jungfrau::GainADCMapImgProc::GainADCMapImgProc(Jungfrau *jungfrau)
-	: ImgProcBase(jungfrau, "gain_adc_map")
+	: ImgProcBase(jungfrau, "gain_adc_map"), m_reader(new ReaderHelper)
 {
 	DEB_CONSTRUCTOR();
 }
@@ -262,27 +262,32 @@ Jungfrau::GainADCMapImgProc::GainADCMapImgProc(Jungfrau *jungfrau)
 void Jungfrau::GainADCMapImgProc::updateImageSize(Size size, bool raw)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_ALWAYS() << DEB_VAR3(m_name, size, raw);
+	DEB_PARAM() << DEB_VAR3(m_name, size, raw);
 	ImgProcBase::updateImageSize(size, raw);
 
-	m_data.updateSize(size);
+	for (auto& d : m_buffer)
+		d.updateSize(size);
 }
 
 void Jungfrau::GainADCMapImgProc::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
 	ImgProcBase::prepareAcq();
-	m_data.clear();
+
+	for (auto& d : m_buffer)
+		d.clear();
+	m_buffer.reset();
 }
 
 void Jungfrau::GainADCMapImgProc::processFrame(Data& data)
 {
 	DEB_MEMBER_FUNCT();
 	long frame = data.frameNumber;
-	DEB_ALWAYS() << DEB_VAR1(frame);
+	DEB_PARAM() << DEB_VAR1(frame);
 
-	MapData& m = m_data;
-	AutoMutex l = m.lock();
+	DoubleBufferWriter<MapData> w(m_buffer);
+	MapData& m = w.getBuffer();
+	DEB_TRACE() << DEB_VAR1(&m);
 	unsigned short *src;
 	{
 		src = (unsigned short *) data.data();
@@ -298,8 +303,17 @@ void Jungfrau::GainADCMapImgProc::processFrame(Data& data)
 			*dst++ = *src++ & 0x3fff;
 		m.adc_map.frameNumber = frame;
 	}
+	w.setCounter(frame);
 }
 
+void Jungfrau::GainADCMapImgProc::readGainADCMaps(Data& gain_map, Data& adc_map,
+						  FrameType& frame)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(frame);
+	m_reader->addRead(m_buffer, gain_map, adc_map, frame);
+	DEB_RETURN() << DEB_VAR3(gain_map, adc_map, frame);
+}
 
 /*
  * Jungfrau detector class
@@ -667,6 +681,10 @@ void Jungfrau::prepareAcq()
 	ThreadList::iterator tit, tend = m_thread_list.end();
 	for (tit = m_thread_list.begin(); tit != tend; ++tit)
 		(*tit)->prepareAcq();
+
+	ImgProcList::iterator pit, pend = m_img_proc_list.end();
+	for (pit = m_img_proc_list.begin(); pit != pend; ++pit)
+		(*pit)->prepareAcq();
 }
 
 void Jungfrau::startAcq()
@@ -827,7 +845,7 @@ void Jungfrau::getImgProcConfig(std::string &config)
 	DEB_RETURN() << DEB_VAR1(config);
 }
 
-void Jungfrau::readGainADCMaps(Data& gain_map, Data& adc_map)
+void Jungfrau::readGainADCMaps(Data& gain_map, Data& adc_map, FrameType& frame)
 {
 	DEB_MEMBER_FUNCT();
 	ImgProcList::iterator it, end = m_img_proc_list.end();
@@ -838,9 +856,6 @@ void Jungfrau::readGainADCMaps(Data& gain_map, Data& adc_map)
 	if (it == end)
 		THROW_HW_ERROR(Error) << "ImgProc gain_adc_map not found";
 	GainADCMapImgProc *img_proc = static_cast<GainADCMapImgProc *>(*it);
-	GainADCMapImgProc::MapData& m = img_proc->m_data;
-	AutoMutex l = m.lock();
-	gain_map = m.gain_map.copy();
-	adc_map = m.adc_map.copy();
+	img_proc->readGainADCMaps(gain_map, adc_map, frame);
 }
 

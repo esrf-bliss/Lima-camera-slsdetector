@@ -512,13 +512,15 @@ class SlsDetector(PyTango.Device_4Impl):
     @Core.DEB_MEMBER_FUNCT
     def read_jungfrau_gain_map(self, attr):
         jungfrau = _SlsDetectorJungfrau
-        gain_data, adc_data = jungfrau.readGainADCMaps()
+        gain_data, adc_data, frame = jungfrau.readGainADCMaps(-1)
+        deb.Always("frame=%s" % frame)
         attr.set_value(gain_data.buffer)
 
     @Core.DEB_MEMBER_FUNCT
     def read_jungfrau_adc_map(self, attr):
         jungfrau = _SlsDetectorJungfrau
-        gain_data, adc_data = jungfrau.readGainADCMaps()
+        gain_data, adc_data, frame = jungfrau.readGainADCMaps(-1)
+        deb.Always("frame=%s" % frame)
         attr.set_value(adc_data.buffer)
 
     @Core.DEB_MEMBER_FUNCT

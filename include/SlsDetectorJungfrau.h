@@ -24,6 +24,7 @@
 #define __SLS_DETECTOR_JUNGFRAU_H
 
 #include "SlsDetectorCamera.h"
+#include "SlsDetectorDoubleBuffer.h"
 
 #include "processlib/SinkTask.h"
 
@@ -85,7 +86,7 @@ class Jungfrau : public Model
 	void setImgProcConfig(std::string  config);
 	void getImgProcConfig(std::string &config);
 
-	void readGainADCMaps(Data& gain_map, Data& adc_map);
+	void readGainADCMaps(Data& gain_map, Data& adc_map, FrameType& frame);
 
 	virtual bool isXferActive();
 
@@ -210,6 +211,21 @@ class Jungfrau : public Model
 			memset(d.data(), 0, d.size());
 		}
 
+		static void makeDataRef(Data& src, Data& ref,
+					Buffer::Callback *cb) {
+			ref.type = src.type;
+			ref.dimensions = src.dimensions;
+			ref.frameNumber = src.frameNumber;
+			ref.timestamp = src.timestamp;
+			ref.header = src.header;
+			Buffer *b = new Buffer;
+			b->owner = Buffer::MAPPED;
+			b->callback = cb;
+			b->data = src.data();
+			ref.setBuffer(b);
+			b->unref();
+		}
+
 	protected:
 		friend class Jungfrau;
 		Jungfrau *m_jungfrau;
@@ -228,38 +244,84 @@ class Jungfrau : public Model
 		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::GainADCMapImgProc", 
 				  "SlsDetector");
 	public:
-		struct MapData {
-			Data gain_map;
-			Data adc_map;
-			Mutex mutex;
-
-			AutoMutex lock() { return mutex; }
-
-			MapData() {
-				gain_map.type = Data::UINT8;
-				adc_map.type = Data::UINT16;
-			}
-			void updateSize(Size size) {
-				AutoMutex l = lock();
-				updateDataSize(gain_map, size);
-				updateDataSize(adc_map, size);
-			};
-			void clear() {
-				AutoMutex l = lock();
-				clearData(gain_map);
-				clearData(adc_map);
-			}
-		};
-
 		GainADCMapImgProc(Jungfrau *jungfrau);
 
 		virtual void updateImageSize(Size size, bool raw);
 		virtual void prepareAcq();
 		virtual void processFrame(Data& data);
 
+		void readGainADCMaps(Data& gain_map, Data& adc_map,
+				     FrameType& frame);
+
 	private:
-		friend class Jungfrau;
-		MapData m_data;
+		struct MapData {
+			Data gain_map;
+			Data adc_map;
+
+			MapData() {
+				gain_map.type = Data::UINT8;
+				adc_map.type = Data::UINT16;
+			}
+			void updateSize(Size size) {
+				updateDataSize(gain_map, size);
+				updateDataSize(adc_map, size);
+			};
+			void clear() {
+				clearData(gain_map);
+				clearData(adc_map);
+			}
+		};
+
+		typedef DoubleBuffer<MapData> DBuffer;
+
+		class ReaderHelper : public Buffer::Callback {
+			DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::"
+					  "GainADCMapImgProc::ReaderHelper", 
+					  "SlsDetector");
+		public:
+			void addRead(DBuffer& b, Data& gain_map, Data& adc_map,
+				     FrameType frame) {
+				DEB_MEMBER_FUNCT();
+				if (m_reader)
+					THROW_HW_ERROR(Error)
+						<< "A reader is already active";
+				m_reader = new Reader(b, frame);
+				MapData& m = m_reader->getBuffer();
+				DEB_TRACE() << DEB_VAR1(&m);
+
+				makeDataRef(m.gain_map, gain_map, this);
+				++m_count;
+				makeDataRef(m.adc_map, adc_map, this);
+				++m_count;
+				DEB_TRACE() << DEB_VAR1(m_count);
+
+				frame = m_reader->getCounter();
+			}
+
+		protected:
+			virtual void destroy(void *buffer) {
+				DEB_MEMBER_FUNCT();
+				DEB_PARAM() << DEB_VAR1(m_count);
+				if ((m_count == 0) || !m_reader)
+					DEB_ERROR() << DEB_VAR1(m_count);
+				MapData& m = m_reader->getBuffer();
+				if ((buffer != m.gain_map.data()) &&
+				    (buffer != m.adc_map.data()))
+					THROW_HW_ERROR(Error)
+						<< "Bad buffer";
+				if (--m_count == 0)
+					m_reader = NULL;
+			}
+
+		private:
+			typedef DoubleBufferReader<MapData> Reader;
+
+			AutoPtr<Reader> m_reader;
+			int m_count{0};
+		};
+
+		DBuffer m_buffer;
+		AutoPtr<ReaderHelper> m_reader;
 	};
 
 	void addImgProc(ImgProcBase *img_proc);
