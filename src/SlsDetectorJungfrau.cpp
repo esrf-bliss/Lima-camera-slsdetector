@@ -52,6 +52,187 @@ using namespace lima::SlsDetector::Defs;
 	      }, any_geom);						\
 	  }, any_nb_ifaces);
 
+
+/*
+ * Jungfrau::GainPed::Impl class
+ */
+
+template <class M>
+void Jungfrau::GainPed::GainPed::Impl<M>::updateImageSize(Size size, bool raw)
+{
+	m_size = size;
+	m_raw = raw;
+	m_pixels = Point(m_size).getArea();
+	std::vector<int> dims = {m_size.getWidth(), m_size.getHeight()};
+	if (m_calib.gain_map[0].dimensions != dims)
+		setDefaultCalib();
+}
+
+template <class M>
+void Jungfrau::GainPed::Impl<M>::getDefaultCalib(Calib& calib)
+{
+	DEB_MEMBER_FUNCT();
+	auto init = [&](auto& d) {
+		initData(d, m_size, Data::DOUBLE);
+		// gap pixels are set to 0
+		if (!m_raw)
+			memset(d.data(), 0, d.size());
+	};
+	double *p[3][2];
+	for (int g = 0; g < 3; ++g) {
+		init(calib.gain_map[g]);
+		p[g][0] = (double *) calib.gain_map[g].data();
+		init(calib.ped_map[g]);
+		p[g][1] = (double *) calib.ped_map[g].data();
+	}
+	auto f = [&](auto det_geom) {
+		using namespace sls::Geom;
+		det_for_each_mod(det_geom, mod, mod_geom,
+		    mod_for_each_recv(mod_geom, recv, recv_geom,
+		        recv_for_each_iface(recv_geom, iface, iface_geom,
+		            iface_for_each_chip(iface_geom, chip, chip_view,
+			        view_for_each_pixel(chip_view, pixel,
+				    int i = chip_view.calcMapPixelIndex(pixel);
+				    for (int g = 0; g < 3; ++g) {
+					p[g][0][i] = M::DefaultCoeffs[g][0];
+					p[g][1][i] = M::DefaultCoeffs[g][1];
+				    }
+				  );
+			      );
+		          );
+		      );
+		  );
+	};
+	applyDetGeom(m_jungfrau, f, m_raw);
+}
+
+template <class M>
+void Jungfrau::GainPed::Impl<M>::processFrame(Data& data, Data& proc)
+{
+	DEB_MEMBER_FUNCT();
+
+	auto calib_coeff = [&](auto gain, auto type) {
+		Data& d = (type == 0) ? m_calib.gain_map[gain] :
+					m_calib.ped_map[gain];
+		return (double *) d.data();
+	};
+	double *coeffs[3][2] = {{calib_coeff(0, 0), calib_coeff(0, 1)},
+				{calib_coeff(1, 0), calib_coeff(1, 1)},
+				{calib_coeff(2, 0), calib_coeff(2, 1)}};
+	{
+		unsigned short *src;
+		src = reinterpret_cast<unsigned short *>(data.data());
+		using P = typename M::Pixel;
+		P *dst = reinterpret_cast<P *>(proc.data());
+		for (int i = 0; i < m_pixels; ++i, ++src, ++dst) {
+			int gain = *src >> 14;
+			int adc = *src & 0x3fff;
+			DEB_TRACE() << DEB_VAR3(i, gain, adc);
+			if (gain == 3)
+				gain = 2;
+			else if (gain == 2) {
+				*dst = std::numeric_limits<P>::max() - 0x10;
+				continue;
+			}
+			*dst = coeffs[gain][0][i] * adc + coeffs[gain][1][i];
+			DEB_TRACE() << DEB_VAR1(*dst);
+		}
+	}
+}
+
+
+/*
+ * Jungfrau::GainPed class
+ */
+
+Jungfrau::GainPed::GainPed(Jungfrau *jungfrau)
+	: m_jungfrau(jungfrau), m_impl(std::in_place_index_t<1>(), jungfrau)
+{
+	DEB_MEMBER_FUNCT();
+	setMapType(Map16);
+}
+
+void Jungfrau::GainPed::setMapType(MapType map_type)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(map_type);
+	MapType curr_type;
+	getMapType(curr_type);
+	if (map_type == curr_type)
+		return;
+	if (map_type == Map16)
+		m_impl = Impl<Map16Data>(m_jungfrau);
+	else
+		m_impl = Impl<Map32Data>(m_jungfrau);
+	if (m_size.isEmpty())
+		return;
+	updateImageSize(m_size, m_raw);
+	std::visit([&](auto& impl) { impl.setDefaultCalib(); }, m_impl);
+}
+
+void Jungfrau::GainPed::getMapType(MapType& map_type)
+{
+	DEB_MEMBER_FUNCT();
+	std::visit([&](auto& impl) {
+		map_type = std::decay_t<decltype(impl)>::Map::Type;
+	    }, m_impl);
+	DEB_RETURN() << DEB_VAR1(map_type);
+}
+
+void Jungfrau::GainPed::setCalib(const Calib& calib)
+{
+	DEB_MEMBER_FUNCT();
+	std::visit([&](auto& impl) { impl.m_calib = calib; }, m_impl);
+}
+
+void Jungfrau::GainPed::getCalib(Calib& calib)
+{
+	DEB_MEMBER_FUNCT();
+	std::visit([&](auto& impl) { calib = impl.m_calib; }, m_impl);
+}
+
+void Jungfrau::GainPed::updateImageSize(Size size, bool raw)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(size, raw);
+	m_size = size;
+	m_raw = raw;
+	std::visit([&](auto& impl) { impl.updateImageSize(size, raw); }, m_impl);
+}
+
+void Jungfrau::GainPed::getDefaultCalib(Calib& calib)
+{
+	DEB_MEMBER_FUNCT();
+	std::visit([&](auto& impl) { impl.getDefaultCalib(calib); }, m_impl);
+}
+
+Data::TYPE Jungfrau::GainPed::getDataType()
+{
+	DEB_MEMBER_FUNCT();
+	return std::visit([&](auto& impl) {
+		return std::decay_t<decltype(impl)>::Map::DataType;
+	    }, m_impl);
+}
+
+
+void Jungfrau::GainPed::processFrame(Data& data, Data& proc)
+{
+	DEB_MEMBER_FUNCT();
+	std::visit([&](auto& impl) { impl.processFrame(data, proc); }, m_impl);
+}
+
+std::ostream& lima::SlsDetector::operator <<(std::ostream& os,
+					     Jungfrau::GainPed::MapType map_type)
+{
+	const char *name = "Unknown";
+	switch (map_type) {
+	case Jungfrau::GainPed::Map16:	name = "Map16";	break;	
+	case Jungfrau::GainPed::Map32:	name = "Map32";	break;	
+	}
+	return os << name;
+}
+
+
 /*
  * Jungfrau::Recv class
  */
@@ -236,7 +417,7 @@ void Jungfrau::ImgProcBase::updateImageSize(Size size, bool raw)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR3(m_name, size, raw);
-	m_pixels = size.getWidth() * size.getHeight();
+	m_pixels = Point(size).getArea();
 	m_frame_size = size;
 	m_raw = raw;
 }
@@ -250,11 +431,11 @@ void Jungfrau::ImgProcBase::prepareAcq()
 }
 
 /*
- * Jungfrau::ImgProcBase class
+ * Jungfrau::GainADCMapImgProc class
  */
 
 Jungfrau::GainADCMapImgProc::GainADCMapImgProc(Jungfrau *jungfrau)
-	: ImgProcBase(jungfrau, "gain_adc_map"), m_reader(new ReaderHelper)
+	: ImgProcBase(jungfrau, "gain_adc_map"), m_reader(new Reader)
 {
 	DEB_CONSTRUCTOR();
 }
@@ -292,15 +473,15 @@ void Jungfrau::GainADCMapImgProc::processFrame(Data& data)
 	{
 		src = (unsigned short *) data.data();
 		unsigned char *dst = (unsigned char *) m.gain_map.data();
-		for (int i = 0; i < m_pixels; ++i)
-			*dst++ = *src++ >> 14;
+		for (int i = 0; i < m_pixels; ++i, ++src, ++dst)
+			*dst = *src >> 14;
 		m.gain_map.frameNumber = frame;
 	}
 	{
 		src = (unsigned short *) data.data();
 		unsigned short *dst = (unsigned short *) m.adc_map.data();
-		for (int i = 0; i < m_pixels; ++i)
-			*dst++ = *src++ & 0x3fff;
+		for (int i = 0; i < m_pixels; ++i, ++src, ++dst)
+			*dst = *src & 0x3fff;
 		m.adc_map.frameNumber = frame;
 	}
 	w.setCounter(frame);
@@ -311,8 +492,74 @@ void Jungfrau::GainADCMapImgProc::readGainADCMaps(Data& gain_map, Data& adc_map,
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(frame);
-	m_reader->addRead(m_buffer, gain_map, adc_map, frame);
+	MapData &m = m_reader->addRead(m_buffer, frame);
+	m_reader->addData(m.gain_map, gain_map);
+	m_reader->addData(m.adc_map, adc_map);
 	DEB_RETURN() << DEB_VAR3(gain_map, adc_map, frame);
+}
+
+/*
+ * Jungfrau::GainPedImgProc class
+ */
+
+Jungfrau::GainPedImgProc::GainPedImgProc(Jungfrau *jungfrau)
+	: ImgProcBase(jungfrau, "gain_ped"), m_gain_ped(jungfrau),
+	  m_reader(new Reader)
+{
+	DEB_CONSTRUCTOR();
+}
+
+void Jungfrau::GainPedImgProc::updateImageSize(Size size, bool raw)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR3(m_name, size, raw);
+	ImgProcBase::updateImageSize(size, raw);
+
+	for (auto& d : m_buffer)
+		d.updateSize(size);
+
+	m_gain_ped.updateImageSize(size, raw);
+}
+
+void Jungfrau::GainPedImgProc::prepareAcq()
+{
+	DEB_MEMBER_FUNCT();
+	ImgProcBase::prepareAcq();
+
+	Data::TYPE data_type = m_gain_ped.getDataType();
+	DEB_TRACE() << DEB_VAR1(data_type);
+	for (auto& d : m_buffer)
+		if (d.proc_map.type != data_type) {
+			DEB_TRACE() << "Reallocating proc_map";
+			d.proc_map.releaseBuffer();
+			d.proc_map.type = data_type;
+			d.updateSize(m_frame_size);
+		} else
+			d.clear();
+	m_buffer.reset();
+}
+
+void Jungfrau::GainPedImgProc::processFrame(Data& data)
+{
+	DEB_MEMBER_FUNCT();
+	long frame = data.frameNumber;
+	DEB_PARAM() << DEB_VAR1(frame);
+
+	DoubleBufferWriter<MapData> w(m_buffer);
+	MapData& m = w.getBuffer();
+	DEB_TRACE() << DEB_VAR1(&m);
+	m_gain_ped.processFrame(data, m.proc_map);
+	m.proc_map.frameNumber = frame;
+	w.setCounter(frame);
+}
+
+void Jungfrau::GainPedImgProc::readProcMap(Data& proc_map, FrameType& frame)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(frame);
+	MapData &m = m_reader->addRead(m_buffer, frame);
+	m_reader->addData(m.proc_map, proc_map);
+	DEB_RETURN() << DEB_VAR2(proc_map, frame);
 }
 
 /*
@@ -334,6 +581,9 @@ Jungfrau::Jungfrau(Camera *cam)
 	}
 
 	setNbProcessingThreads(1);
+
+	m_gain_ped_img_proc = new GainPedImgProc(this);
+	m_gain_adc_map_img_proc = new GainADCMapImgProc(this);
 
 	updateCameraModel();
 }
@@ -417,7 +667,6 @@ void Jungfrau::getDetMap(Data& det_map)
 	bool raw = getRawMode();
 	FrameDim frame_dim;
 	getFrameDim(frame_dim, raw);
-	Size size = frame_dim.getSize();
 	initData(det_map, frame_dim.getSize(), Data::UINT32);
 	// gap pixels are set to -1
 	if (!raw)
@@ -587,11 +836,11 @@ void Jungfrau::updateImageSize()
 	bool raw = getRawMode();
 	FrameDim frame_dim;
 	getFrameDim(frame_dim, raw);
-	DEB_TRACE() << DEB_VAR2(frame_dim, raw);
+	Size size = frame_dim.getSize();
+	DEB_TRACE() << DEB_VAR2(size, raw);
 
-	ImgProcList::iterator it, end = m_img_proc_list.end();
-	for (it = m_img_proc_list.begin(); it != end; ++it)
-		(*it)->updateImageSize(frame_dim.getSize(), raw);
+	m_gain_ped_img_proc->updateImageSize(size, raw);
+	m_gain_adc_map_img_proc->updateImageSize(size, raw);
 }
 
 bool Jungfrau::checkSettings(Settings settings)
@@ -839,17 +1088,7 @@ void Jungfrau::removeImgProc(ImgProcBase *img_proc)
 void Jungfrau::removeAllImgProc()
 {
 	DEB_MEMBER_FUNCT();
-	while (m_img_proc_list.size() > 0)
-		delete *m_img_proc_list.rbegin();
-}
-
-Jungfrau::ImgProcBase *Jungfrau::createGainADCMapImgProc()
-{
-	DEB_MEMBER_FUNCT();
-	ImgProcBase *map_img_proc = new GainADCMapImgProc(this);
-	addImgProc(map_img_proc);
-	DEB_RETURN() << DEB_VAR1(map_img_proc);
-	return map_img_proc;
+	m_img_proc_list.clear();
 }
 
 void Jungfrau::setImgProcConfig(std::string config)
@@ -858,13 +1097,33 @@ void Jungfrau::setImgProcConfig(std::string config)
 	DEB_PARAM() << DEB_VAR1(config);
 	if (config == m_img_proc_config)
 		return;
-	if (config.empty()) {
-		removeAllImgProc();
-	} else if (config == "gain_adc_map") {
-		createGainADCMapImgProc();
-	} else {
-		THROW_HW_ERROR(InvalidValue) << "Invalid " << DEB_VAR1(config);
+	StringList config_list = SplitString(config);
+	removeAllImgProc();
+	if (config_list.empty())
+		return;
+	ImgProcList img_proc_list;
+	auto checkConfigAndDelete = [&](auto s) {
+		StringList::iterator it, end = config_list.end();
+		it = find(config_list.begin(), end, s);
+		if (it == end)
+			return false;
+		config_list.erase(it);
+		return true;
+	};
+	if (checkConfigAndDelete("gain_ped")) {
+		DEB_ALWAYS() << "Adding gain_ped";
+		img_proc_list.push_back(m_gain_ped_img_proc);
 	}
+	if (checkConfigAndDelete("gain_adc_map")) {
+		DEB_ALWAYS() << "Adding gain_adc_map";
+		img_proc_list.push_back(m_gain_adc_map_img_proc);
+	}
+	if (!config_list.empty())
+		THROW_HW_ERROR(InvalidValue) << "Invalid " << DEB_VAR1(config);
+
+	for (auto img_proc: img_proc_list)
+		addImgProc(img_proc);
+
 	m_img_proc_config = config;
 }
 
@@ -878,14 +1137,13 @@ void Jungfrau::getImgProcConfig(std::string &config)
 void Jungfrau::readGainADCMaps(Data& gain_map, Data& adc_map, FrameType& frame)
 {
 	DEB_MEMBER_FUNCT();
-	ImgProcList::iterator it, end = m_img_proc_list.end();
-	for (it = m_img_proc_list.begin(); it != end; ++it) {
-		if ((*it)->m_name == "gain_adc_map")
-			break;
-	}
-	if (it == end)
-		THROW_HW_ERROR(Error) << "ImgProc gain_adc_map not found";
-	GainADCMapImgProc *img_proc = static_cast<GainADCMapImgProc *>(*it);
-	img_proc->readGainADCMaps(gain_map, adc_map, frame);
+	m_gain_adc_map_img_proc->readGainADCMaps(gain_map, adc_map, frame);
+}
+
+
+void Jungfrau::readGainPedProcMap(Data& proc_map, FrameType& frame)
+{
+	DEB_MEMBER_FUNCT();
+	m_gain_ped_img_proc->readProcMap(proc_map, frame);
 }
 

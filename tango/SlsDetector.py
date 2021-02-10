@@ -92,6 +92,19 @@ class SlsDetector(PyTango.Device_4Impl):
                   'img_proc_config',
     ]
 
+    GainPedAttrs = ['map_type',
+    ]
+
+    GainPedCalibAttrRe = re.compile('((?P<action>read|write)_)?'
+                                    '(?P<select>gain|ped)_'
+                                    '(?P<gain>[0-2])_calib_map')
+
+    GainPedProcAttrRe = re.compile('((?P<action>read|write)_)?'
+                                   'gain_ped_proc_map(?P<map_type>16|32)')
+
+    GainPedAttrRe = re.compile('((?P<action>read|write)_)?'
+                               'gain_ped_(?P<attr>.+)')
+
     def __init__(self,*args) :
         PyTango.Device_4Impl.__init__(self,*args)
         self.init_device()
@@ -137,6 +150,8 @@ class SlsDetector(PyTango.Device_4Impl):
             self.printPixelDepthCPUAffinityMap(aff_map)
             self.cam.setPixelDepthCPUAffinityMap(aff_map)
 
+        self.gain_ped_bckgnd = None
+
     def init_list_attr(self):
         nl = ['FullSpeed', 'HalfSpeed', 'QuarterSpeed']
         self.__ClockDiv = ConstListAttr(nl)
@@ -147,6 +162,11 @@ class SlsDetector(PyTango.Device_4Impl):
         nl = ['PixelDepth4', 'PixelDepth8', 'PixelDepth16', 'PixelDepth32']
         bdl = map(lambda x: getattr(SlsDetectorHw, x), nl)
         self.__PixelDepth = OrderedDict([(str(bd), int(bd)) for bd in bdl])
+
+        nl = ['Map16', 'Map32']
+        klass = SlsDetectorHw.Jungfrau.GainPed
+        self.__GainPedMapType = ConstListAttr(nl, namespc=klass)
+        self.__MapType = self.__GainPedMapType
 
     @Core.DEB_MEMBER_FUNCT
     def init_dac_adc_attr(self):
@@ -214,6 +234,20 @@ class SlsDetector(PyTango.Device_4Impl):
                 stats_name = '_'.join(stats_tok)
                 return get_attr_4u(self, stats_name, SlsDetectorHw.SimpleStat)
         obj = self.cam
+        m = self.GainPedCalibAttrRe.match(name)
+        if m:
+            name = f'{m.group("action")}_gain_ped_calib_map'
+            return partial(getattr(self, name), map_select=m.group("select"),
+                           gain=int(m.group("gain")))
+        m = self.GainPedProcAttrRe.match(name)
+        if m:
+            name = f'{m.group("action")}_gain_ped_proc_map'
+            return partial(getattr(self, name), map_type=m.group("map_type"))
+        for attr in self.GainPedAttrs:
+            m = self.GainPedAttrRe.match(name)
+            if m:
+                name = f'{m.group("action")}_{m.group("attr")}'
+                obj = _SlsDetectorJungfrau.getGainPed()
         for attr in self.ModelAttrs:
             if attr in name:
                 obj = self.model
@@ -515,18 +549,52 @@ class SlsDetector(PyTango.Device_4Impl):
         attr.set_value(det_map.buffer)
 
     @Core.DEB_MEMBER_FUNCT
-    def read_jungfrau_gain_map(self, attr):
+    def read_gain_map(self, attr):
         jungfrau = _SlsDetectorJungfrau
         gain_data, adc_data, frame = jungfrau.readGainADCMaps(-1)
-        deb.Always("frame=%s" % frame)
+        deb.Return("frame=%s, gain_data=%s" % (frame, gain_data))
         attr.set_value(gain_data.buffer)
 
     @Core.DEB_MEMBER_FUNCT
-    def read_jungfrau_adc_map(self, attr):
+    def read_adc_map(self, attr):
         jungfrau = _SlsDetectorJungfrau
         gain_data, adc_data, frame = jungfrau.readGainADCMaps(-1)
-        deb.Always("frame=%s" % frame)
+        deb.Return("frame=%s, adc_data=%s" % (frame, adc_data))
         attr.set_value(adc_data.buffer)
+
+    @Core.DEB_MEMBER_FUNCT
+    def getGainPedProcMap(self, map_type):
+        jungfrau = _SlsDetectorJungfrau
+        map_type_nb = self.__GainPedMapType[f'MAP{map_type}']
+        if jungfrau.getGainPed().getMapType() != map_type_nb:
+            raise ValueError('Invalid map_type %s' % map_type);
+        return jungfrau.readGainPedProcMap(-1)
+
+    @Core.DEB_MEMBER_FUNCT
+    def read_gain_ped_proc_map(self, attr, map_type):
+        proc_data, frame = self.getGainPedProcMap(map_type)
+        data = proc_data.buffer
+        if self.gain_ped_bckgnd is not None:
+            data = data - self.gain_ped_bckgnd
+        deb.Return("frame=%s, data=%s" % (frame, data))
+        attr.set_value(data)
+
+    @Core.DEB_MEMBER_FUNCT
+    def setGainPedBackground(self, level=0):
+        proc_data, frame = self.getGainPedProcMap('32')
+        self.gain_ped_bckgnd = proc_data.buffer.copy() - level
+
+    @Core.DEB_MEMBER_FUNCT
+    def clearGainPedBackground(self):
+        self.gain_ped_bckgnd = None
+
+    @Core.DEB_MEMBER_FUNCT
+    def read_gain_ped_calib_map(self, attr, map_select, gain):
+        gain_ped = _SlsDetectorJungfrau.getGainPed()
+        c = gain_ped.getCalib()
+        d = c.gain_map[gain] if map_select == 'gain' else c.ped_map[gain]
+        deb.Return("%s_%d=%s" % (map_select, gain, d))
+        attr.set_value(d.buffer)
 
     @Core.DEB_MEMBER_FUNCT
     def clearAllBuffers(self):
@@ -600,6 +668,12 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevString, "recv_idx(-1=all):stats_name"],
          [PyTango.DevVarDoubleArray, "[[bin, count], ...]"]],
         'clearAllBuffers':
+        [[PyTango.DevVoid, ""],
+         [PyTango.DevVoid, ""]],
+        'setGainPedBackground':
+        [[PyTango.DevULong, "level"],
+         [PyTango.DevVoid, ""]],
+        'clearGainPedBackground':
         [[PyTango.DevVoid, ""],
          [PyTango.DevVoid, ""]],
         }
@@ -697,12 +771,48 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevULong,
           PyTango.IMAGE,
           PyTango.READ, 8192, 8192]],
-        'jungfrau_gain_map':
+        'gain_map':
         [[PyTango.DevUChar,
           PyTango.IMAGE,
           PyTango.READ, 8192, 8192]],
-        'jungfrau_adc_map':
+        'adc_map':
         [[PyTango.DevUShort,
+          PyTango.IMAGE,
+          PyTango.READ, 8192, 8192]],
+        'gain_ped_map_type':
+        [[PyTango.DevString,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'gain_ped_proc_map16':
+        [[PyTango.DevUShort,
+          PyTango.IMAGE,
+          PyTango.READ, 8192, 8192]],
+        'gain_ped_proc_map32':
+        [[PyTango.DevULong,
+          PyTango.IMAGE,
+          PyTango.READ, 8192, 8192]],
+        'gain_0_calib_map':
+        [[PyTango.DevDouble,
+          PyTango.IMAGE,
+          PyTango.READ, 8192, 8192]],
+        'gain_1_calib_map':
+        [[PyTango.DevDouble,
+          PyTango.IMAGE,
+          PyTango.READ, 8192, 8192]],
+        'gain_2_calib_map':
+        [[PyTango.DevDouble,
+          PyTango.IMAGE,
+          PyTango.READ, 8192, 8192]],
+        'ped_0_calib_map':
+        [[PyTango.DevDouble,
+          PyTango.IMAGE,
+          PyTango.READ, 8192, 8192]],
+        'ped_1_calib_map':
+        [[PyTango.DevDouble,
+          PyTango.IMAGE,
+          PyTango.READ, 8192, 8192]],
+        'ped_2_calib_map':
+        [[PyTango.DevDouble,
           PyTango.IMAGE,
           PyTango.READ, 8192, 8192]],
         }
@@ -778,7 +888,8 @@ def get_control(config_fname, full_config_fname=None, apply_corrections=None,
         if _SlsDetectorImgProc:
             ext_op_mgr = _SlsDetectorControl.externalOperation()
             alias = 'SlsDetectorImgProc'
-            soft_op = ext_op_mgr.addOp(Core.USER_SINK_TASK, alias, 0)
+            stage_level = 10
+            soft_op = ext_op_mgr.addOp(Core.USER_SINK_TASK, alias, stage_level)
             soft_op.setSinkTask(_SlsDetectorImgProc)
     return _SlsDetectorControl 
 

@@ -28,11 +28,16 @@
 
 #include "processlib/SinkTask.h"
 
+#include <array>
+#include <variant>
+
 namespace lima 
 {
 
 namespace SlsDetector
 {
+
+typedef std::array<Data, 3> JungfrauGainDataSet;
 
 class Jungfrau : public Model
 {
@@ -42,6 +47,87 @@ class Jungfrau : public Model
 	typedef unsigned char Byte;
 	typedef unsigned short Word;
 	typedef unsigned int Long;
+
+	class GainPed
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::GainPed",
+				  "SlsDetector");
+	public:
+		struct Calib {
+			JungfrauGainDataSet gain_map;
+			JungfrauGainDataSet ped_map;
+			void clear() {
+				for (auto& d: gain_map) clearData(d);
+				for (auto& d: ped_map) clearData(d);
+			}
+		};
+
+		enum MapType { Map16, Map32 };
+
+		struct Map16Data {
+			static constexpr MapType Type = Map16;
+			static constexpr double DefaultCoeffs[3][2] = {
+				{ 0.011555,   965.5},
+				{-0.302124,  5519.0},
+				{-4.254403, 64882.8},
+			};
+			static constexpr Data::TYPE DataType = Data::UINT16;
+			using Pixel = unsigned short;
+		};
+
+		struct Map32Data {
+			static constexpr MapType Type = Map32;
+			static constexpr double DefaultCoeffs[3][2] = {
+				{   0.999952,       0.4}, // effectively {1, 0}
+				{ -26.144935,  394047.3}, // G0 x16
+				{-368.163215, 5531211.9}, // G1 x14
+			};
+			static constexpr Data::TYPE DataType = Data::UINT32;
+			using Pixel = unsigned int;
+		};
+
+		GainPed(Jungfrau *jungfrau);
+
+		void setMapType(MapType  map_type);
+		void getMapType(MapType& map_type);
+
+		void updateImageSize(Size size, bool raw);
+
+		void getDefaultCalib(Calib& calib);
+
+		Data::TYPE getDataType();
+
+		void processFrame(Data& data, Data& proc);
+
+		void setCalib(const Calib& calib);
+		void getCalib(Calib& calib);
+
+	private:
+		template <class M> struct Impl {
+			DEB_CLASS_NAMESPC(DebModCamera,
+					  "Jungfrau::GainPed::Impl",
+					  "SlsDetector");
+		public:
+			using Map = M;
+			Impl(Jungfrau *j) : m_jungfrau(j) {}
+			void updateImageSize(Size size, bool raw);
+			void getDefaultCalib(Calib& calib);
+			void setDefaultCalib() { getDefaultCalib(m_calib); }
+			void processFrame(Data& data, Data& proc);
+
+			Jungfrau *m_jungfrau;
+			Size m_size;
+			bool m_raw;
+			int m_pixels{0};
+			Calib m_calib;
+		};
+		using AnyImpl = std::variant<Impl<Map16Data>, Impl<Map32Data>>;
+
+		Jungfrau *m_jungfrau;
+		AnyImpl m_impl;
+		Size m_size;
+		bool m_raw;
+	};
 
 	class ImgProcTask : public SinkTaskBase
 	{
@@ -90,6 +176,9 @@ class Jungfrau : public Model
 
 	void readGainADCMaps(Data& gain_map, Data& adc_map, FrameType& frame);
 
+	GainPed& getGainPed() { return m_gain_ped_img_proc->m_gain_ped; }
+	void readGainPedProcMap(Data& proc_map, FrameType& frame);
+
 	virtual bool isXferActive();
 
  protected:
@@ -109,6 +198,8 @@ class Jungfrau : public Model
 	virtual void stopAcq();
 
  private:
+	friend class GainPed;
+
 	class Recv
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::Recv", "SlsDetector");
@@ -214,6 +305,54 @@ class Jungfrau : public Model
 
 	typedef std::vector<ImgProcBase *> ImgProcList;
 
+	template <class T>
+	class ReaderHelper : public Buffer::Callback {
+		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::ReaderHelper", 
+				  "SlsDetector");
+	public:
+		typedef DoubleBuffer<T> DBuffer;
+
+		T& addRead(DBuffer& b, FrameType& frame) {
+			DEB_MEMBER_FUNCT();
+			if (m_reader)
+				THROW_HW_ERROR(Error)
+					<< "A reader is already active";
+			m_reader = new Reader(b, frame);
+			frame = m_reader->getCounter();
+			return m_reader->getBuffer();
+		}
+
+		void addData(Data& src, Data& ref) {
+			DEB_MEMBER_FUNCT();
+			makeDataRef(src, ref, this);
+			m_buffer_list.insert(ref.data());
+			DEB_TRACE() << DEB_VAR1(m_buffer_list.size());
+		}
+
+	protected:
+		virtual void destroy(void *buffer) {
+			DEB_MEMBER_FUNCT();
+			DEB_PARAM() << DEB_VAR1(m_buffer_list.size());
+			if (m_buffer_list.empty() || !m_reader)
+				DEB_ERROR() << "Unexpected "
+					    << DEB_VAR1(buffer);
+			BufferList::iterator it, end = m_buffer_list.end();
+			it = find(m_buffer_list.begin(), end, buffer);
+			if (it == end)
+				DEB_ERROR() << "Bad " << DEB_VAR1(buffer);
+			m_buffer_list.erase(it);
+			if (m_buffer_list.empty())
+				m_reader = NULL;
+		}
+
+	private:
+		typedef DoubleBufferReader<T> Reader;
+		typedef std::set<void *> BufferList;
+
+		AutoPtr<Reader> m_reader;
+		BufferList m_buffer_list;
+	};
+
 	class GainADCMapImgProc : public ImgProcBase
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::GainADCMapImgProc", 
@@ -247,56 +386,45 @@ class Jungfrau : public Model
 			}
 		};
 
-		typedef DoubleBuffer<MapData> DBuffer;
-
-		class ReaderHelper : public Buffer::Callback {
-			DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::"
-					  "GainADCMapImgProc::ReaderHelper", 
-					  "SlsDetector");
-		public:
-			void addRead(DBuffer& b, Data& gain_map, Data& adc_map,
-				     FrameType frame) {
-				DEB_MEMBER_FUNCT();
-				if (m_reader)
-					THROW_HW_ERROR(Error)
-						<< "A reader is already active";
-				m_reader = new Reader(b, frame);
-				MapData& m = m_reader->getBuffer();
-				DEB_TRACE() << DEB_VAR1(&m);
-
-				makeDataRef(m.gain_map, gain_map, this);
-				++m_count;
-				makeDataRef(m.adc_map, adc_map, this);
-				++m_count;
-				DEB_TRACE() << DEB_VAR1(m_count);
-
-				frame = m_reader->getCounter();
-			}
-
-		protected:
-			virtual void destroy(void *buffer) {
-				DEB_MEMBER_FUNCT();
-				DEB_PARAM() << DEB_VAR1(m_count);
-				if ((m_count == 0) || !m_reader)
-					DEB_ERROR() << DEB_VAR1(m_count);
-				MapData& m = m_reader->getBuffer();
-				if ((buffer != m.gain_map.data()) &&
-				    (buffer != m.adc_map.data()))
-					THROW_HW_ERROR(Error)
-						<< "Bad buffer";
-				if (--m_count == 0)
-					m_reader = NULL;
-			}
-
-		private:
-			typedef DoubleBufferReader<MapData> Reader;
-
-			AutoPtr<Reader> m_reader;
-			int m_count{0};
-		};
+		typedef ReaderHelper<MapData> Reader;
+		typedef typename Reader::DBuffer DBuffer;
 
 		DBuffer m_buffer;
-		AutoPtr<ReaderHelper> m_reader;
+		AutoPtr<Reader> m_reader;
+	};
+
+	class GainPedImgProc : public ImgProcBase
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::GainPedImgProc", 
+				  "SlsDetector");
+	public:
+		GainPedImgProc(Jungfrau *jungfrau);
+
+		virtual void updateImageSize(Size size, bool raw);
+		virtual void prepareAcq();
+		virtual void processFrame(Data& data);
+
+		void readProcMap(Data& proc_map, FrameType& frame);
+
+		GainPed m_gain_ped;
+
+	private:
+		struct MapData {
+			Data proc_map;
+
+			MapData() { proc_map.type = Data::UINT16; }
+
+			void updateSize(Size size) {
+				updateDataSize(proc_map, size);
+			};
+			void clear() { clearData(proc_map); }
+		};
+
+		typedef ReaderHelper<MapData> Reader;
+		typedef typename Reader::DBuffer DBuffer;
+
+		DBuffer m_buffer;
+		AutoPtr<Reader> m_reader;
 	};
 
 	bool getRawMode() {
@@ -309,7 +437,10 @@ class Jungfrau : public Model
 		std::vector<int> data_dims{size.getWidth(), size.getHeight()};
 		if (d.empty() || (d.dimensions != data_dims)) {
 			d.dimensions = data_dims;
-			d.setBuffer(new Buffer(d.size()));
+			Buffer *b = new Buffer(d.size());
+			d.setBuffer(b);
+			b->unref();
+			clearData(d);
 		}
 	}
 
@@ -339,14 +470,13 @@ class Jungfrau : public Model
 			Buffer *b = new Buffer(d.size());
 			d.setBuffer(b);
 			b->unref();
+			clearData(d);
 		}
 	}
 
 	void addImgProc(ImgProcBase *img_proc);
 	void removeImgProc(ImgProcBase *img_proc);
 	void removeAllImgProc();
-
-	ImgProcBase *createGainADCMapImgProc();
 
 	int getNbJungfrauModules()
 	{ return getNbDetModules(); }
@@ -375,6 +505,8 @@ class Jungfrau : public Model
 	void processOneFrame(AutoMutex& l);
 
 	Cond m_cond;
+	AutoPtr<GainPedImgProc> m_gain_ped_img_proc;
+	AutoPtr<GainADCMapImgProc> m_gain_adc_map_img_proc;
 	std::string m_img_proc_config;
 	ImgProcList m_img_proc_list;
 	RecvList m_recv_list;
@@ -385,6 +517,8 @@ class Jungfrau : public Model
 	FrameMap::Item *m_frame_map_item;
 	ThreadList m_thread_list;
 };
+
+std::ostream& operator <<(std::ostream& os, Jungfrau::GainPed::MapType map_type);
 
 } // namespace SlsDetector
 
