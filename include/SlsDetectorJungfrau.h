@@ -201,33 +201,6 @@ class Jungfrau : public Model
 		virtual void prepareAcq();
 		virtual void processFrame(Data& data) = 0;
 
-		static void updateDataSize(Data& d, Size size) {
-			DataDims data_dims{size.getWidth(), size.getHeight()};
-			if (d.empty() || (d.dimensions != data_dims)) {
-				d.dimensions = data_dims;
-				d.setBuffer(new Buffer(d.size()));
-			}
-		}
-
-		static void clearData(Data& d) {
-			memset(d.data(), 0, d.size());
-		}
-
-		static void makeDataRef(Data& src, Data& ref,
-					Buffer::Callback *cb) {
-			ref.type = src.type;
-			ref.dimensions = src.dimensions;
-			ref.frameNumber = src.frameNumber;
-			ref.timestamp = src.timestamp;
-			ref.header = src.header;
-			Buffer *b = new Buffer;
-			b->owner = Buffer::MAPPED;
-			b->callback = cb;
-			b->data = src.data();
-			ref.setBuffer(b);
-			b->unref();
-		}
-
 	protected:
 		friend class Jungfrau;
 		Jungfrau *m_jungfrau;
@@ -330,6 +303,43 @@ class Jungfrau : public Model
 		bool raw;
 		getCamera()->getRawMode(raw);
 		return raw;
+	}
+
+	static void updateDataSize(Data& d, Size size) {
+		std::vector<int> data_dims{size.getWidth(), size.getHeight()};
+		if (d.empty() || (d.dimensions != data_dims)) {
+			d.dimensions = data_dims;
+			d.setBuffer(new Buffer(d.size()));
+		}
+	}
+
+	static void clearData(Data& d) {
+		memset(d.data(), 0, d.size());
+	}
+
+	static void makeDataRef(Data& src, Data& ref, Buffer::Callback *cb) {
+		ref.type = src.type;
+		ref.dimensions = src.dimensions;
+		ref.frameNumber = src.frameNumber;
+		ref.timestamp = src.timestamp;
+		ref.header = src.header;
+		Buffer *b = new Buffer;
+		b->owner = Buffer::MAPPED;
+		b->callback = cb;
+		b->data = src.data();
+		ref.setBuffer(b);
+		b->unref();
+	}
+
+	static void initData(Data& d, Size size, Data::TYPE type) {
+		std::vector<int> dims = {size.getWidth(), size.getHeight()};
+		if ((d.type != type) || (d.dimensions != dims)) {
+			d.type = type;
+			d.dimensions = dims;
+			Buffer *b = new Buffer(d.size());
+			d.setBuffer(b);
+			b->unref();
+		}
 	}
 
 	void addImgProc(ImgProcBase *img_proc);
