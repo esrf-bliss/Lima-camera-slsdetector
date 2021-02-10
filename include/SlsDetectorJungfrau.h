@@ -326,6 +326,12 @@ class Jungfrau : public Model
 		AutoPtr<ReaderHelper> m_reader;
 	};
 
+	bool getRawMode() {
+		bool raw;
+		getCamera()->getRawMode(raw);
+		return raw;
+	}
+
 	void addImgProc(ImgProcBase *img_proc);
 	void removeImgProc(ImgProcBase *img_proc);
 	void removeAllImgProc();

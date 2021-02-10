@@ -69,7 +69,7 @@ Jungfrau::Recv::Recv(Jungfrau *jungfrau, int idx)
 void Jungfrau::Recv::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
-	m_jungfrau->getCamera()->getRawMode(m_raw);
+	m_raw = m_jungfrau->getRawMode();
 	m_frame_dim = m_jungfrau->getModuleFrameDim(m_idx, m_raw);
 	m_data_offset = m_jungfrau->getModuleDataOffset(m_idx, m_raw);
 	DEB_TRACE() << DEB_VAR3(m_idx, m_frame_dim, m_data_offset);
@@ -414,8 +414,7 @@ int Jungfrau::getModuleDataOffset(int idx, bool raw)
 void Jungfrau::getDetMap(Data& det_map)
 {
 	DEB_MEMBER_FUNCT();
-	bool raw;
-	getCamera()->getRawMode(raw);
+	bool raw = getRawMode();
 	FrameDim frame_dim;
 	getFrameDim(frame_dim, raw);
 	Buffer *b = new Buffer(frame_dim.getMemSize() * 2);
@@ -593,9 +592,7 @@ void Jungfrau::updateImageSize()
 {
 	DEB_MEMBER_FUNCT();
 
-	Camera *cam = getCamera();
-	bool raw;
-	cam->getRawMode(raw);
+	bool raw = getRawMode();
 	FrameDim frame_dim;
 	getFrameDim(frame_dim, raw);
 	DEB_TRACE() << DEB_VAR2(frame_dim, raw);
@@ -829,8 +826,7 @@ void Jungfrau::addImgProc(ImgProcBase *img_proc)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(img_proc);
 	m_img_proc_list.push_back(img_proc);
-	bool raw;
-	getCamera()->getRawMode(raw);
+	bool raw = getRawMode();
 	FrameDim frame_dim;
 	getFrameDim(frame_dim, raw);
 	img_proc->updateImageSize(frame_dim.getSize(), raw);
