@@ -61,6 +61,8 @@ class Model
 	int getNbDetModules()
 	{ return m_nb_det_modules; }
 
+	virtual void getDetMap(Data& det_map) = 0;
+
 	virtual void setNbUDPInterfaces(int  nb_udp_ifaces);
 	virtual void getNbUDPInterfaces(int& nb_udp_ifaces);
 

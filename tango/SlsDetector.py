@@ -510,6 +510,11 @@ class SlsDetector(PyTango.Device_4Impl):
         self.cam.setPixelDepthCPUAffinityMap(aff_map)
 
     @Core.DEB_MEMBER_FUNCT
+    def read_det_map(self, attr):
+        det_map = self.model.getDetMap();
+        attr.set_value(det_map.buffer)
+
+    @Core.DEB_MEMBER_FUNCT
     def read_jungfrau_gain_map(self, attr):
         jungfrau = _SlsDetectorJungfrau
         gain_data, adc_data, frame = jungfrau.readGainADCMaps(-1)
@@ -688,6 +693,10 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevULong,
           PyTango.SPECTRUM,
           PyTango.READ, 64]],
+        'det_map':
+        [[PyTango.DevULong,
+          PyTango.IMAGE,
+          PyTango.READ, 8192, 8192]],
         'jungfrau_gain_map':
         [[PyTango.DevUChar,
           PyTango.IMAGE,

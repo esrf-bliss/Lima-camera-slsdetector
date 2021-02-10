@@ -411,6 +411,48 @@ int Jungfrau::getModuleDataOffset(int idx, bool raw)
 	return data_offset;
 }
 
+void Jungfrau::getDetMap(Data& det_map)
+{
+	DEB_MEMBER_FUNCT();
+	bool raw;
+	getCamera()->getRawMode(raw);
+	FrameDim frame_dim;
+	getFrameDim(frame_dim, raw);
+	Buffer *b = new Buffer(frame_dim.getMemSize() * 2);
+	det_map.type = Data::UINT32;
+	Size size = frame_dim.getSize();
+	std::vector<int> dims = {size.getWidth(), size.getHeight()};
+	det_map.dimensions = dims;
+	det_map.setBuffer(b);
+	b->unref();
+	DEB_ALWAYS() << DEB_VAR1(det_map.size());
+
+	auto f = [&](auto det_geom) {
+		using namespace sls::Geom;
+
+		// gap pixels are set to -1
+		unsigned int *p = (unsigned int *) det_map.data();
+		memset(p, 0xff, det_map.size());
+
+		int chip_idx = 0;
+		det_for_each_mod(det_geom, mod, mod_geom,
+		    mod_for_each_recv(mod_geom, recv, recv_geom,
+		        recv_for_each_iface(recv_geom, iface, iface_geom,
+		            iface_for_each_chip(iface_geom, chip, chip_view,
+			        view_for_each_pixel(chip_view, pixel,
+				    int i = chip_view.calcMapPixelIndex(pixel);
+				    p[i] = chip_idx;
+				  );
+				++chip_idx;
+			      );
+		          );
+		      );
+		  );
+	};
+	applyDetGeom(this, f, raw);
+	DEB_ALWAYS() << DEB_VAR1(det_map);
+}
+
 string Jungfrau::getName()
 {
 	DEB_MEMBER_FUNCT();

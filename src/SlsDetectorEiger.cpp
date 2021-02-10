@@ -765,6 +765,12 @@ void Eiger::getFrameDim(FrameDim& frame_dim, bool raw)
 	DEB_RETURN() << DEB_VAR1(frame_dim);
 }
 
+void Eiger::getDetMap(Data& /*det_map*/)
+{
+	DEB_MEMBER_FUNCT();
+	THROW_HW_ERROR(NotSupported) << "DetMap not implemented yet";
+}
+
 string Eiger::getName()
 {
 	DEB_MEMBER_FUNCT();

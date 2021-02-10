@@ -220,6 +220,8 @@ class Eiger : public Model
 
 	virtual void getFrameDim(FrameDim& frame_dim, bool raw = false);
 
+	virtual void getDetMap(Data& det_map);
+
 	virtual std::string getName();
 	virtual void getPixelSize(double& x_size, double& y_size);
 

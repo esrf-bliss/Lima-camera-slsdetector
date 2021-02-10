@@ -51,6 +51,8 @@ class Jungfrau : public SlsDetector::Model
 
 	virtual void getFrameDim(FrameDim& frame_dim /Out/, bool raw = false);
 
+	virtual void getDetMap(Data& det_map /Out/);
+
 	SlsDetector::Jungfrau::ImgProcTask *createImgProcTask() /Factory/;
 
 	virtual std::string getName();

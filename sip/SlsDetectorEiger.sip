@@ -51,6 +51,9 @@ class Eiger : public SlsDetector::Model
 	Eiger(SlsDetector::Camera *cam);
 
 	virtual void getFrameDim(FrameDim& frame_dim /Out/, bool raw = false);
+
+	virtual void getDetMap(Data& det_map /Out/);
+
 	SlsDetector::Eiger::Correction *createCorrectionTask() /Factory/;
 
 	virtual std::string getName();

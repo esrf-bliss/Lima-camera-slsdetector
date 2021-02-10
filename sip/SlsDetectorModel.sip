@@ -41,6 +41,8 @@ public:
 	virtual void getFrameDim(FrameDim& frame_dim /Out/,
 				 bool raw = false) = 0;
 
+	virtual void getDetMap(Data& det_map /Out/) = 0;
+
 	SlsDetector::Camera *getCamera();
 	SlsDetector::Type getType();
 
