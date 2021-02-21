@@ -362,30 +362,24 @@ Jungfrau::ImgProcTask::ImgProcTask(Jungfrau *jungfrau)
 	DEB_CONSTRUCTOR();
 }
 
-void Jungfrau::ImgProcTask::setConfig(string config)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(config);
-	m_jungfrau->setImgProcConfig(config);
-}
-
-void Jungfrau::ImgProcTask::getConfig(string &config)
-{
-	DEB_MEMBER_FUNCT();
-	m_jungfrau->getImgProcConfig(config);
-	DEB_RETURN() << DEB_VAR1(config);
-}
-
 void Jungfrau::ImgProcTask::process(Data& data)
 {
 	DEB_MEMBER_FUNCT();
 
 	DEB_PARAM() << DEB_VAR2(data.frameNumber, data.data());
-	
+
+	Data src;
+	if (m_jungfrau->m_img_src == Raw) {
+		src = data;
+	} else {
+		BufferCtrlObj *buffer = &m_jungfrau->m_acq_buffer_ctrl_obj;
+		src = buffer->getFrameData(data.frameNumber);
+	}
+
 	ImgProcList& img_proc_list = m_jungfrau->m_img_proc_list;
 	ImgProcList::iterator it, end = img_proc_list.end();
 	for (it = img_proc_list.begin(); it != end; ++it)
-		(*it)->processFrame(data);
+		(*it)->processFrame(src);
 }
 
 
@@ -428,6 +422,13 @@ void Jungfrau::ImgProcBase::prepareAcq()
 
 	if (!m_jungfrau)
 		THROW_HW_ERROR(InvalidValue) << "ImgProc already removed";
+
+	clear();
+}
+
+void Jungfrau::ImgProcBase::clear()
+{
+	DEB_MEMBER_FUNCT();
 }
 
 /*
@@ -450,10 +451,10 @@ void Jungfrau::GainADCMapImgProc::updateImageSize(Size size, bool raw)
 		d.updateSize(size);
 }
 
-void Jungfrau::GainADCMapImgProc::prepareAcq()
+void Jungfrau::GainADCMapImgProc::clear()
 {
 	DEB_MEMBER_FUNCT();
-	ImgProcBase::prepareAcq();
+	ImgProcBase::clear();
 
 	for (auto& d : m_buffer)
 		d.clear();
@@ -521,10 +522,10 @@ void Jungfrau::GainPedImgProc::updateImageSize(Size size, bool raw)
 	m_gain_ped.updateImageSize(size, raw);
 }
 
-void Jungfrau::GainPedImgProc::prepareAcq()
+void Jungfrau::GainPedImgProc::clear()
 {
 	DEB_MEMBER_FUNCT();
-	ImgProcBase::prepareAcq();
+	ImgProcBase::clear();
 
 	Data::TYPE data_type = m_gain_ped.getDataType();
 	DEB_TRACE() << DEB_VAR1(data_type);
@@ -563,11 +564,35 @@ void Jungfrau::GainPedImgProc::readProcMap(Data& proc_map, FrameType& frame)
 }
 
 /*
+ * Jungfrau::ModelReconstruction class
+ */
+
+Data Jungfrau::ModelReconstruction::process(Data& data)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR4(m_jungfrau, data.frameNumber,
+				_processingInPlaceFlag, data.data());
+	if (!m_jungfrau)
+		return data;
+
+	Data ret = _processingInPlaceFlag ? data : data.copy();
+
+	FrameType frame = ret.frameNumber;
+	Data raw = m_jungfrau->m_acq_buffer_ctrl_obj.getFrameData(frame);
+	DEB_TRACE() << DEB_VAR1(raw);
+	GainPed& gain_ped = m_jungfrau->m_gain_ped_img_proc->m_gain_ped;
+	gain_ped.processFrame(raw, ret);
+	DEB_TRACE() << DEB_VAR1(ret);
+	return ret;
+}
+
+
+/*
  * Jungfrau detector class
  */
 
 Jungfrau::Jungfrau(Camera *cam)
-	: Model(cam, JungfrauDet)
+	: Model(cam, JungfrauDet), m_img_src(Raw)
 {
 	DEB_CONSTRUCTOR();
 
@@ -585,6 +610,8 @@ Jungfrau::Jungfrau(Camera *cam)
 	m_gain_ped_img_proc = new GainPedImgProc(this);
 	m_gain_adc_map_img_proc = new GainADCMapImgProc(this);
 
+	m_reconstruction = new ModelReconstruction(this);
+
 	updateCameraModel();
 }
 
@@ -592,10 +619,53 @@ Jungfrau::~Jungfrau()
 {
 	DEB_DESTRUCTOR();
 	getCamera()->waitAcqState(Idle);
+	m_reconstruction->m_jungfrau = NULL;
+	m_reconstruction->unref();
 	removeAllImgProc();
 }
 
+void Jungfrau::setImgSrc(ImgSrc img_src)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(img_src, m_img_src);
+	if (img_src == m_img_src)
+		return;
+
+	m_img_src = img_src;
+	bool do_proc = (m_img_src == GainPedCorr);
+
+	doSetImgProcConfig(m_img_proc_config, true);
+
+	m_reconstruction->setActive(do_proc);
+
+	Camera *cam = getCamera();
+	cam->releaseBuffers();
+	BufferCtrlObj *buffer = do_proc ? &m_acq_buffer_ctrl_obj : NULL;
+	cam->setBufferCtrlObj(buffer, AcqBuffer);
+}
+
+void Jungfrau::getImgSrc(ImgSrc& img_src)
+{
+	DEB_MEMBER_FUNCT();
+	img_src = m_img_src;
+	DEB_RETURN() << DEB_VAR1(img_src);
+}
+
 void Jungfrau::getFrameDim(FrameDim& frame_dim, bool raw)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(raw);
+	getAcqFrameDim(frame_dim, raw);
+	if (m_img_src == GainPedCorr) {
+		GainPed::MapType map_type;
+		m_gain_ped_img_proc->m_gain_ped.getMapType(map_type);
+		if (map_type == GainPed::Map32)
+			frame_dim.setImageType(Bpp32);
+	}
+	DEB_RETURN() << DEB_VAR1(frame_dim);
+}
+
+void Jungfrau::getAcqFrameDim(FrameDim& frame_dim, bool raw)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(raw);
@@ -835,9 +905,11 @@ void Jungfrau::updateImageSize()
 
 	bool raw = getRawMode();
 	FrameDim frame_dim;
-	getFrameDim(frame_dim, raw);
+	getAcqFrameDim(frame_dim, raw);
 	Size size = frame_dim.getSize();
 	DEB_TRACE() << DEB_VAR2(size, raw);
+
+	m_acq_buffer_ctrl_obj.setFrameDim(frame_dim);
 
 	m_gain_ped_img_proc->updateImageSize(size, raw);
 	m_gain_adc_map_img_proc->updateImageSize(size, raw);
@@ -946,6 +1018,16 @@ void Jungfrau::prepareAcq()
 	Camera *cam = getCamera();
 	cam->getNbFrames(nb_frames);
 
+	if (m_img_src == GainPedCorr) {
+		BufferCtrlObj *buffer = &m_acq_buffer_ctrl_obj;
+		int nb_buffers = nb_frames;
+		int max_nb_buffers;
+		buffer->getMaxNbBuffers(max_nb_buffers);
+		if (nb_buffers > max_nb_buffers)
+			nb_buffers = max_nb_buffers;
+		buffer->setNbBuffers(nb_buffers);
+	}
+
 	{
 		AutoMutex l = lock();
 		m_in_process.clear();
@@ -1023,7 +1105,7 @@ void Jungfrau::processOneFrame(AutoMutex& l)
 		int nb_recvs = getNbRecvs();
 		if (nb_recvs > 64)
 			THROW_HW_ERROR(Error) << "Too many receivers";
-		char *bptr = getFrameBufferPtr(frame);
+		char *bptr = getAcqFrameBufferPtr(frame);
 		for (int i = 0; i < nb_recvs; ++i)
 			ok[i] = m_recv_list[i]->processOneFrame(frame, bptr);
 
@@ -1095,7 +1177,21 @@ void Jungfrau::setImgProcConfig(std::string config)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(config);
-	if (config == m_img_proc_config)
+	doSetImgProcConfig(config, false);
+}
+
+void Jungfrau::getImgProcConfig(std::string &config)
+{
+	DEB_MEMBER_FUNCT();
+	config = m_img_proc_config;
+	DEB_RETURN() << DEB_VAR1(config);
+}
+
+void Jungfrau::doSetImgProcConfig(std::string config, bool force)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR3(m_img_proc_config, config, force);
+	if ((config == m_img_proc_config) && !force)
 		return;
 	StringList config_list = SplitString(config);
 	removeAllImgProc();
@@ -1111,11 +1207,16 @@ void Jungfrau::setImgProcConfig(std::string config)
 		return true;
 	};
 	if (checkConfigAndDelete("gain_ped")) {
-		DEB_ALWAYS() << "Adding gain_ped";
-		img_proc_list.push_back(m_gain_ped_img_proc);
+		if (m_img_src != GainPedCorr) {
+			DEB_TRACE() << "Adding gain_ped";
+			img_proc_list.push_back(m_gain_ped_img_proc);
+		} else {
+			DEB_TRACE() << "Ignoring gain_ped";
+			m_gain_ped_img_proc->clear();
+		}
 	}
 	if (checkConfigAndDelete("gain_adc_map")) {
-		DEB_ALWAYS() << "Adding gain_adc_map";
+		DEB_TRACE() << "Adding gain_adc_map";
 		img_proc_list.push_back(m_gain_adc_map_img_proc);
 	}
 	if (!config_list.empty())
@@ -1125,13 +1226,6 @@ void Jungfrau::setImgProcConfig(std::string config)
 		addImgProc(img_proc);
 
 	m_img_proc_config = config;
-}
-
-void Jungfrau::getImgProcConfig(std::string &config)
-{
-	DEB_MEMBER_FUNCT();
-	config = m_img_proc_config;
-	DEB_RETURN() << DEB_VAR1(config);
 }
 
 void Jungfrau::readGainADCMaps(Data& gain_map, Data& adc_map, FrameType& frame)
@@ -1145,5 +1239,35 @@ void Jungfrau::readGainPedProcMap(Data& proc_map, FrameType& frame)
 {
 	DEB_MEMBER_FUNCT();
 	m_gain_ped_img_proc->readProcMap(proc_map, frame);
+}
+
+
+void Jungfrau::setGainPedMapType(GainPed::MapType map_type)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(map_type);
+	GainPed& gain_ped = m_gain_ped_img_proc->m_gain_ped;
+	gain_ped.setMapType(map_type);
+	if (m_img_src == GainPedCorr)
+		updateCameraImageSize();
+}
+
+void Jungfrau::getGainPedMapType(GainPed::MapType& map_type)
+{
+	DEB_MEMBER_FUNCT();
+	GainPed& gain_ped = m_gain_ped_img_proc->m_gain_ped;
+	gain_ped.getMapType(map_type);
+	DEB_RETURN() << DEB_VAR1(map_type);
+}
+
+std::ostream& lima::SlsDetector::operator <<(std::ostream& os,
+					     Jungfrau::ImgSrc img_src)
+{
+	const char *name = "Unknown";
+	switch (img_src) {
+	case Jungfrau::Raw:		name = "Raw";		break;	
+	case Jungfrau::GainPedCorr:	name = "GainPedCorr";	break;	
+	}
+	return os << name;
 }
 

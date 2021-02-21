@@ -34,12 +34,13 @@ public:
 	Model(SlsDetector::Camera *cam, SlsDetector::Type type);
 	virtual ~Model();
 
-
 	virtual void setThreadCPUAffinity(const SlsDetector::CPUAffinityList&
 						det_thread_aff_list) = 0;
 
 	virtual void getFrameDim(FrameDim& frame_dim /Out/,
 				 bool raw = false) = 0;
+	virtual void getAcqFrameDim(FrameDim& frame_dim /Out/,
+				    bool raw = false);
 
 	virtual void getDetMap(Data& det_map /Out/) = 0;
 
@@ -71,15 +72,19 @@ public:
 
 	virtual bool isXferActive() = 0;
 
+	virtual SlsDetector::Reconstruction *getReconstruction();
+
 protected:
 	void updateCameraModel();
+	void updateCameraImageSize();
+	void updateCameraTimeRanges();
 
 	virtual void updateImageSize() = 0;
 
 	void putCmd(const std::string& s, int idx = -1);
 	std::string getCmd(const std::string& s, int idx = -1);
 
-	char *getFrameBufferPtr(unsigned long frame_nb);
+	char *getAcqFrameBufferPtr(unsigned long frame_nb);
 
 	virtual 
 	bool checkSettings(SlsDetector::Defs::Settings settings) = 0;

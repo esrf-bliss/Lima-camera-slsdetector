@@ -133,6 +133,8 @@ class Interface : HwInterface
 
 	void resetDefaults();
 
+	void setReconstruction(SlsDetector::Reconstruction *r);
+
 	SIP_PYOBJECT getHwCtrlObj(HwCap::Type cap_type);
 %MethodCode
 	HwInterface::CapList cap_list;

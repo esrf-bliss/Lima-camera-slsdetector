@@ -25,6 +25,7 @@
 
 #include "SlsDetectorDefs.h"
 #include "SlsDetectorCPUAffinity.h"
+#include "SlsDetectorReconstruction.h"
 
 #include "lima/SizeUtils.h"
 
@@ -51,7 +52,8 @@ class Model
 	virtual ~Model();
 	
 	virtual void getFrameDim(FrameDim& frame_dim, bool raw = false) = 0;
-		
+	virtual void getAcqFrameDim(FrameDim& frame_dim, bool raw = false);
+
 	Camera *getCamera()
 	{ return m_cam; }
 
@@ -87,16 +89,19 @@ class Model
 
 	virtual void setThreadCPUAffinity(const CPUAffinityList& aff_list) = 0;
 
+	virtual Reconstruction *getReconstruction();
+
  protected:
 	void updateCameraModel();
-	void updateTimeRanges();
+	void updateCameraImageSize();
+	void updateCameraTimeRanges();
 
 	virtual void updateImageSize() = 0;
 
 	void putCmd(const std::string& s, int idx = -1);
 	std::string getCmd(const std::string& s, int idx = -1);
 
-	char *getFrameBufferPtr(FrameType frame_nb);
+	char *getAcqFrameBufferPtr(FrameType frame_nb);
 
 	virtual bool checkSettings(Settings settings) = 0;
 

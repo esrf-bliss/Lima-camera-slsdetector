@@ -38,12 +38,11 @@ public:
 	std::vector<std::string> getHostnameList();
 	int getNbDetModules();
 
-//	void setBufferCtrlObj(NumaSoftBufferCtrlObj *buffer_ctrl_obj);
-
 	void setModuleActive(int mod_idx, bool  active);
 	void getModuleActive(int mod_idx, bool& active /Out/);
 
 	void clearAllBuffers();
+	void releaseBuffers();
 
 	void setPixelDepth(SlsDetector::PixelDepth  pixel_depth);
 	void getPixelDepth(SlsDetector::PixelDepth& pixel_depth /Out/);

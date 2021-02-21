@@ -129,8 +129,7 @@ private:
 	Interface		m_hw_inter;
 	lima::AcqState		m_acq_state;
 
-	AutoPtr<Eiger>		m_eiger;
-	AutoPtr<Eiger::Correction> m_corr;
+	AutoPtr<Model>		m_model;
 
 	AutoPtr<ImageStatusCallback> m_img_status_cb;
 
@@ -151,11 +150,16 @@ SlsDetectorAcq::SlsDetectorAcq(string config_fname)
 
 	switch (m_cam.getType()) {
 	case EigerDet:
-		m_eiger = new Eiger(&m_cam);
-		m_corr = new Eiger::Correction(m_eiger);
+		m_model = new Eiger(&m_cam);
 		break;
 	default:
 		DEB_WARNING() << "Non-supported type: " << m_cam.getType();
+	}
+
+	if (m_model) {
+		Reconstruction *r = m_model->getReconstruction();
+		if (r)
+			m_hw_inter.setReconstruction(r);
 	}
 
 	m_ct = new CtControl(&m_hw_inter);
@@ -169,9 +173,6 @@ SlsDetectorAcq::SlsDetectorAcq(string config_fname)
 #endif
 
 	printDefaults();
-
-	if (m_corr)
-		m_ct->setReconstructionTask(m_corr);
 
 	m_img_status_cb = new ImageStatusCallback(*m_ct, m_acq_state);
 	m_ct->registerImageStatusCallback(*m_img_status_cb);

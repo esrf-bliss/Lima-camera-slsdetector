@@ -140,7 +140,7 @@ TestApp::TestApp(int argc, char *argv[])
 	DebParams::enableTypeFlags(m_pars.debug_type_flags);
 
 	m_cam = new Camera(m_pars.config_fname);
-	m_buffer_ctrl_obj = new NumaSoftBufferCtrlObj();
+	m_buffer_ctrl_obj = new BufferCtrlObj();
 	m_buffer_ctrl_obj->registerFrameCallback(m_cb);
 	m_cam->setBufferCtrlObj(m_buffer_ctrl_obj);
 

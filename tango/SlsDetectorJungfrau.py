@@ -56,9 +56,8 @@ class SlsDetectorJungfrau(SlsDetector):
 #------------------------------------------------------------------
 
     ModelAttrs = ['img_proc_config',
-    ]
-
-    GainPedAttrs = ['map_type',
+                  'img_src',
+                  'gain_ped_map_type',
     ]
 
     GainPedCalibAttrRe = re.compile('((?P<action>read|write)_)?'
@@ -67,9 +66,6 @@ class SlsDetectorJungfrau(SlsDetector):
 
     GainPedProcAttrRe = re.compile('((?P<action>read|write)_)?'
                                    'gain_ped_proc_map(?P<map_type>16|32)')
-
-    GainPedAttrRe = re.compile('((?P<action>read|write)_)?'
-                               'gain_ped_(?P<attr>.+)')
 
     def __init__(self,*args) :
         SlsDetector.__init__(self,*args)
@@ -95,7 +91,10 @@ class SlsDetectorJungfrau(SlsDetector):
         nl = ['Map16', 'Map32']
         klass = SlsDetectorHw.Jungfrau.GainPed
         self.__GainPedMapType = ConstListAttr(nl, namespc=klass)
-        self.__MapType = self.__GainPedMapType
+
+        nl = ['Raw', 'GainPedCorr']
+        klass = SlsDetectorHw.Jungfrau
+        self.__ImgSrc = ConstListAttr(nl, namespc=klass)
 
     def __getattr__(self, name):
         m = self.GainPedCalibAttrRe.match(name)
@@ -108,11 +107,6 @@ class SlsDetectorJungfrau(SlsDetector):
             name = f'{m.group("action")}_gain_ped_proc_map'
             return partial(getattr(self, name), map_type=m.group("map_type"))
         obj = None
-        for attr in self.GainPedAttrs:
-            m = self.GainPedAttrRe.match(name)
-            if m:
-                name = f'{m.group("action")}_{m.group("attr")}'
-                obj = _SlsDetectorJungfrau.getGainPed()
         for attr in self.ModelAttrs:
             if attr in name:
                 obj = self.model
@@ -141,7 +135,7 @@ class SlsDetectorJungfrau(SlsDetector):
     def getGainPedProcMap(self, map_type):
         jungfrau = _SlsDetectorJungfrau
         map_type_nb = self.__GainPedMapType[f'MAP{map_type}']
-        if jungfrau.getGainPed().getMapType() != map_type_nb:
+        if jungfrau.getGainPedMapType() != map_type_nb:
             raise ValueError('Invalid map_type %s' % map_type);
         return jungfrau.readGainPedProcMap(-1)
 
@@ -165,8 +159,7 @@ class SlsDetectorJungfrau(SlsDetector):
 
     @Core.DEB_MEMBER_FUNCT
     def read_gain_ped_calib_map(self, attr, map_select, gain):
-        gain_ped = _SlsDetectorJungfrau.getGainPed()
-        c = gain_ped.getCalib()
+        c = _SlsDetectorJungfrau.getGainPedCalib()
         d = c.gain_map[gain] if map_select == 'gain' else c.ped_map[gain]
         deb.Return("%s_%d=%s" % (map_select, gain, d))
         attr.set_value(d.buffer)
@@ -197,6 +190,10 @@ class SlsDetectorJungfrauClass(SlsDetectorClass):
 
     attr_list = {
         'img_proc_config':
+        [[PyTango.DevString,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'img_src':
         [[PyTango.DevString,
           PyTango.SCALAR,
           PyTango.READ_WRITE]],
@@ -259,10 +256,9 @@ class SlsDetectorJungfrauClass(SlsDetectorClass):
 # Plugin
 #----------------------------------------------------------------------------
 _SlsDetectorJungfrau = None
-_SlsDetectorImgProc = None
 
 def get_control(config_fname, **keys) :
-    global _SlsDetectorJungfrau, _SlsDetectorImgProc
+    global _SlsDetectorJungfrau
 
     _Cam, _HwInter, _Control = get_slsdetector_objs()
     if _Control is not None:
@@ -278,16 +274,18 @@ def get_control(config_fname, **keys) :
         raise ValueError("Bad detector type: %s" % det_type)
 
     _SlsDetectorJungfrau = SlsDetectorHw.Jungfrau(_Cam)
-    _SlsDetectorImgProc = _SlsDetectorJungfrau.createImgProcTask()
+    _Reconstruction = _SlsDetectorJungfrau.getReconstruction();
+    _HwInter.setReconstruction(_Reconstruction)
 
     _Control = Core.CtControl(_HwInter)
 
-    if _SlsDetectorImgProc:
+    _ImgProc = _SlsDetectorJungfrau.createImgProcTask()
+    if _ImgProc:
         ext_op_mgr = _Control.externalOperation()
         alias = 'SlsDetectorImgProc'
         stage_level = 10
         soft_op = ext_op_mgr.addOp(Core.USER_SINK_TASK, alias, stage_level)
-        soft_op.setSinkTask(_SlsDetectorImgProc)
+        soft_op.setSinkTask(_ImgProc)
 
     set_slsdetector_objs(_Cam, _HwInter, _Control)
     return _Control 

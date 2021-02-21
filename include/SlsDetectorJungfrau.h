@@ -136,18 +136,18 @@ class Jungfrau : public Model
 	public:
 		ImgProcTask(Jungfrau *jungfrau);
 
-		void setConfig(std::string  config);
-		void getConfig(std::string &config);
-
 		virtual void process(Data& data);
 	private:
 		Jungfrau *m_jungfrau;
 	};
 
+	enum ImgSrc { Raw, GainPedCorr };
+
 	Jungfrau(Camera *cam);
 	~Jungfrau();
 
 	virtual void getFrameDim(FrameDim& frame_dim, bool raw = false);
+	virtual void getAcqFrameDim(FrameDim& frame_dim, bool raw = false);
 
 	virtual void getDetMap(Data& det_map);
 
@@ -176,10 +176,21 @@ class Jungfrau : public Model
 
 	void readGainADCMaps(Data& gain_map, Data& adc_map, FrameType& frame);
 
-	GainPed& getGainPed() { return m_gain_ped_img_proc->m_gain_ped; }
 	void readGainPedProcMap(Data& proc_map, FrameType& frame);
 
+	void setGainPedMapType(GainPed::MapType  map_type);
+	void getGainPedMapType(GainPed::MapType& map_type);
+
+	void getGainPedCalib(GainPed::Calib& calib)
+	{ m_gain_ped_img_proc->m_gain_ped.getCalib(calib); }
+
+	void setImgSrc(ImgSrc  img_src);
+	void getImgSrc(ImgSrc& img_src);
+
 	virtual bool isXferActive();
+
+	virtual Reconstruction *getReconstruction()
+	{ return m_reconstruction; }
 
  protected:
 	virtual int getNbFrameMapItems();
@@ -290,6 +301,7 @@ class Jungfrau : public Model
 
 		virtual void updateImageSize(Size size, bool raw);
 		virtual void prepareAcq();
+		virtual void clear();
 		virtual void processFrame(Data& data) = 0;
 
 	protected:
@@ -361,7 +373,7 @@ class Jungfrau : public Model
 		GainADCMapImgProc(Jungfrau *jungfrau);
 
 		virtual void updateImageSize(Size size, bool raw);
-		virtual void prepareAcq();
+		virtual void clear();
 		virtual void processFrame(Data& data);
 
 		void readGainADCMaps(Data& gain_map, Data& adc_map,
@@ -401,7 +413,7 @@ class Jungfrau : public Model
 		GainPedImgProc(Jungfrau *jungfrau);
 
 		virtual void updateImageSize(Size size, bool raw);
-		virtual void prepareAcq();
+		virtual void clear();
 		virtual void processFrame(Data& data);
 
 		void readProcMap(Data& proc_map, FrameType& frame);
@@ -425,6 +437,21 @@ class Jungfrau : public Model
 
 		DBuffer m_buffer;
 		AutoPtr<Reader> m_reader;
+	};
+
+	class ModelReconstruction : public SlsDetector::Reconstruction
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::ModelReconstruction", 
+				  "SlsDetector");
+	public:
+		ModelReconstruction(Jungfrau *jungfrau) : m_jungfrau(jungfrau)
+		{}
+
+		virtual Data process(Data& data);
+
+	private:
+		friend class Jungfrau;
+		Jungfrau *m_jungfrau;
 	};
 
 	bool getRawMode() {
@@ -477,6 +504,7 @@ class Jungfrau : public Model
 	void addImgProc(ImgProcBase *img_proc);
 	void removeImgProc(ImgProcBase *img_proc);
 	void removeAllImgProc();
+	void doSetImgProcConfig(std::string config, bool force);
 
 	int getNbJungfrauModules()
 	{ return getNbDetModules(); }
@@ -509,6 +537,9 @@ class Jungfrau : public Model
 	AutoPtr<GainADCMapImgProc> m_gain_adc_map_img_proc;
 	std::string m_img_proc_config;
 	ImgProcList m_img_proc_list;
+	ImgSrc m_img_src;
+	BufferCtrlObj m_acq_buffer_ctrl_obj;
+	ModelReconstruction *m_reconstruction;
 	RecvList m_recv_list;
 	FrameType m_nb_frames;
 	FrameType m_next_frame;
@@ -519,6 +550,7 @@ class Jungfrau : public Model
 };
 
 std::ostream& operator <<(std::ostream& os, Jungfrau::GainPed::MapType map_type);
+std::ostream& operator <<(std::ostream& os, Jungfrau::ImgSrc src);
 
 } // namespace SlsDetector
 

@@ -166,28 +166,16 @@ void Eiger::InterModGapCorr::correctFrame(FrameType /*frame*/, void *ptr)
 	}
 }
 
-Eiger::Correction::Correction(Eiger *eiger)
-	: m_eiger(eiger)
-{
-	DEB_CONSTRUCTOR();
-}
-
-Data Eiger::Correction::process(Data& data)
+Data Eiger::ModelReconstruction::process(Data& data)
 {
 	DEB_MEMBER_FUNCT();
 
-	DEB_PARAM() << DEB_VAR3(data.frameNumber, 
+	DEB_PARAM() << DEB_VAR4(m_eiger, data.frameNumber, 
 				_processingInPlaceFlag, data.data());
-	
-	Data ret = data;
+	if (!m_eiger)
+		return data;
 
-	if (!_processingInPlaceFlag) {
-		int size = data.size();
-		Buffer *buffer = new Buffer(size);
-		memcpy(buffer->data, data.data(), size);
-		ret.setBuffer(buffer);
-		buffer->unref();
-	}
+	Data ret = _processingInPlaceFlag ? data : data.copy();
 
 	FrameType frame = ret.frameNumber;
 	void *ptr = ret.data();
@@ -745,6 +733,8 @@ Eiger::Eiger(Camera *cam)
 		setFlowControl10G(true);
 	}
 
+	m_reconstruction = new ModelReconstruction(this);
+
 	updateCameraModel();
 
 	getClockDiv(m_clock_div);
@@ -754,6 +744,8 @@ Eiger::~Eiger()
 {
 	DEB_DESTRUCTOR();
 	getCamera()->waitAcqState(Idle);
+	m_reconstruction->m_eiger = NULL;
+	m_reconstruction->unref();
 	removeAllCorr();
 }
 
@@ -1093,7 +1085,7 @@ void Eiger::setParallelMode(ParallelMode mode)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(mode);
 	EXC_CHECK(m_det->setParallelMode(mode));
-	updateTimeRanges();
+	updateCameraTimeRanges();
 }
 
 void Eiger::getParallelMode(ParallelMode& mode)
@@ -1133,7 +1125,7 @@ void Eiger::setClockDiv(ClockDiv clock_div)
 	typedef slsDetectorDefs::speedLevel Speed;
 	EXC_CHECK(m_det->setSpeed(Speed(clock_div)));
 	m_clock_div = clock_div;
-	updateTimeRanges();
+	updateCameraTimeRanges();
 }
 
 void Eiger::getClockDiv(ClockDiv& clock_div)
@@ -1150,7 +1142,7 @@ void Eiger::setSubExpTime(double sub_exp_time)
 	DEB_PARAM() << DEB_VAR1(sub_exp_time);
 	if (sub_exp_time != 0)
 		THROW_HW_ERROR(NotSupported) << "SubExpTime not supported";
-	updateTimeRanges();
+	updateCameraTimeRanges();
 }
 
 void Eiger::getSubExpTime(double& sub_exp_time)
@@ -1388,7 +1380,7 @@ void Eiger::processOneFrame(AutoMutex& l)
 		int nb_recvs = getNbRecvs();
 		if (nb_recvs > 64)
 			THROW_HW_ERROR(Error) << "Too many receivers";
-		char *bptr = getFrameBufferPtr(frame);
+		char *bptr = getAcqFrameBufferPtr(frame);
 		for (int i = 0; i < nb_recvs; ++i)
 			ok[i] = m_recv_list[i]->processOneFrame(frame, bptr);
 
@@ -1411,12 +1403,6 @@ void Eiger::processOneFrame(AutoMutex& l)
 		FinishInfo finfo = mi.frameFinished(frame, true, true);
 		processFinishInfo(finfo);
 	}
-}
-
-Eiger::Correction *Eiger::createCorrectionTask()
-{
-	DEB_MEMBER_FUNCT();
-	return new Correction(this);
 }
 
 Eiger::CorrBase *Eiger::createBadRecvFrameCorr()

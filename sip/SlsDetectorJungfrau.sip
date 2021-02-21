@@ -138,24 +138,17 @@ class Jungfrau : public SlsDetector::Model
 		void processFrame(Data& data, Data& proc /In,Out/);
 	};
 
-	class ImgProcTask : public SinkTaskBase
-	{
-	public:
-		ImgProcTask(SlsDetector::Jungfrau *jungfrau);
-
-		void setConfig(std::string  config);
-		void getConfig(std::string &config /Out/);
-
-		virtual void process(Data& data);
-	};
+	enum ImgSrc { Raw, GainPedCorr };
 
 	Jungfrau(SlsDetector::Camera *cam);
 
 	virtual void getFrameDim(FrameDim& frame_dim /Out/, bool raw = false);
+	virtual void getAcqFrameDim(FrameDim& frame_dim /Out/,
+				    bool raw = false);
 
 	virtual void getDetMap(Data& det_map /Out/);
 
-	SlsDetector::Jungfrau::ImgProcTask *createImgProcTask() /Factory/;
+	SinkTaskBase *createImgProcTask() /Factory/;
 
 	virtual std::string getName();
 	virtual void getPixelSize(double& x_size /Out/, double& y_size /Out/);
@@ -182,11 +175,20 @@ class Jungfrau : public SlsDetector::Model
 	void readGainADCMaps(Data& gain_map /Out/, Data& adc_map /Out/,
 			     unsigned long& frame /In,Out/);
 
-	SlsDetector::Jungfrau::GainPed& getGainPed();
 	void readGainPedProcMap(Data& proc_map /Out/,
 	     			unsigned long& frame /In,Out/);
 
+	void setGainPedMapType(Jungfrau::GainPed::MapType  map_type);
+	void getGainPedMapType(Jungfrau::GainPed::MapType& map_type /Out/);
+
+	void getGainPedCalib(SlsDetector::Jungfrau::GainPed::Calib& calib /Out/);
+
+	void setImgSrc(Jungfrau::ImgSrc  img_src);
+	void getImgSrc(Jungfrau::ImgSrc& img_src /Out/);
+
 	virtual bool isXferActive();
+
+	virtual SlsDetector::Reconstruction *getReconstruction();
 
  protected:
 	virtual int getNbFrameMapItems();

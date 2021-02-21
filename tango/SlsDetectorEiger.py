@@ -55,7 +55,8 @@ class SlsDetectorEiger(SlsDetector):
 #    Device constructor
 #------------------------------------------------------------------
 
-    ModelAttrs = ['parallel_mode',
+    ModelAttrs = ['apply_corrections',
+                  'parallel_mode',
                   'high_voltage',
                   'clock_div',
                   'fixed_clock_div',
@@ -104,11 +105,6 @@ class SlsDetectorEiger(SlsDetector):
         return self.getDevAttr(name, obj)
 
     @Core.DEB_MEMBER_FUNCT
-    def read_apply_corrections(self, attr):
-        deb.Return("apply_corrections=%s" % self.apply_corrections)
-        attr.set_value(self.apply_corrections)
-
-    @Core.DEB_MEMBER_FUNCT
     def read_all_trim_bits(self, attr):
         val_list = self.model.getAllTrimBitsList()
         deb.Return("val_list=%s" % val_list)
@@ -154,7 +150,7 @@ class SlsDetectorEigerClass(SlsDetectorClass):
         'apply_corrections':
         [[PyTango.DevBoolean,
           PyTango.SCALAR,
-          PyTango.READ]],
+          PyTango.READ_WRITE]],
         'threshold_energy':
         [[PyTango.DevLong,
           PyTango.SCALAR,
@@ -202,11 +198,10 @@ class SlsDetectorEigerClass(SlsDetectorClass):
 # Plugin
 #----------------------------------------------------------------------------
 _SlsDetectorEiger = None
-_SlsDetectorCorrection = None
 
 def get_control(config_fname, full_config_fname=None, apply_corrections=None,
                 **keys) :
-    global _SlsDetectorEiger, _SlsDetectorCorrection
+    global _SlsDetectorEiger
 
     _Cam, _HwInter, _Control = get_slsdetector_objs()
     if _Control is not None:
@@ -228,13 +223,11 @@ def get_control(config_fname, full_config_fname=None, apply_corrections=None,
     apply_corrections = to_bool(apply_corrections, True)
 
     _SlsDetectorEiger = SlsDetectorHw.Eiger(_Cam)
-    if apply_corrections:
-        _SlsDetectorCorrection = _SlsDetectorEiger.createCorrectionTask()
+    _SlsDetectorEiger.setApplyCorrections(apply_corrections);
+    _Reconstruction = _SlsDetectorEiger.getReconstruction();
+    _HwInter.setReconstruction(_Reconstruction)
 
     _Control = Core.CtControl(_HwInter)
-
-    if _SlsDetectorCorrection:
-        _Control.setReconstructionTask(_SlsDetectorCorrection)
 
     set_slsdetector_objs(_Cam, _HwInter, _Control)
     return _Control 

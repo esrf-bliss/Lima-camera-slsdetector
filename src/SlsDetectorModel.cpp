@@ -54,6 +54,12 @@ void Model::updateCameraModel()
 	m_cam->setModel(this);
 }
 
+void Model::updateCameraImageSize()
+{
+	DEB_MEMBER_FUNCT();
+	m_cam->updateImageSize();
+}
+
 void Model::setNbUDPInterfaces(int nb_udp_ifaces)
 {
 	DEB_MEMBER_FUNCT();
@@ -72,7 +78,7 @@ void Model::getNbUDPInterfaces(int& nb_udp_ifaces)
 }
 
 
-void Model::updateTimeRanges()
+void Model::updateCameraTimeRanges()
 {
 	DEB_MEMBER_FUNCT();
 	m_cam->updateTimeRanges();
@@ -90,9 +96,17 @@ string Model::getCmd(const string& s, int idx)
 	return m_cam->getCmd(s, idx);
 }
 
-char *Model::getFrameBufferPtr(FrameType frame_nb)
+char *Model::getAcqFrameBufferPtr(FrameType frame_nb)
 {
-	return m_cam->getFrameBufferPtr(frame_nb);
+	return m_cam->getAcqFrameBufferPtr(frame_nb);
+}
+
+void Model::getAcqFrameDim(FrameDim& frame_dim, bool raw)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(raw);
+	getFrameDim(frame_dim, raw);
+	DEB_RETURN() << DEB_VAR1(frame_dim);
 }
 
 void Model::processFinishInfo(const FinishInfo& finfo)
@@ -122,4 +136,10 @@ bool Model::isAcqActive()
 	bool acq_active = (m_cam->getDetStatus() == Defs::Running);
 	DEB_RETURN() << DEB_VAR1(acq_active);
 	return acq_active;
+}
+
+Reconstruction *Model::getReconstruction()
+{
+	DEB_MEMBER_FUNCT();
+	return NULL;
 }

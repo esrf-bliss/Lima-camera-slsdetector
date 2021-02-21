@@ -56,18 +56,6 @@ class Eiger : public Model
 		NonParallel, Parallel,
 	};
 
-	class Correction : public LinkTask
-	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Correction",
-				  "SlsDetector");
-	public:
-		Correction(Eiger *eiger);
-
-		virtual Data process(Data& data);
-	private:
-		Eiger *m_eiger;
-	};
-
 	class Geometry
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Geometry",
@@ -237,9 +225,6 @@ class Eiger : public Model
 				   ParallelMode parallel_mode, 
 				   TimeRanges& time_ranges);
 
-	// the returned object must be deleted by the caller
-	Correction *createCorrectionTask();
-
 	void setParallelMode(ParallelMode  mode);
 	void getParallelMode(ParallelMode& mode);
 
@@ -273,6 +258,14 @@ class Eiger : public Model
 
 	virtual bool isXferActive();
 
+	void setApplyCorrections(bool  active)
+	{ m_reconstruction->setActive(active); }
+	void getApplyCorrections(bool& active)
+	{ m_reconstruction->getActive(active); }
+
+	virtual Reconstruction *getReconstruction()
+	{ return m_reconstruction; }
+
  protected:
 	virtual int getNbFrameMapItems();
 	virtual void updateFrameMapItems(FrameMap *map);
@@ -290,7 +283,6 @@ class Eiger : public Model
 	virtual void stopAcq();
 
  private:
-	friend class Correction;
 	friend class CorrBase;
 
 	struct Beb {
@@ -547,6 +539,20 @@ class Eiger : public Model
 		std::vector<BorderFactor> m_f;
 	};
 
+	class ModelReconstruction : public SlsDetector::Reconstruction {
+		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::ModelReconstruction", 
+				  "SlsDetector");
+	public:
+		ModelReconstruction(Eiger *eiger) : m_eiger(eiger)
+		{ setActive(true); }
+
+		virtual Data process(Data& data);
+
+	private:
+		friend class Eiger;
+		Eiger *m_eiger;
+	};
+
 	int getNbEigerModules()
 	{ return m_geom.getNbEigerModules(); }
 
@@ -614,6 +620,7 @@ class Eiger : public Model
 	Geometry m_geom;
 	CorrList m_corr_list;
 	RecvList m_recv_list;
+	ModelReconstruction *m_reconstruction;
 	FrameType m_nb_frames;
 	FrameType m_next_frame;
 	FrameType m_last_frame;

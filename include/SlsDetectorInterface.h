@@ -24,6 +24,7 @@
 
 #include "lima/HwInterface.h"
 #include "SlsDetectorCamera.h"
+#include "SlsDetectorReconstruction.h"
 
 namespace lima
 {
@@ -146,12 +147,46 @@ class SyncCtrlObj : public HwSyncCtrlObj
 
 class EventCtrlObj : public HwEventCtrlObj
 {
-	DEB_CLASS(DebModCamera, "EventCtrlObj");
+	DEB_CLASS_NAMESPC(DebModCamera, "EventCtrlObj", "SlsDetector");
 
 public:
 	EventCtrlObj();
 	virtual ~EventCtrlObj();
 };
+
+
+/*******************************************************************
+ * \class ReconstructionCtrlObj
+ * \brief Control object providing SlsDetector reconstruction
+ *******************************************************************/
+
+class ReconstructionCtrlObj : public HwReconstructionCtrlObj
+{
+	DEB_CLASS_NAMESPC(DebModCamera, "ReconstructionCtrlObj", "SlsDetector");
+
+public:
+	void setReconstruction(Reconstruction *r);
+
+	virtual LinkTask *getReconstructionTask();
+
+private:
+	class Proxy : public Reconstruction::CtrlObjProxy {
+		DEB_CLASS_NAMESPC(DebModCamera, "ReconstructionCtrlObj::Proxy",
+				  "SlsDetector");
+	public:
+		typedef ReconstructionCtrlObj Owner;
+
+		Proxy(Owner *owner, Reconstruction *r);
+
+		virtual void reconstructionChange(LinkTask *task);
+
+	private:
+		Owner *m_owner;
+	};
+
+	AutoPtr<Proxy> m_proxy;
+};
+
 
 /*******************************************************************
  * \class Interface
@@ -178,14 +213,17 @@ class Interface : public HwInterface
 
 	void resetDefaults();
 
+	void setReconstruction(Reconstruction *r);
+
  private:
 	Camera& m_cam;
 
 	CapList m_cap_list;
 	DetInfoCtrlObj m_det_info;
-	NumaSoftBufferCtrlObj  m_buffer;
+	BufferCtrlObj m_buffer;
 	SyncCtrlObj m_sync;
 	EventCtrlObj m_event;
+	ReconstructionCtrlObj m_reconstruction;
 
 	SlsDetector::EventCallback  m_event_cb;
 };

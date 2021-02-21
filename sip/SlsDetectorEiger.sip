@@ -40,21 +40,11 @@ class Eiger : public SlsDetector::Model
 		NonParallel, Parallel,
 	};
 
-	class Correction : public LinkTask
-	{
-	public:
-		Correction(SlsDetector::Eiger *eiger);
-
-		virtual Data process(Data& data);
-	};
-
 	Eiger(SlsDetector::Camera *cam);
 
 	virtual void getFrameDim(FrameDim& frame_dim /Out/, bool raw = false);
 
 	virtual void getDetMap(Data& det_map /Out/);
-
-	SlsDetector::Eiger::Correction *createCorrectionTask() /Factory/;
 
 	virtual std::string getName();
 	virtual void getPixelSize(double& x_size /Out/, double& y_size /Out/);
@@ -99,6 +89,11 @@ class Eiger : public SlsDetector::Model
 	void getFpgaFramePtrDiff(std::vector<unsigned long>& ptr_diff /Out/);
 
 	virtual bool isXferActive();
+
+	void setApplyCorrections(bool  active);
+	void getApplyCorrections(bool& active /Out/);
+
+	virtual Reconstruction *getReconstruction();
 
  protected:
 	virtual int getNbFrameMapItems();

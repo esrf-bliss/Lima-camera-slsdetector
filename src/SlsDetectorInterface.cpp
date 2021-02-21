@@ -329,6 +329,37 @@ EventCtrlObj::~EventCtrlObj()
 
 
 /*******************************************************************
+ * \brief ReconstructionCtrlObj constructor
+ *******************************************************************/
+
+ReconstructionCtrlObj::Proxy::Proxy(Owner *owner, Reconstruction *r)
+  : Reconstruction::CtrlObjProxy(r), m_owner(owner)
+{
+	DEB_CONSTRUCTOR();
+}
+
+void ReconstructionCtrlObj::Proxy::reconstructionChange(LinkTask *task)
+{
+	DEB_MEMBER_FUNCT();
+	m_owner->reconstructionChange(task);
+}
+
+void ReconstructionCtrlObj::setReconstruction(Reconstruction *r)
+{
+	DEB_MEMBER_FUNCT();
+	m_proxy = new Proxy(this, r);
+}
+
+LinkTask *ReconstructionCtrlObj::getReconstructionTask()
+{
+	DEB_MEMBER_FUNCT();
+	LinkTask *task = m_proxy ? m_proxy->getReconstructionTask() : NULL;
+	DEB_RETURN() << DEB_VAR1(task);
+	return task;
+}
+
+
+/*******************************************************************
  * \brief Hw Interface constructor
  *******************************************************************/
 
@@ -352,6 +383,9 @@ Interface::Interface(Camera& cam)
 
 	HwEventCtrlObj *event = &m_event;
 	m_cap_list.push_back(HwCap(event));
+
+	HwReconstructionCtrlObj *reconstruction = &m_reconstruction;
+	m_cap_list.push_back(HwCap(reconstruction));
 
 	reset(SoftReset);
 	resetDefaults();
@@ -443,4 +477,8 @@ int Interface::getNbHwAcquiredFrames()
 	return nb_hw_acq_frames;
 }
 
-
+void Interface::setReconstruction(Reconstruction *r)
+{
+	DEB_MEMBER_FUNCT();
+	m_reconstruction.setReconstruction(r);
+}
