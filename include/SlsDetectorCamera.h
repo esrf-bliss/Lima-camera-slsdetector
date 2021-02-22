@@ -29,7 +29,6 @@
 
 #include "sls/Detector.h"
 
-#include "lima/HwBufferMgr.h"
 #include "lima/HwMaxImageSizeCallback.h"
 #include "lima/Event.h"
 
@@ -40,58 +39,6 @@ namespace lima
 
 namespace SlsDetector
 {
-
-enum BufferType {
-	AcqBuffer, LimaBuffer
-};
-
-class BufferCtrlObj : public NumaSoftBufferCtrlObj {
-
- public:
-	BufferCtrlObj() : m_type(AcqBuffer) {}
-
-	void releaseBuffers() { getBuffer().releaseBuffers(); }
-
-	void setType(BufferType type)
-	{
-		if (type == m_type)
-			return;
-		releaseBuffers();
-		m_type = type;
-	}
-
-	virtual void getMaxNbBuffers(int& max_nb_buffers)
-	{
-		if (m_type == LimaBuffer)
-			max_nb_buffers = 1024;
-		else
-			NumaSoftBufferCtrlObj::getMaxNbBuffers(max_nb_buffers);
-	}
-
-	Data getFrameData(FrameType frame)
-	{
-		Data d;
-		StdBufferCbMgr& buffer = getBuffer();
-		const FrameDim& frame_dim = buffer.getFrameDim();
-		switch (frame_dim.getImageType()) {
-		case Bpp8:  d.type = Data::UINT8;  break;
-		case Bpp16: d.type = Data::UINT16; break;
-		case Bpp32: d.type = Data::UINT32; break;
-		default: throw LIMA_HW_EXC(Error, "Invalid image type");
-		}
-		const Size& size = frame_dim.getSize();
-		d.dimensions = {size.getWidth(), size.getHeight()};
-		Buffer *b = new Buffer;
-		b->owner = Buffer::MAPPED;
-		b->data = buffer.getFrameBufferPtr(frame);;
-		d.setBuffer(b);
-		b->unref();
-		return d;
-	}
-
- private:
-	BufferType m_type;
-};
 
 class Eiger;
 
@@ -127,14 +74,11 @@ public:
 	Receiver* getRecv(int i)
 	{ return m_recv_list[i]; }
 
-	void setBufferCtrlObj(BufferCtrlObj *buffer_ctrl_obj,
-			      BufferType type = LimaBuffer);
+	BufferMgr *getBuffer()
+	{ return &m_buffer; }
 
 	void setModuleActive(int mod_idx, bool  active);
 	void getModuleActive(int mod_idx, bool& active);
-
-	void clearAllBuffers();
-	void releaseBuffers();
 
 	void setPixelDepth(PixelDepth  pixel_depth);
 	void getPixelDepth(PixelDepth& pixel_depth);
@@ -274,6 +218,7 @@ private:
 		FrameQueue m_frame_queue;
 	};
 
+	friend class BufferMgr;
 	friend class Model;
 	friend class Receiver;
 	friend class GlobalCPUAffinityMgr;
@@ -298,21 +243,6 @@ private:
 
 	AcqState getEffectiveState();
 
-	BufferCtrlObj **getBufferCtrlObjPtr(BufferType type)
-	{
-		return (type == AcqBuffer) ? &m_acq_buffer_ctrl_obj :
-					     &m_lima_buffer_ctrl_obj;
-	}
-
-	StdBufferCbMgr *getBufferCbMgr(BufferType type)
-	{
-		BufferCtrlObj *buffer = *getBufferCtrlObjPtr(type);
-		return buffer ? &buffer->getBuffer() : NULL;
-	}
-
-	void setAcqBufferCPUAffinity(CPUAffinity buffer_affinity);
-
-	char *getAcqFrameBufferPtr(FrameType frame_nb);
 	void removeSharedMem();
 	void createReceivers();
 
@@ -367,9 +297,7 @@ private:
 	double m_lat_time;
 	double m_frame_period;
 	Settings m_settings;
-	CPUAffinity m_buffer_affinity;
-	BufferCtrlObj *m_acq_buffer_ctrl_obj;
-	BufferCtrlObj *m_lima_buffer_ctrl_obj;
+	BufferMgr m_buffer;
 	PixelDepth m_pixel_depth;
 	ImageType m_image_type;
 	bool m_raw_mode;

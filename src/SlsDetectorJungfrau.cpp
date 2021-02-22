@@ -372,7 +372,8 @@ void Jungfrau::ImgProcTask::process(Data& data)
 	if (m_jungfrau->m_img_src == Raw) {
 		src = data;
 	} else {
-		BufferCtrlObj *buffer = &m_jungfrau->m_acq_buffer_ctrl_obj;
+		BufferMgr *buffer_mgr = m_jungfrau->getBuffer();
+		BufferCtrlObj *buffer = buffer_mgr->getBufferCtrlObj(AcqBuffer);
 		src = buffer->getFrameData(data.frameNumber);
 	}
 
@@ -578,7 +579,9 @@ Data Jungfrau::ModelReconstruction::process(Data& data)
 	Data ret = _processingInPlaceFlag ? data : data.copy();
 
 	FrameType frame = ret.frameNumber;
-	Data raw = m_jungfrau->m_acq_buffer_ctrl_obj.getFrameData(frame);
+	BufferMgr *buffer_mgr = m_jungfrau->getBuffer();
+	BufferCtrlObj *buffer = buffer_mgr->getBufferCtrlObj(AcqBuffer);
+	Data raw = buffer->getFrameData(frame);
 	DEB_TRACE() << DEB_VAR1(raw);
 	GainPed& gain_ped = m_jungfrau->m_gain_ped_img_proc->m_gain_ped;
 	gain_ped.processFrame(raw, ret);
@@ -638,10 +641,9 @@ void Jungfrau::setImgSrc(ImgSrc img_src)
 
 	m_reconstruction->setActive(do_proc);
 
-	Camera *cam = getCamera();
-	cam->releaseBuffers();
-	BufferCtrlObj *buffer = do_proc ? &m_acq_buffer_ctrl_obj : NULL;
-	cam->setBufferCtrlObj(buffer, AcqBuffer);
+	BufferMgr *buffer = getCamera()->getBuffer();
+	buffer->releaseBuffers();
+	buffer->setMode(do_proc ? BufferMgr::Dual : BufferMgr::Single);
 }
 
 void Jungfrau::getImgSrc(ImgSrc& img_src)
@@ -909,9 +911,7 @@ void Jungfrau::updateImageSize()
 	Size size = frame_dim.getSize();
 	DEB_TRACE() << DEB_VAR2(size, raw);
 
-	m_acq_buffer_ctrl_obj.setFrameDim(frame_dim);
-
-	m_gain_ped_img_proc->updateImageSize(size, raw);
+ 	m_gain_ped_img_proc->updateImageSize(size, raw);
 	m_gain_adc_map_img_proc->updateImageSize(size, raw);
 }
 
@@ -1017,16 +1017,6 @@ void Jungfrau::prepareAcq()
 	FrameType nb_frames;
 	Camera *cam = getCamera();
 	cam->getNbFrames(nb_frames);
-
-	if (m_img_src == GainPedCorr) {
-		BufferCtrlObj *buffer = &m_acq_buffer_ctrl_obj;
-		int nb_buffers = nb_frames;
-		int max_nb_buffers;
-		buffer->getMaxNbBuffers(max_nb_buffers);
-		if (nb_buffers > max_nb_buffers)
-			nb_buffers = max_nb_buffers;
-		buffer->setNbBuffers(nb_buffers);
-	}
 
 	{
 		AutoMutex l = lock();

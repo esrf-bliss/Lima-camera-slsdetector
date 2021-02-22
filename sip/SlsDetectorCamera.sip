@@ -41,8 +41,7 @@ public:
 	void setModuleActive(int mod_idx, bool  active);
 	void getModuleActive(int mod_idx, bool& active /Out/);
 
-	void clearAllBuffers();
-	void releaseBuffers();
+	SlsDetector::BufferMgr *getBuffer();
 
 	void setPixelDepth(SlsDetector::PixelDepth  pixel_depth);
 	void getPixelDepth(SlsDetector::PixelDepth& pixel_depth /Out/);

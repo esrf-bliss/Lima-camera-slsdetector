@@ -315,7 +315,7 @@ Camera::AcqThread::Status Camera::AcqThread::newFrameReady(FrameType frame)
 	DEB_MEMBER_FUNCT();
 	HwFrameInfoType frame_info;
 	frame_info.acq_frame_nb = frame;
-	StdBufferCbMgr *cb_mgr = m_cam->getBufferCbMgr(LimaBuffer);
+	StdBufferCbMgr *cb_mgr = m_cam->m_buffer.getBufferCbMgr(LimaBuffer);
 	bool cont_acq = cb_mgr->newFrameReady(frame_info);
 	bool acq_end = (frame == m_cam->m_lima_nb_frames - 1);
 	cont_acq &= !acq_end;
@@ -331,8 +331,7 @@ Camera::Camera(string config_fname, int det_id)
 	  m_skip_frame_freq(0),
 	  m_last_skipped_frame_timeout(0.5),
 	  m_lat_time(0),
-	  m_acq_buffer_ctrl_obj(NULL),
-	  m_lima_buffer_ctrl_obj(NULL),
+	  m_buffer(this),
 	  m_pixel_depth(PixelDepth16), 
 	  m_image_type(Bpp16), 
 	  m_raw_mode(false),
@@ -440,76 +439,6 @@ void Camera::setModel(Model *model)
 	m_model->updateFrameMapItems(&m_frame_map);
 
 	setPixelDepth(m_pixel_depth);
-}
-
-void Camera::setBufferCtrlObj(BufferCtrlObj *buffer_ctrl_obj, BufferType type)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR3(m_lima_buffer_ctrl_obj, m_acq_buffer_ctrl_obj,
-				buffer_ctrl_obj);
-	if (type == LimaBuffer) {
-		if (m_acq_buffer_ctrl_obj == m_lima_buffer_ctrl_obj) {
-			DEB_TRACE() << "Setting both Lima & Acq buffer";
-			m_acq_buffer_ctrl_obj = buffer_ctrl_obj;
-		} else {
-			DEB_TRACE() << "Setting only Lima buffer";
-		}
-		m_lima_buffer_ctrl_obj = buffer_ctrl_obj;
-	} else if (buffer_ctrl_obj) {
-		DEB_TRACE() << "Setting only Acq buffer";
-		m_acq_buffer_ctrl_obj = buffer_ctrl_obj;
-	} else {
-		DEB_TRACE() << "Resetting Acq buffer to LimaBuffer";
-		m_acq_buffer_ctrl_obj = m_lima_buffer_ctrl_obj;
-	}
-	DEB_TRACE() << DEB_VAR2(m_lima_buffer_ctrl_obj, m_acq_buffer_ctrl_obj);
-
-	BufferCtrlObj *buffer;
-	buffer = m_acq_buffer_ctrl_obj;
-	if (buffer) {
-		buffer->setType(AcqBuffer);
-		buffer->setCPUAffinityMask(m_buffer_affinity);
-	}
-	buffer = m_lima_buffer_ctrl_obj;
-	if (buffer && (buffer != m_acq_buffer_ctrl_obj)) {
-		buffer->setType(LimaBuffer);
-		buffer->setCPUAffinityMask(CPUAffinity());
-	}
-
-	if (m_model)
-		updateImageSize();
-}
-
-char *Camera::getAcqFrameBufferPtr(FrameType frame_nb)
-{
-	DEB_MEMBER_FUNCT();
-
-	StdBufferCbMgr *cb_mgr = getBufferCbMgr(AcqBuffer);
-	if (!cb_mgr)
-		THROW_HW_ERROR(InvalidValue) << "No BufferCbMgr defined";
-	void *ptr = cb_mgr->getFrameBufferPtr(frame_nb);
-	return static_cast<char *>(ptr);
-}
-
-void Camera::releaseBuffers()
-{
-	DEB_MEMBER_FUNCT();
-	bool prev_release_unused;
-	BufferCtrlObj::getBufferMgrResizePolicy(prev_release_unused);
-	BufferCtrlObj::setBufferMgrResizePolicy(true);
-	m_acq_buffer_ctrl_obj->releaseBuffers();
-	m_lima_buffer_ctrl_obj->releaseBuffers();
-	BufferCtrlObj::setBufferMgrResizePolicy(prev_release_unused);
-}
-
-void Camera::setAcqBufferCPUAffinity(CPUAffinity buffer_affinity)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_ALWAYS() << DEB_VAR1(buffer_affinity);
-	BufferCtrlObj *buffer = *getBufferCtrlObjPtr(AcqBuffer);
-	if (buffer)
-		buffer->setCPUAffinityMask(buffer_affinity);
-	m_buffer_affinity = buffer_affinity;
 }
 
 void Camera::removeSharedMem()
@@ -780,17 +709,6 @@ void Camera::setRecvCPUAffinity(const RecvCPUAffinityList& recv_affinity_list)
 		(*rit)->setCPUAffinity(*ait);
 }
 
-void Camera::clearAllBuffers()
-{
-	getBufferCbMgr(AcqBuffer)->clearAllBuffers();
-	if (m_lima_buffer_ctrl_obj != m_acq_buffer_ctrl_obj)
-		getBufferCbMgr(LimaBuffer)->clearAllBuffers();
-
-	RecvList::iterator it, end = m_recv_list.end();
-	for (it = m_recv_list.begin(); it != end; ++it)
-		(*it)->clearAllBuffers();
-}
-
 void Camera::setModuleActive(int mod_idx, bool  active)
 {
 	DEB_MEMBER_FUNCT();
@@ -915,13 +833,15 @@ void Camera::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
 
-	StdBufferCbMgr *cb_mgr = getBufferCbMgr(AcqBuffer);
+	StdBufferCbMgr *cb_mgr = m_buffer.getBufferCbMgr(AcqBuffer);
 	if (!cb_mgr)
 		THROW_HW_ERROR(Error) << "No Acq BufferCbMgr defined";
-	else if (!getBufferCbMgr(LimaBuffer))
+	else if (!m_buffer.getBufferCbMgr(LimaBuffer))
 		THROW_HW_ERROR(Error) << "No Lima BufferCbMgr defined";
 	if (!m_model)
 		THROW_HW_ERROR(Error) << "No Model defined";
+
+	m_buffer.prepareAcq();
 
 	waitNotAcqState(Stopping);
 	if (getAcqState() != Idle)
@@ -969,7 +889,7 @@ void Camera::startAcq()
 	if (m_acq_thread)
 		THROW_HW_ERROR(Error) << "Must call prepareAcq first";
 
-	StdBufferCbMgr *cb_mgr = getBufferCbMgr(LimaBuffer);
+	StdBufferCbMgr *cb_mgr = m_buffer.getBufferCbMgr(LimaBuffer);
 	cb_mgr->setStartTimestamp(Timestamp::now());
 
 	m_acq_thread = new AcqThread(this);
@@ -1061,7 +981,7 @@ bool Camera::checkLostPackets()
 	}
 	for (int i = 0; i < nb_items; ++i) {
 		if (ifa[i] != last_frame) {
-			char *bptr = getAcqFrameBufferPtr(last_frame);
+			char *bptr = m_buffer.getAcqFrameBufferPtr(last_frame);
 			m_model->processBadItemFrame(last_frame, i, bptr);
 		}
 	}

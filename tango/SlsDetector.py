@@ -93,7 +93,6 @@ class SlsDetector(PyTango.Device_4Impl):
 
     Core.DEB_CLASS(Core.DebModApplication, 'LimaSlsDetector')
 
-
     AttrNameRe = re.compile('_(?P<klass>[^_]+)__(?P<member>.+)')
 
 #------------------------------------------------------------------
@@ -122,6 +121,14 @@ class SlsDetector(PyTango.Device_4Impl):
 
         self.cam = _SlsDetectorCam
         self.model = self.cam.getModel()
+        self.buffer = self.cam.getBuffer()
+
+        self.__Prefix2Group = {'stats' : SlsDetectorHw.SimpleStat,
+                               'buffer' : self.buffer}
+        groups = '|'.join(self.__Prefix2Group.keys())
+        self.attr_group_re = re.compile('(?P<action>(read|write))_' +
+                                        '(?P<group>(%s))_' % groups +
+                                        '(?P<attr>.+)')
 
         self.init_list_attr()
         self.init_dac_adc_attr()
@@ -139,6 +146,9 @@ class SlsDetector(PyTango.Device_4Impl):
             aff_map = self.getPixelDepthCPUAffinityMapFromString(aff_str)
             self.printPixelDepthCPUAffinityMap(aff_map)
             self.cam.setPixelDepthCPUAffinityMap(aff_map)
+
+        if self.buffer_max_memory:
+            self.buffer.setMaxMemory(int(self.buffer_max_memory))
 
     def init_list_attr(self):
         nl = ['PixelDepth4', 'PixelDepth8', 'PixelDepth16', 'PixelDepth32']
@@ -206,11 +216,10 @@ class SlsDetector(PyTango.Device_4Impl):
 
     @Core.DEB_MEMBER_FUNCT
     def getDevAttr(self, name, obj=None):
-        if '_stats_' in name:
-            stats_tok = name.split('_stats_')
-            if stats_tok[1] in ['do_hist']:
-                stats_name = '_'.join(stats_tok)
-                return get_attr_4u(self, stats_name, SlsDetectorHw.SimpleStat)
+        m = self.attr_group_re.match(name)
+        if m:
+            name = '%s_%s' % (m.group('action'), m.group('attr'))
+            obj = self.__Prefix2Group[m.group('group')]
         m = self.AttrNameRe.match(name)
         if m and (m.group('klass') != 'SlsDetector'):
             member = m.group('member')
@@ -495,7 +504,13 @@ class SlsDetector(PyTango.Device_4Impl):
 
     @Core.DEB_MEMBER_FUNCT
     def clearAllBuffers(self):
-        self.cam.clearAllBuffers()
+        buffer = self.cam.getBuffer()
+        buffer.clearAllBuffers()
+
+    @Core.DEB_MEMBER_FUNCT
+    def releaseBuffers(self):
+        buffer = self.cam.getBuffer()
+        buffer.releaseBuffers()
 
 
 #------------------------------------------------------------------
@@ -532,6 +547,10 @@ class SlsDetectorClass(PyTango.DeviceClass):
          "latter in the form of: {<queue>: (<irq>, <processing>)}. "
          "Each affinity can be expressed by one of the functions: Mask(mask) "
          "or CPU(<cpu1>[, ..., <cpuN>]) for independent CPU enumeration", []],
+        'buffer_max_memory':
+        [PyTango.DevString,
+         "The maximum memory (percent) for Acq image buffers in Dual mode, "
+         "similar to LimaCCDs.BufferMaxMemory", []],
         }
 
     cmd_list = {
@@ -557,6 +576,9 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevString, "recv_idx(-1=all):stats_name"],
          [PyTango.DevVarDoubleArray, "[[bin, count], ...]"]],
         'clearAllBuffers':
+        [[PyTango.DevVoid, ""],
+         [PyTango.DevVoid, ""]],
+        'releaseBuffers':
         [[PyTango.DevVoid, ""],
          [PyTango.DevVoid, ""]],
         }
@@ -606,6 +628,14 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevBoolean,
           PyTango.SCALAR,
           PyTango.READ_WRITE]],
+        'buffer_max_memory':
+        [[PyTango.DevShort,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'buffer_max_nb_buffers':
+        [[PyTango.DevLong,
+          PyTango.SCALAR,
+          PyTango.READ]],
         }
 
     def __init__(self,name) :

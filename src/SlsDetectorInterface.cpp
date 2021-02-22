@@ -369,7 +369,7 @@ Interface::Interface(Camera& cam)
 {
 	DEB_CONSTRUCTOR();
 
-	m_cam.setBufferCtrlObj(&m_buffer);
+	m_cam.getBuffer()->setLimaBufferCtrlObj(&m_buffer);
 	m_cam.registerEventCallback(m_event_cb);
 
 	HwDetInfoCtrlObj *det_info = &m_det_info;
@@ -395,7 +395,7 @@ Interface::~Interface()
 {
 	DEB_DESTRUCTOR();
 	stopAcq();
-	m_cam.setBufferCtrlObj(NULL);
+	m_cam.getBuffer()->setLimaBufferCtrlObj(NULL);
 }
 
 void Interface::getCapList(HwInterface::CapList &cap_list) const

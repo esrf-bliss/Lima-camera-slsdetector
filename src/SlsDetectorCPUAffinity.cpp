@@ -1621,7 +1621,7 @@ void GlobalCPUAffinityMgr::setModelAffinity(
 	m_cam->m_model->setThreadCPUAffinity(model_affinity_list);
 
 	CPUAffinity buffer_affinity = CPUAffinityList_all(model_affinity_list);
-	m_cam->setAcqBufferCPUAffinity(buffer_affinity);
+	m_cam->m_buffer.setAcqBufferCPUAffinity(buffer_affinity);
 
 	m_curr.model_threads = model_affinity_list;
 }

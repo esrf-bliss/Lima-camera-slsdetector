@@ -142,7 +142,7 @@ TestApp::TestApp(int argc, char *argv[])
 	m_cam = new Camera(m_pars.config_fname);
 	m_buffer_ctrl_obj = new BufferCtrlObj();
 	m_buffer_ctrl_obj->registerFrameCallback(m_cb);
-	m_cam->setBufferCtrlObj(m_buffer_ctrl_obj);
+	m_cam->getBuffer()->setLimaBufferCtrlObj(m_buffer_ctrl_obj);
 
 	Type det_type = m_cam->getType();
 	if (det_type == EigerDet) {

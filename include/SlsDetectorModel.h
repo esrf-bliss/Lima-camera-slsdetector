@@ -26,6 +26,7 @@
 #include "SlsDetectorDefs.h"
 #include "SlsDetectorCPUAffinity.h"
 #include "SlsDetectorReconstruction.h"
+#include "SlsDetectorBuffer.h"
 
 #include "lima/SizeUtils.h"
 
@@ -110,6 +111,8 @@ class Model
 	virtual void stopAcq() = 0;
 
 	void processFinishInfo(const FinishInfo& finfo);
+
+	BufferMgr *getBuffer();
 
  private:
 	friend class Camera;

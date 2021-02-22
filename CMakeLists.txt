@@ -105,6 +105,7 @@ add_library(slsdetector SHARED
   src/SlsDetectorReceiver.cpp
   src/SlsDetectorCamera.cpp
   src/SlsDetectorReconstruction.cpp
+  src/SlsDetectorBuffer.cpp
   src/SlsDetectorEiger.cpp
   src/SlsDetectorJungfrau.cpp
   src/SlsDetectorInterface.cpp

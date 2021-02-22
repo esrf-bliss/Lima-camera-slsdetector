@@ -538,7 +538,6 @@ class Jungfrau : public Model
 	std::string m_img_proc_config;
 	ImgProcList m_img_proc_list;
 	ImgSrc m_img_src;
-	BufferCtrlObj m_acq_buffer_ctrl_obj;
 	ModelReconstruction *m_reconstruction;
 	RecvList m_recv_list;
 	FrameType m_nb_frames;
