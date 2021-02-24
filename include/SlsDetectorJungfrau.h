@@ -79,7 +79,7 @@ class Jungfrau : public Model
 			static constexpr MapType Type = Map32;
 			static constexpr double DefaultCoeffs[3][2] = {
 				{   0.999952,       0.4}, // effectively {1, 0}
-				{ -26.144935,  394047.3}, // G0 x16
+				{ -26.144935,  394047.3}, // G0 x26
 				{-368.163215, 5531211.9}, // G1 x14
 			};
 			static constexpr Data::TYPE DataType = Data::UINT32;
@@ -177,10 +177,13 @@ class Jungfrau : public Model
 	void readGainADCMaps(Data& gain_map, Data& adc_map, FrameType& frame);
 
 	void readGainPedProcMap(Data& proc_map, FrameType& frame);
+	void readAveMap(Data& ave_map, FrameType& nb_frames, FrameType& frame);
 
 	void setGainPedMapType(GainPed::MapType  map_type);
 	void getGainPedMapType(GainPed::MapType& map_type);
 
+	void setGainPedCalib(const GainPed::Calib& calib)
+	{ m_gain_ped_img_proc->m_gain_ped.setCalib(calib); }
 	void getGainPedCalib(GainPed::Calib& calib)
 	{ m_gain_ped_img_proc->m_gain_ped.getCalib(calib); }
 
@@ -318,51 +321,98 @@ class Jungfrau : public Model
 	typedef std::vector<ImgProcBase *> ImgProcList;
 
 	template <class T>
-	class ReaderHelper : public Buffer::Callback {
-		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::ReaderHelper", 
+	class ReadHelper : public Buffer::Callback {
+		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::ReadHelper", 
 				  "SlsDetector");
 	public:
 		typedef DoubleBuffer<T> DBuffer;
+		typedef DoubleBufferReader<T> DBufferReader;
 
-		T& addRead(DBuffer& b, FrameType& frame) {
-			DEB_MEMBER_FUNCT();
-			if (m_reader)
-				THROW_HW_ERROR(Error)
-					<< "A reader is already active";
-			m_reader = new Reader(b, frame);
-			frame = m_reader->getCounter();
-			return m_reader->getBuffer();
+		class Reader : public DBufferReader {
+			DEB_CLASS_NAMESPC(DebModCamera,
+					  "Jungfrau::ReadHelper::Reader", 
+					  "SlsDetector");
+		public:
+			Reader(DBuffer& db, FrameType f, ReadHelper *h)
+				: DBufferReader(db, f),	m_helper(h)
+			{ DEB_CONSTRUCTOR(); }
+
+			~Reader()
+			{ DEB_DESTRUCTOR(); }
+
+			void addData(Data& src, Data& ref) {
+				DEB_MEMBER_FUNCT();
+				makeDataRef(src, ref, m_helper);
+				m_buffer_list.insert(ref.data());
+				DEB_TRACE() << DEB_VAR1(m_buffer_list.size());
+			}
+
+		private:
+			friend class ReadHelper;
+			typedef std::set<void *> BufferList;
+
+			std::pair<bool, bool> destroy(void *buffer) {
+				DEB_MEMBER_FUNCT();
+				DEB_PARAM() << DEB_VAR1(m_buffer_list.size());
+				typedef typename BufferList::iterator BufferIt;
+				BufferIt it, end = m_buffer_list.end();
+				it = find(m_buffer_list.begin(), end, buffer);
+				bool found = (it != end);
+				if (found)
+					m_buffer_list.erase(it);
+				return {found, m_buffer_list.empty()};
+			}
+
+			ReadHelper *m_helper;
+			BufferList m_buffer_list;
+		};
+
+		~ReadHelper() {
+			DEB_DESTRUCTOR();
+			AutoMutex l(m_mutex);
+			while (!m_reader_list.empty())
+				deleteReader(m_reader_list.begin(), l);
 		}
 
-		void addData(Data& src, Data& ref) {
+		Reader *addRead(DBuffer& b, FrameType& frame) {
 			DEB_MEMBER_FUNCT();
-			makeDataRef(src, ref, this);
-			m_buffer_list.insert(ref.data());
-			DEB_TRACE() << DEB_VAR1(m_buffer_list.size());
+			Reader *r = new Reader(b, frame, this);
+			frame = r->getCounter();
+			AutoMutex l(m_mutex);
+			m_reader_list.insert(r);
+			return r;
 		}
 
 	protected:
 		virtual void destroy(void *buffer) {
 			DEB_MEMBER_FUNCT();
-			DEB_PARAM() << DEB_VAR1(m_buffer_list.size());
-			if (m_buffer_list.empty() || !m_reader)
-				DEB_ERROR() << "Unexpected "
-					    << DEB_VAR1(buffer);
-			BufferList::iterator it, end = m_buffer_list.end();
-			it = find(m_buffer_list.begin(), end, buffer);
-			if (it == end)
-				DEB_ERROR() << "Bad " << DEB_VAR1(buffer);
-			m_buffer_list.erase(it);
-			if (m_buffer_list.empty())
-				m_reader = NULL;
+			AutoMutex l(m_mutex);
+			ReaderIt it, end = m_reader_list.end();
+			for (it = m_reader_list.begin(); it != end; ++it) {
+				auto [found, empty] = (*it)->destroy(buffer);
+				if (!found)
+					continue;
+				else if (empty)
+					deleteReader(it, l);
+				return;
+			}
+			DEB_ERROR() << "Bad " << DEB_VAR1(buffer);
 		}
 
 	private:
-		typedef DoubleBufferReader<T> Reader;
-		typedef std::set<void *> BufferList;
+		typedef std::set<Reader *> ReaderList;
+		typedef typename ReaderList::iterator ReaderIt;
 
-		AutoPtr<Reader> m_reader;
-		BufferList m_buffer_list;
+		void deleteReader(ReaderIt it, AutoMutex& l) {
+			DEB_MEMBER_FUNCT();
+			Reader *r = *it;
+			m_reader_list.erase(it);
+			AutoMutexUnlock u(l);
+			delete r;
+		}
+
+		Mutex m_mutex;
+		ReaderList m_reader_list;
 	};
 
 	class GainADCMapImgProc : public ImgProcBase
@@ -398,11 +448,11 @@ class Jungfrau : public Model
 			}
 		};
 
-		typedef ReaderHelper<MapData> Reader;
-		typedef typename Reader::DBuffer DBuffer;
+		typedef ReadHelper<MapData> Helper;
+		typedef typename Helper::DBuffer DBuffer;
 
 		DBuffer m_buffer;
-		AutoPtr<Reader> m_reader;
+		AutoPtr<Helper> m_helper;
 	};
 
 	class GainPedImgProc : public ImgProcBase
@@ -432,11 +482,50 @@ class Jungfrau : public Model
 			void clear() { clearData(proc_map); }
 		};
 
-		typedef ReaderHelper<MapData> Reader;
-		typedef typename Reader::DBuffer DBuffer;
+		typedef ReadHelper<MapData> Helper;
+		typedef typename Helper::DBuffer DBuffer;
 
 		DBuffer m_buffer;
-		AutoPtr<Reader> m_reader;
+		AutoPtr<Helper> m_helper;
+	};
+
+	class AveImgProc : public ImgProcBase
+	{
+		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::AveImgProc", 
+				  "SlsDetector");
+	public:
+		AveImgProc(Jungfrau *jungfrau);
+
+		virtual void updateImageSize(Size size, bool raw);
+		virtual void clear();
+		virtual void processFrame(Data& data);
+
+		void readAveMap(Data& ave_map, FrameType& nb_frames,
+				FrameType& frame);
+
+	private:
+		template <class M>
+		void processFrameFunct(Data& data);
+
+		struct MapData {
+			Data ave_map;
+			FrameType nb_frames;
+
+			MapData() { ave_map.type = Data::DOUBLE; }
+
+			void updateSize(Size size) {
+				updateDataSize(ave_map, size);
+			};
+			void clear() { clearData(ave_map); }
+		};
+
+		typedef ReadHelper<MapData> Helper;
+		typedef typename Helper::DBuffer DBuffer;
+
+		DBuffer m_buffer;
+		AutoPtr<Helper> m_helper;
+		Data m_acc;
+		int m_nb_frames;
 	};
 
 	class ModelReconstruction : public SlsDetector::Reconstruction
@@ -472,7 +561,9 @@ class Jungfrau : public Model
 	}
 
 	static void clearData(Data& d) {
-		memset(d.data(), 0, d.size());
+		void *p = d.data();
+		if (p)
+			memset(p, 0, d.size());
 	}
 
 	static void makeDataRef(Data& src, Data& ref, Buffer::Callback *cb) {
@@ -506,6 +597,15 @@ class Jungfrau : public Model
 	void removeAllImgProc();
 	void doSetImgProcConfig(std::string config, bool force);
 
+	Data getRawData(Data& data)
+	{
+		if (m_img_src == Raw)
+			return data;
+		BufferMgr *buffer_mgr = getBuffer();
+		BufferCtrlObj *buffer = buffer_mgr->getBufferCtrlObj(AcqBuffer);
+		return buffer->getFrameData(data.frameNumber);
+	}
+
 	int getNbJungfrauModules()
 	{ return getNbDetModules(); }
 
@@ -535,6 +635,7 @@ class Jungfrau : public Model
 	Cond m_cond;
 	AutoPtr<GainPedImgProc> m_gain_ped_img_proc;
 	AutoPtr<GainADCMapImgProc> m_gain_adc_map_img_proc;
+	AutoPtr<AveImgProc> m_ave_img_proc;
 	std::string m_img_proc_config;
 	ImgProcList m_img_proc_list;
 	ImgSrc m_img_src;

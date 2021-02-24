@@ -177,10 +177,13 @@ class Jungfrau : public SlsDetector::Model
 
 	void readGainPedProcMap(Data& proc_map /Out/,
 	     			unsigned long& frame /In,Out/);
+	void readAveMap(Data& proc_map /Out/, unsigned long& nb_frames /Out/,
+			unsigned long& frame /In,Out/);
 
 	void setGainPedMapType(Jungfrau::GainPed::MapType  map_type);
 	void getGainPedMapType(Jungfrau::GainPed::MapType& map_type /Out/);
 
+	void setGainPedCalib(const SlsDetector::Jungfrau::GainPed::Calib& calib);
 	void getGainPedCalib(SlsDetector::Jungfrau::GainPed::Calib& calib /Out/);
 
 	void setImgSrc(Jungfrau::ImgSrc  img_src);
