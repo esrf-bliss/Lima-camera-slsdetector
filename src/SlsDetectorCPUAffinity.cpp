@@ -1434,7 +1434,7 @@ void GlobalCPUAffinityMgr::ProcessingFinishedEvent::prepareAcq()
 		OpStageNameListMap::const_iterator mit, mend = active_op.end();
 		ostringstream os;
 		os << "{";
-		for (mit = active_op.begin(); mit != mend; ++mend) {
+		for (mit = active_op.begin(); mit != mend; ++mit) {
 			const int& stage = mit->first;
 			os << stage << ": [";
 			const NameList& name_list = mit->second;
