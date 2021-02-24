@@ -96,6 +96,7 @@ public:
 
 	void setAcqBufferCPUAffinity(CPUAffinity buffer_affinity);
 
+	void waitLimaFrame(FrameType frame_nb, AutoMutex& l);
 	char *getAcqFrameBufferPtr(FrameType frame_nb);
 
 	BufferCtrlObj *getBufferCtrlObj(BufferType type)
@@ -126,13 +127,16 @@ public:
 
 private:
 	friend class Camera;
+	typedef BufferCtrlObj::Sync BufferSync;
 
 	BufferMgr(Camera *cam);
 
 	Camera *m_cam;
+	Cond& m_cond;
 	Mode m_mode;
 	CPUAffinity m_buffer_affinity;
 	BufferCtrlObj *m_lima_buffer_ctrl_obj;
+	BufferSync *m_lima_buffer_sync;
 	AutoPtr<BufferCtrlObj> m_acq_buffer_ctrl_obj;
 	int m_max_memory;
 };

@@ -28,7 +28,8 @@ using namespace lima::SlsDetector;
 
 
 BufferMgr::BufferMgr(Camera *cam)
-	: m_cam(cam), m_mode(Single), m_lima_buffer_ctrl_obj(NULL),
+	: m_cam(cam), m_cond(m_cam->m_cond), m_mode(Single),
+	  m_lima_buffer_ctrl_obj(NULL),
 	  m_max_memory(70)
 {
 	DEB_CONSTRUCTOR();
@@ -82,6 +83,27 @@ void BufferMgr::setLimaBufferCtrlObj(BufferCtrlObj *buffer_ctrl_obj)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR2(m_lima_buffer_ctrl_obj, buffer_ctrl_obj);
 	m_lima_buffer_ctrl_obj = buffer_ctrl_obj;
+	m_lima_buffer_sync = buffer_ctrl_obj ?
+				buffer_ctrl_obj->getBufferSync(m_cond) : NULL;
+}
+
+void BufferMgr::waitLimaFrame(FrameType frame_nb, AutoMutex& l)
+{
+	DEB_MEMBER_FUNCT();
+	if (!m_lima_buffer_ctrl_obj)
+		THROW_HW_ERROR(Error) << "No Lima BufferCbMgr defined";
+	while (true) {
+		BufferSync::Status status = m_lima_buffer_sync->wait(frame_nb);
+		switch (status) {
+		case BufferSync::AVAILABLE:
+			return;
+		case BufferSync::INTERRUPTED:
+			continue;
+		default:
+			THROW_HW_ERROR(Error) << "Lima buffer sync wait error: "
+					      << status;
+		}
+	}
 }
 
 char *BufferMgr::getAcqFrameBufferPtr(FrameType frame_nb)

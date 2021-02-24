@@ -184,9 +184,10 @@ void Camera::AcqThread::threadFunction()
 			seq_filter.addVal(frame);
 			SeqFilter::Range frames = seq_filter.getSeqRange();
 			if (frames.nb > 0) {
-				AutoMutexUnlock u(l);
 				int f = frames.first;
 				do {
+					m_cam->m_buffer.waitLimaFrame(f, l);
+					AutoMutexUnlock u(l);
 					DEB_TRACE() << DEB_VAR1(f);
 					Status status = newFrameReady(f);
 					cont_acq = status.first;
