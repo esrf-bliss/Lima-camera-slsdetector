@@ -87,21 +87,14 @@ void Jungfrau::GainPed::Impl<M>::getDefaultCalib(Calib& calib)
 	}
 	auto f = [&](auto det_geom) {
 		using namespace sls::Geom;
-		det_for_each_mod(det_geom, mod, mod_geom,
-		    mod_for_each_recv(mod_geom, recv, recv_geom,
-		        recv_for_each_iface(recv_geom, iface, iface_geom,
-		            iface_for_each_chip(iface_geom, chip, chip_view,
-			        view_for_each_pixel(chip_view, pixel,
-				    int i = chip_view.calcMapPixelIndex(pixel);
-				    for (int g = 0; g < 3; ++g) {
-					p[g][0][i] = M::DefaultCoeffs[g][0];
-					p[g][1][i] = M::DefaultCoeffs[g][1];
-				    }
-				  );
-			      );
-		          );
-		      );
-		  );
+		det_for_each_pixel(det_geom,
+				   [&](auto &chip_view, auto &pixel) {
+			int i = chip_view.calcMapPixelIndex(pixel);
+			for (int g = 0; g < 3; ++g) {
+				p[g][0][i] = M::DefaultCoeffs[g][0];
+				p[g][1][i] = M::DefaultCoeffs[g][1];
+			}
+		   });
 	};
 	applyDetGeom(m_jungfrau, f, m_raw);
 }
@@ -831,19 +824,15 @@ void Jungfrau::getDetMap(Data& det_map)
 		using namespace sls::Geom;
 		unsigned int *p = (unsigned int *) det_map.data();
 		int chip_idx = 0;
-		det_for_each_mod(det_geom, mod, mod_geom,
-		    mod_for_each_recv(mod_geom, recv, recv_geom,
-		        recv_for_each_iface(recv_geom, iface, iface_geom,
-		            iface_for_each_chip(iface_geom, chip, chip_view,
-			        view_for_each_pixel(chip_view, pixel,
-				    int i = chip_view.calcMapPixelIndex(pixel);
-				    p[i] = chip_idx;
-				  );
-				++chip_idx;
-			      );
-		          );
-		      );
-		  );
+		det_for_each_chip(det_geom,
+				  [&](auto &chip, auto &chip_view) {
+		    view_for_each_pixel(chip_view,
+					[&](auto &chip_view, auto &pixel) {
+			    int i = chip_view.calcMapPixelIndex(pixel);
+			    p[i] = chip_idx;
+			});
+		    ++chip_idx;
+		  });
 	};
 	applyDetGeom(this, f, raw);
 }
