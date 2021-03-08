@@ -324,7 +324,14 @@ void Jungfrau::Thread::threadFunction()
 			wait();
 		}
 		if (s == Running)
-			m_jungfrau->processOneFrame(l);
+			try {
+				m_jungfrau->processOneFrame(l);
+			} catch (Exception& e) {
+				Camera *cam = m_jungfrau->getCamera();
+				string name = ("Jungfrau::Thread::"
+					       "threadFunction");
+				cam->reportException(e, name);
+			}
 	}
 
 	s = End;
