@@ -115,6 +115,9 @@ add_library(slsdetector SHARED
   ${SLSDETECTOR_INCS}
 )
 
+# Additional compile definitions
+add_compile_definitions(NO_WARN_X86_INTRINSICS)
+
 target_compile_options(slsdetector PRIVATE "-Wno-address-of-packed-member")
 
 # Generate export macros
@@ -125,8 +128,6 @@ set_target_properties(slsdetector PROPERTIES
   OUTPUT_NAME "lima${PROJECT_NAME_LOWER}"
   VERSION "${PROJECT_VERSION}"
   SOVERSION "${PACKAGE_VERSION_MAJOR}.${PACKAGE_VERSION_MINOR}")
-
-MESSAGE(STATUS "SLS_DETECTOR_SW=${SLS_DETECTOR_SW}")
 
 # Add dependencies
 target_include_directories(slsdetector
