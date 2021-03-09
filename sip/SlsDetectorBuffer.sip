@@ -40,7 +40,7 @@ public:
 
 private:
 	BufferMgr(Camera *cam);
-
+	BufferMgr(const BufferMgr& o);
 };
 
 

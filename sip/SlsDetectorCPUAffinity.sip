@@ -190,7 +190,6 @@ class SystemCmd
 {
 public:
 	SystemCmd(std::string cmd, std::string desc = "", bool try_sudo = true);
-	SystemCmd(const SlsDetector::SystemCmd& o);
 
 	static void setUseSudo(bool use_sudo);
 	static bool getUseSudo();
@@ -203,6 +202,9 @@ public:
 %End
 
 	int execute();
+
+ private:
+	SystemCmd(const SlsDetector::SystemCmd& o);
 };
 
 class CPUAffinity

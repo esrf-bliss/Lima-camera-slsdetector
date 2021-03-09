@@ -43,6 +43,9 @@ class BebFpgaMem
 
 	unsigned long read(unsigned long addr);
 	void write(unsigned long addr, unsigned long val);
+
+ private:
+        BebFpgaMem(const SlsDetector::BebFpgaMem& o);
 };
 
 
