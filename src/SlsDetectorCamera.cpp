@@ -363,7 +363,7 @@ Camera::Camera(string config_fname, int det_id)
 	EXC_CHECK(m_det->setRxSilentMode(1));
 	EXC_CHECK(m_det->setRxFrameDiscardPolicy(
 				  slsDetectorDefs::DISCARD_PARTIAL_FRAMES));
-	setReceiverFifoDepth(1);
+	setReceiverFifoDepth(4);
 
 	sls::Result<int> dr_res;
 	EXC_CHECK(dr_res = m_det->getDynamicRange());

@@ -79,8 +79,7 @@ private:
 		}
 	};
 
-	bool readRecvImage(FrameType lima_frame, FrameType det_frame,
-			   ImageData *image_data=NULL);
+	bool readRecvImage(ImageData *image_data);
 
 	Camera *m_cam;
 	int m_idx;

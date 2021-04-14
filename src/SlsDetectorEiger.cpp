@@ -621,7 +621,7 @@ bool Eiger::Recv::processOneFrame(FrameType frame, char *bptr)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR2(m_idx, frame);
 	RecvImageData data;
-	data.frame = frame;
+	//data.frame = frame;
 	data.buffer = bptr;
 	return m_recv->getImage(data);
 }

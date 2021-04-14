@@ -92,8 +92,7 @@ void Receiver::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
 	m_recv->setBufferNodeAffinity(fifo_node_mask, max_node);
 }
 
-inline bool Receiver::readRecvImage(FrameType lima_frame, FrameType det_frame,
-				    ImageData *image_data)
+inline bool Receiver::readRecvImage(ImageData *image_data)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -105,9 +104,7 @@ inline bool Receiver::readRecvImage(FrameType lima_frame, FrameType det_frame,
 		action = "skip";
 	}
 
-	DEB_TRACE() << "To " << action << ": "
-		    << DEB_VAR3(m_idx, lima_frame, det_frame);
-	image_data->frame = det_frame;
+	DEB_TRACE() << "Action: " << action;
 	int ret = m_recv->getImage(*image_data);
 	if ((ret != 0) || (m_cam->getAcqState() == Stopping)) {
 		DEB_RETURN() << DEB_VAR1(false);
@@ -124,9 +121,6 @@ inline bool Receiver::readRecvImage(FrameType lima_frame, FrameType det_frame,
 		THROW_HW_ERROR(Error) << "Invalid frame: " 
 				      << DEB_VAR3(m_idx, recv_frame,
 						  DebHex(recv_frame));
-	else if (recv_frame != det_frame)
-		THROW_HW_ERROR(Error) << "Bad frame: "
-				      << DEB_VAR3(m_idx, recv_frame, det_frame);
 	DEB_RETURN() << DEB_VAR1(true);
 	return true;
 }
@@ -143,37 +137,37 @@ bool Receiver::getImage(ImageData& image_data)
 		m_stats.stats.recv_exec.add(t0 - m_stats.last_t1);
 	m_stats.last_t0 = t0;
 
-	FrameType lima_frame = image_data.frame;
 	try {
-		FrameType det_frame = lima_frame + 1;  // first frame is set to 1
-		bool skip_prev = false;
+		if (!readRecvImage(&image_data))
+			return false;
+
+		FrameType& det_frame = image_data.header.detHeader.frameNumber;
+		bool skip_this = false;
 		bool skip_last = false;
 		FrameType skip_freq = m_cam->m_skip_frame_freq;
 		if (skip_freq) {
-			det_frame += lima_frame / skip_freq;
-			skip_prev = (lima_frame &&
-				     (lima_frame % skip_freq == 0));
+			skip_this = (det_frame % (skip_freq + 1) == 0);
 			skip_last = ((det_frame + 1) == m_cam->m_det_nb_frames);
-			DEB_TRACE() << DEB_VAR5(m_idx, lima_frame, det_frame,
-						skip_prev, skip_last);
+			DEB_TRACE() << DEB_VAR4(m_idx, det_frame, skip_this,
+						skip_last);
 		}
 
-		if (skip_prev && !readRecvImage(lima_frame, det_frame - 1))
+		if (skip_this && !readRecvImage(&image_data))
 			return false;
 
-		if (!readRecvImage(lima_frame, det_frame, &image_data))
-			return false;
+		if (skip_freq)
+			det_frame -= det_frame / (skip_freq + 1);
+		// first frame is set to 1
+		--det_frame;
 
 		if (skip_last) {
-			if (!readRecvImage(lima_frame, det_frame + 1))
+			if (!readRecvImage(NULL))
 				return false;
 			m_cam->processLastSkippedFrame(m_idx);
 		}
-
-		image_data.frame = lima_frame;
 	} catch (Exception& e) {
 		ostringstream name;
-		name << "Receiver::getImage: " << DEB_VAR2(m_idx, lima_frame);
+		name << "Receiver::getImage: " << DEB_VAR1(m_idx);
 		m_cam->reportException(e, name.str());
 		return false;
 	}
