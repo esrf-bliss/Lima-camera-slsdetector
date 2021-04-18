@@ -22,9 +22,17 @@
 
 #include "SlsDetectorCamera.h"
 
+#include "sls/Receiver.h"
+
 using namespace std;
 using namespace lima;
 using namespace lima::SlsDetector;
+
+using namespace FrameAssembler;
+
+struct Receiver::AssemblerImpl {
+	MPFrameAssemblerPtr m_asm;
+};
 
 Receiver::Receiver(Camera *cam, int idx, int rx_port)
 	: m_cam(cam), m_idx(idx), m_rx_port(rx_port), m_gap_pixels_enable(false)
@@ -37,11 +45,14 @@ Receiver::Receiver(Camera *cam, int idx, int rx_port)
 	m_args.set(os.str());
 
 	start();
+
+	m_asm_impl = new AssemblerImpl();
 }
 
 Receiver::~Receiver()
 {
 	DEB_DESTRUCTOR();
+	delete m_asm_impl;
 }
 
 void Receiver::start()
@@ -54,7 +65,8 @@ void Receiver::start()
 void Receiver::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
-	m_recv->enableGap(m_gap_pixels_enable);
+	AssemblerType asm_type = m_gap_pixels_enable ? AsmWithGap : AsmRaw;
+	m_asm_impl->m_asm = std::move(m_recv->CreateFrameAssembler(asm_type));
 	m_stats.reset();
 }
 
@@ -92,6 +104,22 @@ void Receiver::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
 	m_recv->setBufferNodeAffinity(fifo_node_mask, max_node);
 }
 
+inline bool Receiver::asmRecvImage(ImageData &image_data)
+{
+	DEB_MEMBER_FUNCT();
+
+	AnyPacketBlockList blocks = m_recv->GetFramePacketBlocks();
+	FrameAssembler::Result res;
+	MPFrameAssemblerPtr::pointer a = m_asm_impl->m_asm.get();
+	res = a->assembleFrame(std::move(blocks), &image_data.header,
+			       image_data.buffer);
+	image_data.numberOfPorts = res.nb_ports;
+	image_data.validPortData = res.valid_data;
+	bool got_data = image_data.validPortData.any();
+	DEB_RETURN() << DEB_VAR1(got_data);
+	return got_data;
+}
+
 inline bool Receiver::readRecvImage(ImageData *image_data)
 {
 	DEB_MEMBER_FUNCT();
@@ -105,8 +133,8 @@ inline bool Receiver::readRecvImage(ImageData *image_data)
 	}
 
 	DEB_TRACE() << "Action: " << action;
-	int ret = m_recv->getImage(*image_data);
-	if ((ret != 0) || (m_cam->getAcqState() == Stopping)) {
+	bool got_data = asmRecvImage(*image_data);
+	if (!got_data || (m_cam->getAcqState() == Stopping)) {
 		DEB_RETURN() << DEB_VAR1(false);
 		return false;
 	}
@@ -177,5 +205,10 @@ bool Receiver::getImage(ImageData& image_data)
 	m_stats.last_t1 = t1;
 
 	return true;
+}
+
+void Receiver::clearAllBuffers()
+{
+	m_recv->clearAllBuffers();
 }
 

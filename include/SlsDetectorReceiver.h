@@ -26,7 +26,12 @@
 #include "SlsDetectorFrameMap.h"
 #include "SlsDetectorModel.h"
 
-#include "sls/Receiver.h"
+#include "sls/sls_detector_defs.h"
+
+namespace sls
+{
+class Receiver;
+}
 
 namespace lima 
 {
@@ -43,7 +48,13 @@ class Receiver
 public:
 	typedef slsDetectorDefs::sls_detector_header sls_detector_header;
 	typedef slsDetectorDefs::sls_receiver_header sls_receiver_header;
-	typedef slsDetectorDefs::receiver_image_data ImageData;
+
+	struct ImageData {
+		sls_receiver_header header;
+		char *buffer;
+		int numberOfPorts;
+		std::bitset<MAX_NUM_PORTS> validPortData;
+	};
 
 	Receiver(Camera *cam, int idx, int rx_port);
 	~Receiver();
@@ -62,8 +73,7 @@ public:
 	SlsDetector::Stats& getStats()
 	{ return m_stats.stats; }
 
-	void clearAllBuffers()
-	{ m_recv->clearAllBuffers(); }
+	void clearAllBuffers();
 
 private:
 	friend class Camera;
@@ -79,6 +89,9 @@ private:
 		}
 	};
 
+	struct AssemblerImpl;
+
+	bool asmRecvImage(ImageData &image_data);
 	bool readRecvImage(ImageData *image_data);
 
 	Camera *m_cam;
@@ -87,6 +100,7 @@ private:
 	Args m_args;
 	bool m_gap_pixels_enable;
 	AutoPtr<sls::Receiver> m_recv;
+	AssemblerImpl *m_asm_impl;
 	Stats m_stats;
 }; 
 

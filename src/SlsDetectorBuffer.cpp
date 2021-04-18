@@ -177,13 +177,13 @@ void BufferMgr::releaseBuffers()
 {
 	DEB_MEMBER_FUNCT();
 	bool prev_release_unused;
-	BufferCtrlObj::getBufferMgrResizePolicy(prev_release_unused);
-	BufferCtrlObj::setBufferMgrResizePolicy(true);
+//	BufferCtrlObj::getBufferMgrResizePolicy(prev_release_unused);
+//	BufferCtrlObj::setBufferMgrResizePolicy(true);
 	if (m_acq_buffer_ctrl_obj)
 		m_acq_buffer_ctrl_obj->releaseBuffers();
 	if (m_lima_buffer_ctrl_obj)
 		m_lima_buffer_ctrl_obj->releaseBuffers();
-	BufferCtrlObj::setBufferMgrResizePolicy(prev_release_unused);
+//	BufferCtrlObj::setBufferMgrResizePolicy(prev_release_unused);
 }
 
 void BufferMgr::clearAllBuffers()
