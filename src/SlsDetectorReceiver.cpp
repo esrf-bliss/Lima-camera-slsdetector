@@ -30,6 +30,16 @@ using namespace lima::SlsDetector;
 
 using namespace FrameAssembler;
 
+struct RecvImageData : Receiver::ImageData {
+	AnyPacketBlockList blocks;
+};
+
+inline
+AnyPacketBlockList& RecvImageDataBlocks(Receiver::ImageData *image_data) {
+	RecvImageData *rd = static_cast<RecvImageData *>(image_data);
+	return rd->blocks;
+}
+
 struct Receiver::AssemblerImpl {
 	MPFrameAssemblerPtr m_asm;
 };
@@ -68,6 +78,7 @@ void Receiver::prepareAcq()
 	AssemblerType asm_type = m_gap_pixels_enable ? AsmWithGap : AsmRaw;
 	m_asm_impl->m_asm = std::move(m_recv->CreateFrameAssembler(asm_type));
 	m_stats.reset();
+	m_last_skipped = false;
 }
 
 void Receiver::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
@@ -104,56 +115,43 @@ void Receiver::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
 	m_recv->setBufferNodeAffinity(fifo_node_mask, max_node);
 }
 
-inline bool Receiver::asmRecvImage(ImageData &image_data)
+AutoPtr<Receiver::ImageData> Receiver::readSkippableImagePackets()
 {
 	DEB_MEMBER_FUNCT();
-
-	AnyPacketBlockList blocks = m_recv->GetFramePacketBlocks();
-	FrameAssembler::Result res;
-	MPFrameAssemblerPtr::pointer a = m_asm_impl->m_asm.get();
-	res = a->assembleFrame(std::move(blocks), &image_data.header,
-			       image_data.buffer);
-	image_data.numberOfPorts = res.nb_ports;
-	image_data.validPortData = res.valid_data;
-	bool got_data = image_data.validPortData.any();
-	DEB_RETURN() << DEB_VAR1(got_data);
-	return got_data;
-}
-
-inline bool Receiver::readRecvImage(ImageData *image_data)
-{
-	DEB_MEMBER_FUNCT();
-
-	ImageData skip_image_data;
-	const char *action = "read";
-	if (!image_data) {
-		image_data = &skip_image_data;
-		image_data->buffer = NULL;
-		action = "skip";
+	AutoPtr<ImageData> image_data = new RecvImageData();
+	AnyPacketBlockList& blocks = RecvImageDataBlocks(image_data);
+	sls_detector_header& header = image_data->header.detHeader;
+	header.frameNumber = -1;
+	blocks = std::move(m_recv->GetFramePacketBlocks());
+	image_data->numberOfPorts = blocks.size();
+	for (int i = 0; i < image_data->numberOfPorts; ++i) {
+		std::visit([&](auto &block) {
+			bool valid = block;
+			image_data->validPortData[i] = valid;
+			if (valid && (header.frameNumber == uint64_t(-1))) {
+				for (int p = 0; p < (*block).NbPackets; ++p) {
+					if ((*block)[p].valid()) {
+						auto packet = (*block)[p];
+						header = *packet.networkHeader();
+						break;
+					}
+				}
+			}
+		    }, blocks[i]);
 	}
-
-	DEB_TRACE() << "Action: " << action;
-	bool got_data = asmRecvImage(*image_data);
-	if (!got_data || (m_cam->getAcqState() == Stopping)) {
-		DEB_RETURN() << DEB_VAR1(false);
-		return false;
-	}
-
-	sls_receiver_header& header = image_data->header;
-	DEB_TRACE() << DEB_VAR4(header.detHeader.frameNumber,
-				header.detHeader.modId,
-				header.detHeader.row,
-				header.detHeader.column);
-	FrameType recv_frame = header.detHeader.frameNumber;
+	if (image_data->validPortData.none())
+		return NULL;
+	DEB_TRACE() << DEB_VAR5(m_idx, header.frameNumber, header.modId,
+				header.row, header.column);
+	FrameType recv_frame = header.frameNumber;
 	if (recv_frame > m_cam->m_det_nb_frames)
 		THROW_HW_ERROR(Error) << "Invalid frame: " 
 				      << DEB_VAR3(m_idx, recv_frame,
 						  DebHex(recv_frame));
-	DEB_RETURN() << DEB_VAR1(true);
-	return true;
+	return image_data;
 }
 
-bool Receiver::getImage(ImageData& image_data)
+Receiver::ImageData *Receiver::readImagePackets()
 {
 	DEB_MEMBER_FUNCT();
 
@@ -165,46 +163,72 @@ bool Receiver::getImage(ImageData& image_data)
 		m_stats.stats.recv_exec.add(t0 - m_stats.last_t1);
 	m_stats.last_t0 = t0;
 
+	AutoPtr<ImageData> image_data;
 	try {
-		if (!readRecvImage(&image_data))
-			return false;
+		image_data = readSkippableImagePackets();
+		if (!image_data)
+			return NULL;
 
-		FrameType& det_frame = image_data.header.detHeader.frameNumber;
+		FrameType det_frame = image_data->detFrame();
 		bool skip_this = false;
-		bool skip_last = false;
+		bool skip_next = false;
+		bool prev_last_skipped = m_last_skipped;
 		FrameType skip_freq = m_cam->m_skip_frame_freq;
 		if (skip_freq) {
 			skip_this = (det_frame % (skip_freq + 1) == 0);
-			skip_last = ((det_frame + 1) == m_cam->m_det_nb_frames);
-			DEB_TRACE() << DEB_VAR4(m_idx, det_frame, skip_this,
-						skip_last);
+			FrameType last_frame = m_cam->m_det_nb_frames;
+			skip_next = ((det_frame + 1) == last_frame);
+			if (skip_this && (det_frame == last_frame))
+				m_last_skipped = true;
+			DEB_TRACE() << DEB_VAR5(m_idx, det_frame, skip_this,
+						skip_next, m_last_skipped);
 		}
 
-		if (skip_this && !readRecvImage(&image_data))
-			return false;
+		if (skip_this) {
+			image_data = readSkippableImagePackets();
+			if (!image_data)
+				return NULL;
+			det_frame = image_data->detFrame();
+		}
 
+		image_data->frame = det_frame - 1; // first frame is set to 1
 		if (skip_freq)
-			det_frame -= det_frame / (skip_freq + 1);
-		// first frame is set to 1
-		--det_frame;
+			image_data->frame -= det_frame / (skip_freq + 1);
 
-		if (skip_last) {
-			if (!readRecvImage(NULL))
-				return false;
-			m_cam->processLastSkippedFrame(m_idx);
+		if (skip_next && !m_last_skipped) {
+			AutoPtr<ImageData> skip = readSkippableImagePackets();
+			if (!skip)
+				return NULL;
+			m_last_skipped = true;
 		}
+		if (m_last_skipped && !prev_last_skipped)
+			m_cam->processLastSkippedFrame(m_idx);
 	} catch (Exception& e) {
 		ostringstream name;
 		name << "Receiver::getImage: " << DEB_VAR1(m_idx);
 		m_cam->reportException(e, name.str());
-		return false;
+		return NULL;
 	}
 
 	Timestamp t1 = Timestamp::now();
 	m_stats.stats.cb_exec.add(t1 - t0);
 	m_stats.last_t1 = t1;
 
-	return true;
+	return image_data.forget();
+}
+
+bool Receiver::asmImagePackets(ImageData *image_data, char *buffer)
+{
+	DEB_MEMBER_FUNCT();
+	FrameAssembler::Result res;
+	MPFrameAssemblerPtr::pointer a = m_asm_impl->m_asm.get();
+	res = a->assembleFrame(std::move(RecvImageDataBlocks(image_data)),
+			       &image_data->header, buffer);
+	image_data->numberOfPorts = res.nb_ports;
+	image_data->validPortData = res.valid_data;
+	bool got_data = image_data->validPortData.any();
+	DEB_RETURN() << DEB_VAR1(got_data);
+	return got_data;
 }
 
 void Receiver::clearAllBuffers()

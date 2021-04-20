@@ -50,10 +50,17 @@ public:
 	typedef slsDetectorDefs::sls_receiver_header sls_receiver_header;
 
 	struct ImageData {
+		FrameType frame;
 		sls_receiver_header header;
-		char *buffer;
 		int numberOfPorts;
 		std::bitset<MAX_NUM_PORTS> validPortData;
+
+		ImageData() : frame(-1), numberOfPorts(0)
+		{ header.detHeader.frameNumber = -1; }
+
+		virtual ~ImageData() {}
+
+		uint64_t detFrame() { return header.detHeader.frameNumber; }
 	};
 
 	Receiver(Camera *cam, int idx, int rx_port);
@@ -68,7 +75,8 @@ public:
 
 	void setCPUAffinity(const RecvCPUAffinity& recv_affinity);
 
-	bool getImage(ImageData& image_data);
+	ImageData *readImagePackets();
+	bool asmImagePackets(ImageData *image_data, char *buffer);
 	
 	SlsDetector::Stats& getStats()
 	{ return m_stats.stats; }
@@ -91,8 +99,7 @@ private:
 
 	struct AssemblerImpl;
 
-	bool asmRecvImage(ImageData &image_data);
-	bool readRecvImage(ImageData *image_data);
+	AutoPtr<ImageData> readSkippableImagePackets();
 
 	Camera *m_cam;
 	int m_idx;
@@ -102,6 +109,7 @@ private:
 	AutoPtr<sls::Receiver> m_recv;
 	AssemblerImpl *m_asm_impl;
 	Stats m_stats;
+	bool m_last_skipped;
 }; 
 
 

@@ -620,10 +620,16 @@ bool Eiger::Recv::processOneFrame(FrameType frame, char *bptr)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR2(m_idx, frame);
-	RecvImageData data;
-	//data.frame = frame;
-	data.buffer = bptr;
-	return m_recv->getImage(data);
+	AutoPtr<RecvImageData> data = m_recv->readImagePackets();
+	if (!data)
+		return false;
+	if (!m_recv->asmImagePackets(data, bptr))
+		return false;
+	FrameType recv_frame = data->frame;
+	if (recv_frame != frame)
+		DEB_ERROR() << "Unexpected frame: " << DEB_VAR2(recv_frame,
+								frame);
+	return true;
 }
 
 void Eiger::Recv::processBadFrame(FrameType frame, char *bptr)

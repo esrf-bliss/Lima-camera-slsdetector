@@ -80,6 +80,9 @@ endif()
 # Additional packages
 find_package(Numa REQUIRED)
 
+# Remove warning on alignment of packet members
+SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Waddress-of-packed-member")
+
 # slsDetectorPackage
 set(SLS_DETECTOR_DIR ${CMAKE_CURRENT_SOURCE_DIR}/slsDetectorPackage)
 set(SLS_DETECTOR_SUPPORT ${SLS_DETECTOR_DIR}/slsSupportLib)
@@ -111,6 +114,8 @@ add_library(slsdetector SHARED
   src/SlsDetectorInterface.cpp
   ${SLSDETECTOR_INCS}
 )
+
+target_compile_options(slsdetector PRIVATE "-Wno-address-of-packed-member")
 
 # Generate export macros
 generate_export_header(slsdetector)
