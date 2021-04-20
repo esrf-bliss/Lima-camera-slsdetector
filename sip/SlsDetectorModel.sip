@@ -67,8 +67,6 @@ public:
 
 	virtual int getNbFrameMapItems() = 0;
 	virtual void updateFrameMapItems(FrameMap *map) = 0;
-	virtual void processBadItemFrame(unsigned long frame, int item,
-					 char *bptr) = 0;
 
 	virtual bool isXferActive() = 0;
 

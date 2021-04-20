@@ -196,8 +196,6 @@ class Jungfrau : public SlsDetector::Model
  protected:
 	virtual int getNbFrameMapItems();
 	virtual void updateFrameMapItems(FrameMap *map);
-	virtual void processBadItemFrame(unsigned long frame, int item,
-					 char *bptr);
 
 	virtual void updateImageSize();
 

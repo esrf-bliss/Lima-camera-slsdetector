@@ -49,18 +49,27 @@ public:
 	typedef slsDetectorDefs::sls_detector_header sls_detector_header;
 	typedef slsDetectorDefs::sls_receiver_header sls_receiver_header;
 
-	struct ImageData {
+	class ImagePackets {
+	public:
 		FrameType frame;
 		sls_receiver_header header;
 		int numberOfPorts;
 		std::bitset<MAX_NUM_PORTS> validPortData;
 
-		ImageData() : frame(-1), numberOfPorts(0)
-		{ header.detHeader.frameNumber = -1; }
-
-		virtual ~ImageData() {}
+		virtual ~ImagePackets() {}
 
 		uint64_t detFrame() { return header.detHeader.frameNumber; }
+
+		bool assemble(char *buf)
+		{ return recv->asmImagePackets(this, buf); }
+
+	protected:
+		friend class Receiver;
+
+		ImagePackets(Receiver *r) : frame(-1), numberOfPorts(0), recv(r)
+		{ header.detHeader.frameNumber = -1; }
+
+		Receiver *recv;
 	};
 
 	Receiver(Camera *cam, int idx, int rx_port);
@@ -75,9 +84,10 @@ public:
 
 	void setCPUAffinity(const RecvCPUAffinity& recv_affinity);
 
-	ImageData *readImagePackets();
-	bool asmImagePackets(ImageData *image_data, char *buffer);
-	
+	ImagePackets *readImagePackets();
+
+	void fillBadFrame(char *buf);
+
 	SlsDetector::Stats& getStats()
 	{ return m_stats.stats; }
 
@@ -85,6 +95,7 @@ public:
 
 private:
 	friend class Camera;
+	friend class ImagePackets;
 
 	struct Stats {
 		SlsDetector::Stats stats;
@@ -99,7 +110,8 @@ private:
 
 	struct AssemblerImpl;
 
-	AutoPtr<ImageData> readSkippableImagePackets();
+	bool asmImagePackets(ImagePackets *image_data, char *buffer);
+	AutoPtr<ImagePackets> readSkippableImagePackets();
 
 	Camera *m_cam;
 	int m_idx;
@@ -111,6 +123,10 @@ private:
 	Stats m_stats;
 	bool m_last_skipped;
 }; 
+
+typedef std::map<int, AutoPtr<Receiver::ImagePackets>> DetImagePackets;
+typedef std::map<FrameType, DetImagePackets> FramePacketMap;
+typedef FramePacketMap::value_type DetFrameImagePackets;
 
 
 } // namespace SlsDetector

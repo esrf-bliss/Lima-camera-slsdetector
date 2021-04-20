@@ -82,8 +82,6 @@ class Model
 
 	virtual int getNbFrameMapItems() = 0;
 	virtual void updateFrameMapItems(FrameMap *map) = 0;
-	virtual void processBadItemFrame(FrameType frame, int item,
-					 char *bptr) = 0;
 
 	virtual bool isAcqActive();
 	virtual bool isXferActive() = 0;
@@ -91,6 +89,8 @@ class Model
 	virtual void setThreadCPUAffinity(const CPUAffinityList& aff_list) = 0;
 
 	virtual Reconstruction *getReconstruction();
+
+	void processPackets();
 
  protected:
 	void updateCameraModel();
@@ -125,6 +125,8 @@ class Model
 
  protected:
 	AutoPtr<sls::Detector> m_det;
+	FrameType m_next_frame;
+	FrameType m_last_frame;
 };
 
 

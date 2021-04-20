@@ -246,6 +246,9 @@ private:
 	void removeSharedMem();
 	void createReceivers();
 
+	DetFrameImagePackets readRecvPackets();
+	void assemblePackets(DetFrameImagePackets&& det_packets);
+
 	bool checkLostPackets();
 	FrameType getLastReceivedFrame();
 
@@ -311,6 +314,7 @@ private:
 	PixelDepthCPUAffinityMap m_cpu_affinity_map;
 	GlobalCPUAffinityMgr m_global_cpu_affinity_mgr;
 	AutoPtr<AcqThread> m_acq_thread;
+	FramePacketMap m_frame_packet_map;
 };
 
 } // namespace SlsDetector

@@ -198,8 +198,6 @@ class Jungfrau : public Model
  protected:
 	virtual int getNbFrameMapItems();
 	virtual void updateFrameMapItems(FrameMap *map);
-	virtual void processBadItemFrame(FrameType frame, int item,
-					 char *bptr);
 
 	virtual void setThreadCPUAffinity(const CPUAffinityList& aff_list);
 
@@ -214,30 +212,8 @@ class Jungfrau : public Model
  private:
 	friend class GainPed;
 
-	class Recv
-	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::Recv", "SlsDetector");
-	public:
-		typedef Receiver::ImageData RecvImageData;
-
-		Recv(Jungfrau *jungfrau, int idx);
-
-		void prepareAcq();
-
-		bool processOneFrame(FrameType frame, char *bptr);
-		void processBadFrame(FrameType frame, char *bptr);
-
-	private:
-		Jungfrau *m_jungfrau;
-		int m_idx;
-		bool m_raw;
-		Receiver *m_recv;
-		FrameDim m_frame_dim;
-		int m_data_offset;
-	};
-
-	typedef std::vector<AutoPtr<Recv> > RecvList;
-
+	typedef std::vector<Receiver *> RecvList;
+	
 	class Thread : public lima::Thread
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::Thread", "SlsDetector");
@@ -630,8 +606,6 @@ class Jungfrau : public Model
 	int getNbProcessingThreads();
 	void setNbProcessingThreads(int nb_proc_threads);
 
-	void processOneFrame(AutoMutex& l);
-
 	Cond m_cond;
 	AutoPtr<GainPedImgProc> m_gain_ped_img_proc;
 	AutoPtr<GainADCMapImgProc> m_gain_adc_map_img_proc;
@@ -642,10 +616,6 @@ class Jungfrau : public Model
 	ModelReconstruction *m_reconstruction;
 	RecvList m_recv_list;
 	FrameType m_nb_frames;
-	FrameType m_next_frame;
-	FrameType m_last_frame;
-	SortedIntList m_in_process;
-	FrameMap::Item *m_frame_map_item;
 	ThreadList m_thread_list;
 };
 

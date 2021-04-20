@@ -30,13 +30,15 @@ using namespace lima::SlsDetector;
 
 using namespace FrameAssembler;
 
-struct RecvImageData : Receiver::ImageData {
+struct RecvImagePackets : public Receiver::ImagePackets {
+	friend class Receiver;
+	using Receiver::ImagePackets::ImagePackets;
 	AnyPacketBlockList blocks;
 };
 
 inline
-AnyPacketBlockList& RecvImageDataBlocks(Receiver::ImageData *image_data) {
-	RecvImageData *rd = static_cast<RecvImageData *>(image_data);
+AnyPacketBlockList& RecvImagePacketBlocks(Receiver::ImagePackets *image_data) {
+	RecvImagePackets *rd = static_cast<RecvImagePackets *>(image_data);
 	return rd->blocks;
 }
 
@@ -115,11 +117,11 @@ void Receiver::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
 	m_recv->setBufferNodeAffinity(fifo_node_mask, max_node);
 }
 
-AutoPtr<Receiver::ImageData> Receiver::readSkippableImagePackets()
+AutoPtr<Receiver::ImagePackets> Receiver::readSkippableImagePackets()
 {
 	DEB_MEMBER_FUNCT();
-	AutoPtr<ImageData> image_data = new RecvImageData();
-	AnyPacketBlockList& blocks = RecvImageDataBlocks(image_data);
+	AutoPtr<ImagePackets> image_data = new RecvImagePackets(this);
+	AnyPacketBlockList& blocks = RecvImagePacketBlocks(image_data);
 	sls_detector_header& header = image_data->header.detHeader;
 	header.frameNumber = -1;
 	blocks = std::move(m_recv->GetFramePacketBlocks());
@@ -151,7 +153,7 @@ AutoPtr<Receiver::ImageData> Receiver::readSkippableImagePackets()
 	return image_data;
 }
 
-Receiver::ImageData *Receiver::readImagePackets()
+Receiver::ImagePackets *Receiver::readImagePackets()
 {
 	DEB_MEMBER_FUNCT();
 
@@ -163,7 +165,7 @@ Receiver::ImageData *Receiver::readImagePackets()
 		m_stats.stats.recv_exec.add(t0 - m_stats.last_t1);
 	m_stats.last_t0 = t0;
 
-	AutoPtr<ImageData> image_data;
+	AutoPtr<ImagePackets> image_data;
 	try {
 		image_data = readSkippableImagePackets();
 		if (!image_data)
@@ -196,7 +198,7 @@ Receiver::ImageData *Receiver::readImagePackets()
 			image_data->frame -= det_frame / (skip_freq + 1);
 
 		if (skip_next && !m_last_skipped) {
-			AutoPtr<ImageData> skip = readSkippableImagePackets();
+			AutoPtr<ImagePackets> skip = readSkippableImagePackets();
 			if (!skip)
 				return NULL;
 			m_last_skipped = true;
@@ -217,12 +219,12 @@ Receiver::ImageData *Receiver::readImagePackets()
 	return image_data.forget();
 }
 
-bool Receiver::asmImagePackets(ImageData *image_data, char *buffer)
+bool Receiver::asmImagePackets(ImagePackets *image_data, char *buffer)
 {
 	DEB_MEMBER_FUNCT();
 	FrameAssembler::Result res;
 	MPFrameAssemblerPtr::pointer a = m_asm_impl->m_asm.get();
-	res = a->assembleFrame(std::move(RecvImageDataBlocks(image_data)),
+	res = a->assembleFrame(std::move(RecvImagePacketBlocks(image_data)),
 			       &image_data->header, buffer);
 	image_data->numberOfPorts = res.nb_ports;
 	image_data->validPortData = res.valid_data;
@@ -231,8 +233,15 @@ bool Receiver::asmImagePackets(ImageData *image_data, char *buffer)
 	return got_data;
 }
 
+void Receiver::fillBadFrame(char *buf)
+{
+	DEB_MEMBER_FUNCT();
+	THROW_HW_ERROR(NotSupported) << "Not implemented yet";
+}
+
 void Receiver::clearAllBuffers()
 {
+	DEB_MEMBER_FUNCT();
 	m_recv->clearAllBuffers();
 }
 

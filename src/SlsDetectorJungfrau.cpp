@@ -227,55 +227,6 @@ std::ostream& lima::SlsDetector::operator <<(std::ostream& os,
 
 
 /*
- * Jungfrau::Recv class
- */
-
-Jungfrau::Recv::Recv(Jungfrau *jungfrau, int idx)
-	: m_jungfrau(jungfrau), m_idx(idx)
-{
-	DEB_CONSTRUCTOR();
-	DEB_PARAM() << DEB_VAR1(m_idx);
-
-	Camera *cam = m_jungfrau->getCamera(); 
-	m_recv = cam->getRecv(m_idx);
-}
-
-void Jungfrau::Recv::prepareAcq()
-{
-	DEB_MEMBER_FUNCT();
-	m_raw = m_jungfrau->getRawMode();
-	m_frame_dim = m_jungfrau->getModuleFrameDim(m_idx, m_raw);
-	m_data_offset = m_jungfrau->getModuleDataOffset(m_idx, m_raw);
-	DEB_TRACE() << DEB_VAR3(m_idx, m_frame_dim, m_data_offset);
-}
-
-bool Jungfrau::Recv::processOneFrame(FrameType frame, char *bptr)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(m_idx, frame);
-	AutoPtr<RecvImageData> data = m_recv->readImagePackets();
-	if (!data)
-		return false;
-	if (!m_recv->asmImagePackets(data, bptr))
-		return false;
-	FrameType recv_frame = data->frame;
-	if (recv_frame != frame)
-		DEB_ERROR() << "Unexpected frame: " << DEB_VAR2(recv_frame,
-								frame);
-	return true;
-}
-
-void Jungfrau::Recv::processBadFrame(FrameType frame, char *bptr)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(m_idx, frame);
-	if (!m_raw)
-		THROW_HW_ERROR(NotSupported) << "Bad Frames in assembled mode";
-	memset(bptr + m_data_offset, 0xff, m_frame_dim.getMemSize());
-}
-
-
-/*
  * Jungfrau::Thread class
  */
 
@@ -331,7 +282,8 @@ void Jungfrau::Thread::threadFunction()
 		}
 		if (s == Running)
 			try {
-				m_jungfrau->processOneFrame(l);
+				AutoMutexUnlock u(l);
+				m_jungfrau->processPackets();
 			} catch (Exception& e) {
 				Camera *cam = m_jungfrau->getCamera();
 				string name = ("Jungfrau::Thread::"
@@ -355,6 +307,14 @@ void Jungfrau::Thread::setCPUAffinity(CPUAffinity aff)
 void Jungfrau::Thread::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
+
+	FrameType nb_frames;
+	Camera *cam = m_jungfrau->getCamera();
+	cam->getNbFrames(nb_frames);
+
+	m_jungfrau->m_nb_frames = nb_frames;
+	m_jungfrau->m_next_frame = 0;
+	m_jungfrau->m_last_frame = -1;
 }
 
 
@@ -691,10 +651,8 @@ Jungfrau::Jungfrau(Camera *cam)
 
 	DEB_TRACE() << "Using Jungfrau detector, " << DEB_VAR1(nb_det_modules);
 
-	for (int i = 0; i < nb_det_modules; ++i) {
-		Recv *r = new Recv(this, i);
-		m_recv_list.push_back(r);
-	}
+	for (int i = 0; i < nb_det_modules; ++i)
+		m_recv_list.push_back(cam->getRecv(i));
 
 	setNbProcessingThreads(1);
 
@@ -976,14 +934,6 @@ int Jungfrau::getNbFrameMapItems()
 void Jungfrau::updateFrameMapItems(FrameMap *map)
 {
 	DEB_MEMBER_FUNCT();
-	m_frame_map_item = map->getItem(0);
-}
-
-void Jungfrau::processBadItemFrame(FrameType frame, int item, char *bptr)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(frame, item);
-	DEB_ERROR() << "Bad frames not supported yet";
 }
 
 void Jungfrau::updateImageSize()
@@ -1062,7 +1012,7 @@ void Jungfrau::setNbProcessingThreads(int nb_proc_threads)
 	int curr_nb_proc_threads = m_thread_list.size();
 	DEB_PARAM() << DEB_VAR2(curr_nb_proc_threads, nb_proc_threads);
 
-	if (nb_proc_threads < 1)
+	if (nb_proc_threads != 1)
 		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(nb_proc_threads);
 	if (nb_proc_threads == curr_nb_proc_threads)
 		return;
@@ -1100,18 +1050,6 @@ void Jungfrau::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
 
-	FrameType nb_frames;
-	Camera *cam = getCamera();
-	cam->getNbFrames(nb_frames);
-
-	{
-		AutoMutex l = lock();
-		m_in_process.clear();
-		m_nb_frames = nb_frames;
-		m_next_frame = 0;
-		m_last_frame = -1;
-	}
-
 	RecvList::iterator rit, rend = m_recv_list.end();
 	for (rit = m_recv_list.begin(); rit != rend; ++rit)
 		(*rit)->prepareAcq();
@@ -1139,71 +1077,6 @@ void Jungfrau::stopAcq()
 	ThreadList::iterator it, end = m_thread_list.end();
 	for (it = m_thread_list.begin(); it != end; ++it)
 		(*it)->stopAcq();
-}
-
-void Jungfrau::processOneFrame(AutoMutex& l)
-{
-	DEB_MEMBER_FUNCT();
-
-	FrameType frame = m_next_frame++;
-
-	class Sync
-	{
-	public:
-		Sync(FrameType f, Jungfrau& e)
-			: frame(f), jungfrau(e), in_proc(e.m_in_process)
-		{
-			in_proc.insert(frame);
-		}
-
-		~Sync()
-		{
-			in_proc.erase(frame);
-			jungfrau.broadcast();
-		}
-
-		void startFinish()
-		{
-			while (!in_proc.empty()
-			       && (*in_proc.begin() < int(frame)))
-				jungfrau.wait();
-		}
-
-	private:
-		FrameType frame;
-		Jungfrau& jungfrau;
-		SortedIntList& in_proc;
-	} sync(frame, *this);
-
-	{
-		AutoMutexUnlock u(l);
-		std::bitset<64> ok;
-		int nb_recvs = getNbRecvs();
-		if (nb_recvs > 64)
-			THROW_HW_ERROR(Error) << "Too many receivers";
-		char *bptr = getAcqFrameBufferPtr(frame);
-		for (int i = 0; i < nb_recvs; ++i)
-			ok[i] = m_recv_list[i]->processOneFrame(frame, bptr);
-
-		if (ok.none())
-			return;
-
-		for (int i = 0; i < nb_recvs; ++i)
-			if (!ok[i])
-				m_recv_list[i]->processBadFrame(frame, bptr);
-	}
-
-	if ((int(m_last_frame) == -1) || (frame > m_last_frame))
-		m_last_frame = frame;
-
-	sync.startFinish();
-
-	{
-		AutoMutexUnlock u(l);
-		FrameMap::Item& mi = *m_frame_map_item;
-		FinishInfo finfo = mi.frameFinished(frame, true, true);
-		processFinishInfo(finfo);
-	}
 }
 
 bool Jungfrau::isXferActive()

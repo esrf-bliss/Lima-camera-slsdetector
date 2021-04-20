@@ -71,14 +71,12 @@ class Eiger : public Model
 			class Port;
 
 			struct FrameData {
-				typedef Receiver::ImageData RecvImageData;
-				
 				char *src[EigerNbRecvPorts];
 				char *dst;
 				Mask valid;
 
 				FrameData();
-				FrameData(const RecvImageData& image, char *d);
+				FrameData(const Receiver::ImagePackets& image, char *d);
 			};
 
 			class Port
@@ -269,8 +267,6 @@ class Eiger : public Model
  protected:
 	virtual int getNbFrameMapItems();
 	virtual void updateFrameMapItems(FrameMap *map);
-	virtual void processBadItemFrame(FrameType frame, int item,
-					 char *bptr);
 
 	virtual void setThreadCPUAffinity(const CPUAffinityList& aff_list);
 
@@ -292,32 +288,7 @@ class Eiger : public Model
 	};
 	typedef std::vector<AutoPtr<Beb> > BebList;
 
-	class Recv
-	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Recv", "SlsDetector");
-	public:
-		typedef Geometry::Recv::FrameData FrameData;
-		typedef Receiver::ImageData RecvImageData;
-
-		Recv(Eiger *eiger, int idx);
-		virtual ~Recv();
-
-		void prepareAcq();
-
-		bool processOneFrame(FrameType frame, char *bptr);
-		void processBadFrame(FrameType frame, char *bptr);
-
-	private:
-
-		Eiger *m_eiger;
-		int m_idx;
-		Geometry::Recv *m_geom;
-		Receiver *m_recv;
-		int m_data_offset;
-	};
-
-	typedef std::vector<AutoPtr<Recv> > RecvList;
-
+	typedef std::vector<Receiver *> RecvList;
 
 	class Thread : public lima::Thread
 	{
@@ -574,8 +545,6 @@ class Eiger : public Model
 	int getNbProcessingThreads();
 	void setNbProcessingThreads(int nb_proc_threads);
 
-	void processOneFrame(AutoMutex& l);
-
 	CorrBase *createBadRecvFrameCorr();
 	CorrBase *createChipBorderCorr(ImageType image_type);
 	CorrBase *createInterModGapCorr();
@@ -622,10 +591,6 @@ class Eiger : public Model
 	RecvList m_recv_list;
 	ModelReconstruction *m_reconstruction;
 	FrameType m_nb_frames;
-	FrameType m_next_frame;
-	FrameType m_last_frame;
-	SortedIntList m_in_process;
-	FrameMap::Item *m_frame_map_item;
 	ThreadList m_thread_list;
 	bool m_fixed_clock_div;
 	ClockDiv m_clock_div;

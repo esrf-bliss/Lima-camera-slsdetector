@@ -114,6 +114,14 @@ void Model::getAcqFrameDim(FrameDim& frame_dim, bool raw)
 	DEB_RETURN() << DEB_VAR1(frame_dim);
 }
 
+#include "SlsDetectorReceiver.h"
+
+void Model::processPackets() {
+	DEB_MEMBER_FUNCT();
+	DetFrameImagePackets packets = m_cam->readRecvPackets();
+	m_cam->assemblePackets(std::move(packets));
+}
+
 void Model::processFinishInfo(const FinishInfo& finfo)
 {
 	DEB_MEMBER_FUNCT();

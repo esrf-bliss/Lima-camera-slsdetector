@@ -944,6 +944,71 @@ Camera::DetStatus Camera::getDetTrigStatus()
 	return trig_status;
 }
 
+DetFrameImagePackets Camera::readRecvPackets()
+{
+	DEB_MEMBER_FUNCT();
+
+	FrameType frame = m_model->m_next_frame++;
+
+	DetFrameImagePackets det_frame_packets{frame, {}};
+	DetImagePackets& det_packets = det_frame_packets.second;
+	FramePacketMap::iterator it = m_frame_packet_map.find(frame);
+	if (it != m_frame_packet_map.end()) {
+		det_packets = std::move(det_packets);
+		m_frame_packet_map.erase(it);
+	}
+
+	int nb_recvs = getNbRecvs();
+	for (int i = 0; i < nb_recvs; ++i) {
+		while (det_packets.find(i) == det_packets.end()) {
+			Receiver::ImagePackets *image_packets;
+			image_packets = m_recv_list[i]->readImagePackets();
+			if (!image_packets)
+				break;
+			typedef DetImagePackets::value_type MapEntry;
+			FrameType f = image_packets->frame;
+			if (f == frame)  {
+				det_packets.emplace(MapEntry(i, image_packets));
+				break;
+			} else {
+				DetImagePackets& other = m_frame_packet_map[f];
+				other.emplace(MapEntry(i, image_packets));
+			}
+		}
+	}
+
+	FrameType& m_last_frame = m_model->m_last_frame;
+	if ((int(m_last_frame) == -1) || (frame > m_last_frame))
+		m_last_frame = frame;
+
+	return det_frame_packets;
+}
+
+void Camera::assemblePackets(DetFrameImagePackets&& det_frame_packets)
+{
+	DEB_MEMBER_FUNCT();
+
+	const FrameType& frame = det_frame_packets.first;
+	DetImagePackets& det_packets = det_frame_packets.second;
+		
+	char *bptr = m_buffer.getAcqFrameBufferPtr(frame);
+
+	int nb_recvs = getNbRecvs();
+	for (int i = 0; i < nb_recvs; ++i) {
+		bool ok = false;
+		if (det_packets[i]) {
+			ok = det_packets[i]->assemble(bptr);
+			det_packets[i].free();
+		}
+		if (!ok)
+			m_recv_list[i]->fillBadFrame(bptr);
+	}
+
+	FrameMap::Item *mi = m_frame_map.getItem(0);
+	Model::FinishInfo finfo = mi->frameFinished(frame, true, true);
+	m_model->processFinishInfo(finfo);
+}
+
 bool Camera::checkLostPackets()
 {
 	DEB_MEMBER_FUNCT();
@@ -978,12 +1043,6 @@ bool Camera::checkLostPackets()
 		for (int i = 0; i < nb_items; ++i) {
 			FrameMap::Item *item = m_frame_map.getItem(i);
 			first_bad[i] = item->getNbBadFrames();
-		}
-	}
-	for (int i = 0; i < nb_items; ++i) {
-		if (ifa[i] != last_frame) {
-			char *bptr = m_buffer.getAcqFrameBufferPtr(last_frame);
-			m_model->processBadItemFrame(last_frame, i, bptr);
 		}
 	}
 	if (DEB_CHECK_ANY(DebTypeWarning)) {
