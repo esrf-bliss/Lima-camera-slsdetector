@@ -26,6 +26,7 @@
 #include "SlsDetectorArgs.h"
 #include "SlsDetectorReceiver.h"
 #include "SlsDetectorCPUAffinity.h"
+#include "SlsDetectorModel.h"
 
 #include "sls/Detector.h"
 
@@ -222,6 +223,7 @@ private:
 	friend class Model;
 	friend class Receiver;
 	friend class GlobalCPUAffinityMgr;
+	friend class Reconstruction;
 
 	friend class Eiger;
 
@@ -247,7 +249,8 @@ private:
 	void createReceivers();
 
 	DetFrameImagePackets readRecvPackets();
-	void assemblePackets(DetFrameImagePackets&& det_packets);
+	void publishFrame(FrameType frame);
+	void assemblePackets(DetFrameImagePackets&& det_frame_packets);
 
 	bool checkLostPackets();
 	FrameType getLastReceivedFrame();

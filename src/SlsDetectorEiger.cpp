@@ -166,7 +166,7 @@ void Eiger::InterModGapCorr::correctFrame(FrameType /*frame*/, void *ptr)
 	}
 }
 
-Data Eiger::ModelReconstruction::process(Data& data)
+Data Eiger::ModelReconstruction::processModel(Data& data)
 {
 	DEB_MEMBER_FUNCT();
 

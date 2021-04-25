@@ -876,6 +876,7 @@ void Camera::prepareAcq()
 
 	m_model->prepareAcq();
 	m_global_cpu_affinity_mgr.prepareAcq();
+	m_model->getReconstruction()->prepare();
 
 	resetFramesCaught();
 	EXC_CHECK(m_det->setFileWrite(0));
@@ -901,6 +902,9 @@ void Camera::stopAcq()
 {
 	DEB_MEMBER_FUNCT();
 
+	Reconstruction *r = m_model ? m_model->getReconstruction() : NULL;
+	if (r)
+		r->cleanUp();
 	m_global_cpu_affinity_mgr.stopAcq();
 
 	AutoMutex l = lock();
@@ -984,6 +988,14 @@ DetFrameImagePackets Camera::readRecvPackets()
 	return det_frame_packets;
 }
 
+void Camera::publishFrame(FrameType frame)
+{
+	DEB_MEMBER_FUNCT();
+	FrameMap::Item *mi = m_frame_map.getItem(0);
+	Model::FinishInfo finfo = mi->frameFinished(frame, true, true);
+	m_model->processFinishInfo(finfo);
+}
+
 void Camera::assemblePackets(DetFrameImagePackets&& det_frame_packets)
 {
 	DEB_MEMBER_FUNCT();
@@ -1003,10 +1015,6 @@ void Camera::assemblePackets(DetFrameImagePackets&& det_frame_packets)
 		if (!ok)
 			m_recv_list[i]->fillBadFrame(bptr);
 	}
-
-	FrameMap::Item *mi = m_frame_map.getItem(0);
-	Model::FinishInfo finfo = mi->frameFinished(frame, true, true);
-	m_model->processFinishInfo(finfo);
 }
 
 bool Camera::checkLostPackets()

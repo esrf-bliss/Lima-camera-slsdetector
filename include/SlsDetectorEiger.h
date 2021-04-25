@@ -514,10 +514,12 @@ class Eiger : public Model
 		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::ModelReconstruction", 
 				  "SlsDetector");
 	public:
-		ModelReconstruction(Eiger *eiger) : m_eiger(eiger)
+		ModelReconstruction(Eiger *eiger)
+			: SlsDetector::Reconstruction(eiger->getCamera()),
+			  m_eiger(eiger)
 		{ setActive(true); }
 
-		virtual Data process(Data& data);
+		virtual Data processModel(Data& data);
 
 	private:
 		friend class Eiger;

@@ -25,6 +25,8 @@ using namespace lima;
 using namespace lima::SlsDetector;
 using namespace std;
 
+#include "SlsDetectorCamera.h"
+
 /*******************************************************************
  * \brief ReconstructionCtrlObj constructor
  *******************************************************************/
@@ -51,13 +53,13 @@ Reconstruction::CtrlObjProxy::~CtrlObjProxy()
 LinkTask *Reconstruction::CtrlObjProxy::getReconstructionTask()
 {
 	DEB_MEMBER_FUNCT();
-	LinkTask *task = (m_r && m_r->m_active) ? m_r : NULL;
+	LinkTask *task = m_r ? m_r : NULL;
 	DEB_RETURN() << DEB_VAR1(task);
 	return task;
 }
 
-Reconstruction::Reconstruction()
-	: m_proxy(NULL), m_active(false)
+Reconstruction::Reconstruction(Camera *cam)
+	: m_cam(cam), m_proxy(NULL), m_active(false)
 {
 	DEB_CONSTRUCTOR();
 }
@@ -73,11 +75,9 @@ void Reconstruction::setActive(bool active)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR2(active, m_active);
-	if (active == m_active)
-		return;
 	m_active = active;
 	if (m_proxy)
-		m_proxy->reconstructionChange(m_active ? this : NULL);
+		m_proxy->reconstructionChange(this);
 }
 
 void Reconstruction::getActive(bool& active)
@@ -86,3 +86,45 @@ void Reconstruction::getActive(bool& active)
 	active = m_active;
 	DEB_RETURN() << DEB_VAR1(active);
 }
+
+void Reconstruction::prepare()
+{
+	DEB_MEMBER_FUNCT();
+	AutoMutex l(m_mutex);
+	m_frame_packet_map.clear();
+}
+
+void Reconstruction::cleanUp()
+{
+	DEB_MEMBER_FUNCT();
+	AutoMutex l(m_mutex);
+	m_frame_packet_map.clear();
+}
+
+void Reconstruction::addFramePackets(DetFrameImagePackets&& det_frame_packets)
+{
+	DEB_MEMBER_FUNCT();
+	AutoMutex l(m_mutex);
+	m_frame_packet_map.emplace(std::move(det_frame_packets));
+}
+
+Data Reconstruction::process(Data& data)
+{
+	DEB_MEMBER_FUNCT();
+
+	FrameType frame = data.frameNumber;
+	AutoMutex l(m_mutex);
+	FramePacketMap::iterator it = m_frame_packet_map.find(frame);
+	if (it == m_frame_packet_map.end())
+		return data;
+
+	DetFrameImagePackets det_frame_packets = std::move(*it);
+	m_frame_packet_map.erase(it);
+	l.unlock();
+
+	m_cam->assemblePackets(std::move(det_frame_packets));
+
+	return m_active ? processModel(data) : data;
+}
+
+

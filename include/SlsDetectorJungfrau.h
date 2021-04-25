@@ -509,10 +509,12 @@ class Jungfrau : public Model
 		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::ModelReconstruction", 
 				  "SlsDetector");
 	public:
-		ModelReconstruction(Jungfrau *jungfrau) : m_jungfrau(jungfrau)
+		ModelReconstruction(Jungfrau *jungfrau)
+			: SlsDetector::Reconstruction(jungfrau->getCamera()),
+			  m_jungfrau(jungfrau)
 		{}
 
-		virtual Data process(Data& data);
+		virtual Data processModel(Data& data);
 
 	private:
 		friend class Jungfrau;

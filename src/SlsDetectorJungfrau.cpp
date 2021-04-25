@@ -616,7 +616,7 @@ void Jungfrau::AveImgProc::readAveMap(Data& ave_map, FrameType& nb_frames,
  * Jungfrau::ModelReconstruction class
  */
 
-Data Jungfrau::ModelReconstruction::process(Data& data)
+Data Jungfrau::ModelReconstruction::processModel(Data& data)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR4(m_jungfrau, data.frameNumber,

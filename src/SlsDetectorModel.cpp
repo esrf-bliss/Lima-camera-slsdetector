@@ -119,7 +119,9 @@ void Model::getAcqFrameDim(FrameDim& frame_dim, bool raw)
 void Model::processPackets() {
 	DEB_MEMBER_FUNCT();
 	DetFrameImagePackets packets = m_cam->readRecvPackets();
-	m_cam->assemblePackets(std::move(packets));
+	FrameType frame = packets.first;
+	getReconstruction()->addFramePackets(std::move(packets));
+	m_cam->publishFrame(frame);
 }
 
 void Model::processFinishInfo(const FinishInfo& finfo)

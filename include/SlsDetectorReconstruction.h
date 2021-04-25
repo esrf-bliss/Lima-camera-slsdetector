@@ -26,6 +26,8 @@
 #include "lima/Debug.h"
 #include "lima/Exceptions.h"
 
+#include "SlsDetectorReceiver.h"
+
 namespace lima
 {
 
@@ -58,16 +60,28 @@ public:
 		Reconstruction *m_r;
 	};
 
-	Reconstruction();
+	Reconstruction(Camera *cam);
 	virtual ~Reconstruction();
 
 	void setActive(bool  active);
 	void getActive(bool& active);
 
+	virtual void prepare();
+
+	void addFramePackets(DetFrameImagePackets&& det_frame_packets);
+
+	virtual Data process(Data& data);
+	virtual Data processModel(Data& data) = 0;
+
+	virtual void cleanUp();
+
 private:
 	friend class CtrlObjProxy;
+	Camera *m_cam;
 	CtrlObjProxy *m_proxy;
 	bool m_active;
+	Mutex m_mutex;
+	FramePacketMap m_frame_packet_map;
 };
 
 } // namespace SlsDetector
