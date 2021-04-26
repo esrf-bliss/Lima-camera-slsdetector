@@ -199,8 +199,6 @@ class Jungfrau : public Model
 	virtual int getNbFrameMapItems();
 	virtual void updateFrameMapItems(FrameMap *map);
 
-	virtual void setThreadCPUAffinity(const CPUAffinityList& aff_list);
-
 	virtual void updateImageSize();
 
 	virtual bool checkSettings(Settings settings);
@@ -214,57 +212,6 @@ class Jungfrau : public Model
 
 	typedef std::vector<Receiver *> RecvList;
 	
-	class Thread : public lima::Thread
-	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::Thread", "SlsDetector");
-	public:
-		enum State {
-			Init, Ready, Running, Stopping, Quitting, End,
-		};
-
-		Thread(Jungfrau *jungfrau, int idx);
-		virtual ~Thread();
-
-		void setCPUAffinity(CPUAffinity aff);
-
-		void prepareAcq();
-
-		void startAcq()
-		{ setState(Running); }
-		void stopAcq()
-		{
-			setState(Stopping);
-			AutoMutex l = lock();
-			while (m_state != Ready)
-				wait();
-		}
-
-	protected:
-		virtual void threadFunction();
-
-	private:
-		friend class Jungfrau;
-
-		AutoMutex lock()
-		{ return m_jungfrau->lock(); }
-		void wait()
-		{ m_jungfrau->wait(); }
-		void broadcast()
-		{ m_jungfrau->broadcast(); }
-
-		void setState(State state)
-		{
-			AutoMutex l = lock();
-			m_state = state;
-			broadcast();
-		}
-
-		Jungfrau *m_jungfrau;
-		int m_idx;
-		State m_state;
-	};
-	typedef std::vector<AutoPtr<Thread> > ThreadList;
-
 	class ImgProcBase
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::ImgProcBase", 
@@ -593,22 +540,8 @@ class Jungfrau : public Model
 	FrameDim getModuleFrameDim(int idx, bool raw);
 	int getModuleDataOffset(int idx, bool raw);
 
-	AutoMutex lock()
-	{ return AutoMutex(m_cond.mutex()); }
-	void wait()
-	{ m_cond.wait(); }
-	void broadcast()
-	{ m_cond.broadcast(); }
-
-	bool allFramesAcquired()
-	{ return m_next_frame == m_nb_frames; }
-
 	int getNbRecvs();
 
-	int getNbProcessingThreads();
-	void setNbProcessingThreads(int nb_proc_threads);
-
-	Cond m_cond;
 	AutoPtr<GainPedImgProc> m_gain_ped_img_proc;
 	AutoPtr<GainADCMapImgProc> m_gain_adc_map_img_proc;
 	AutoPtr<AveImgProc> m_ave_img_proc;
@@ -617,8 +550,6 @@ class Jungfrau : public Model
 	ImgSrc m_img_src;
 	ModelReconstruction *m_reconstruction;
 	RecvList m_recv_list;
-	FrameType m_nb_frames;
-	ThreadList m_thread_list;
 };
 
 std::ostream& operator <<(std::ostream& os, Jungfrau::GainPed::MapType map_type);

@@ -116,35 +116,6 @@ void Model::getAcqFrameDim(FrameDim& frame_dim, bool raw)
 
 #include "SlsDetectorReceiver.h"
 
-void Model::processPackets() {
-	DEB_MEMBER_FUNCT();
-	DetFrameImagePackets packets = m_cam->readRecvPackets();
-	FrameType frame = packets.first;
-	getReconstruction()->addFramePackets(std::move(packets));
-	m_cam->publishFrame(frame);
-}
-
-void Model::processFinishInfo(const FinishInfo& finfo)
-{
-	DEB_MEMBER_FUNCT();
-
-	if ((finfo.nb_lost == 0) && finfo.finished.empty())
-		return;
-
-	try {
-		if ((finfo.nb_lost > 0) && !m_cam->m_tol_lost_packets)
-			THROW_HW_ERROR(Error) << "lost frames: "
-					      << "first=" << finfo.first_lost
-					      << ", nb=" << finfo.nb_lost;
-
-		SortedIntList::const_iterator it, end = finfo.finished.end();
-		for (it = finfo.finished.begin(); it != end; ++it)
-			m_cam->m_acq_thread->queueFinishedFrame(*it);
-	} catch (Exception& e) {
-		m_cam->reportException(e, "Model::processFinishInfo");
-	}
-}
-
 bool Model::isAcqActive()
 {
 	DEB_MEMBER_FUNCT();

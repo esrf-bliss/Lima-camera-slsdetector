@@ -103,7 +103,8 @@ Camera::AcqThread::ExceptionCleanUp::~ExceptionCleanUp()
 }
 
 Camera::AcqThread::AcqThread(Camera *cam)
-	: m_cam(cam), m_cond(m_cam->m_cond), m_state(m_cam->m_state)
+	: m_cam(cam), m_cond(m_cam->m_cond), m_state(m_cam->m_state),
+	  m_acq_stopped(false)
 {
 	DEB_CONSTRUCTOR();
 }
@@ -136,8 +137,27 @@ void Camera::AcqThread::stop(AutoMutex& l, bool wait)
 
 	m_state = StopReq;
 	m_cond.broadcast();
+
+	{
+		AutoMutexUnlock u(l);
+		stopAcq();
+	}
+
 	while (wait && (m_state != Stopped) && (m_state != Idle))
 		m_cond.wait();
+}
+
+inline
+Camera::AcqThread::Status Camera::AcqThread::newFrameReady(FrameType frame)
+{
+	DEB_MEMBER_FUNCT();
+	HwFrameInfoType frame_info;
+	frame_info.acq_frame_nb = frame;
+	StdBufferCbMgr *cb_mgr = m_cam->m_buffer.getBufferCbMgr(LimaBuffer);
+	bool cont_acq = cb_mgr->newFrameReady(frame_info);
+	bool acq_end = (frame == m_cam->m_lima_nb_frames - 1);
+	cont_acq &= !acq_end;
+	return Status(cont_acq, acq_end);
 }
 
 void Camera::AcqThread::threadFunction()
@@ -160,43 +180,39 @@ void Camera::AcqThread::threadFunction()
 	DEB_TRACE() << DEB_VAR1(m_state);
 	m_cond.broadcast();
 
+	Reconstruction *reconstruct = m_cam->m_model->getReconstruction();
+
 	SeqFilter seq_filter;
 	bool had_frames = false;
 	bool cont_acq = true;
 	bool acq_end = false;
-	do {
-		while ((m_state != StopReq) && m_frame_queue.empty()) {
-			if (!m_cond.wait(m_cam->m_new_frame_timeout)) {
-				AutoMutexUnlock u(l);
-				try {
-					m_cam->checkLostPackets();
-				} catch (Exception& e) {
-					string name = ("Camera::AcqThread: "
-						       "checkLostPackets");
-					m_cam->reportException(e, name);
-				}
-			}
+	FrameType next_frame = 0;
+
+	auto get_next_frame = [&]() {
+		DetFrameImagePackets packets = readRecvPackets(next_frame++);
+		FrameType frame = packets.first;
+		reconstruct->addFramePackets(std::move(packets));
+		return frame;
+	};
+	
+	while ((m_state != StopReq) && cont_acq &&
+	       (next_frame < m_cam->m_lima_nb_frames)) {
+		FrameType frame;
+		{
+			AutoMutexUnlock u(l);
+			frame = get_next_frame();
+			DEB_TRACE() << DEB_VAR2(next_frame, frame);
 		}
-		if (!m_frame_queue.empty()) {
-			FrameType frame = m_frame_queue.front();
-			m_frame_queue.pop();
-			DEB_TRACE() << DEB_VAR1(frame);
-			seq_filter.addVal(frame);
-			SeqFilter::Range frames = seq_filter.getSeqRange();
-			if (frames.nb > 0) {
-				int f = frames.first;
-				do {
-					m_cam->m_buffer.waitLimaFrame(f, l);
-					AutoMutexUnlock u(l);
-					DEB_TRACE() << DEB_VAR1(f);
-					Status status = newFrameReady(f);
-					cont_acq = status.first;
-					acq_end = status.second;
-					had_frames = true;
-				} while ((++f != frames.end()) && cont_acq);
-			}
+		m_cam->m_buffer.waitLimaFrame(frame, l);
+		{
+			AutoMutexUnlock u(l);
+			Status status = newFrameReady(frame);
+			cont_acq = status.first;
+			acq_end = status.second;
+			had_frames = true;
 		}
-	} while ((m_state != StopReq) && cont_acq);
+	}
+
 	AcqState prev_state = m_state;
 
 	if (acq_end && m_cam->m_skip_frame_freq) {
@@ -238,13 +254,47 @@ void Camera::AcqThread::threadFunction()
 	m_cond.broadcast();
 }
 
-void Camera::AcqThread::queueFinishedFrame(FrameType frame)
+DetFrameImagePackets Camera::AcqThread::readRecvPackets(FrameType frame)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(frame);
-	AutoMutex l = m_cam->lock();
-	m_frame_queue.push(frame);
-	m_cond.broadcast();
+
+	DetFrameImagePackets det_frame_packets{frame, {}};
+	DetImagePackets& det_packets = det_frame_packets.second;
+	FramePacketMap::iterator it = m_frame_packet_map.find(frame);
+	if (it != m_frame_packet_map.end()) {
+		det_packets = std::move(it->second);
+		m_frame_packet_map.erase(it);
+	}
+
+	auto stopped = [&]() { return (m_cam->getAcqState() == StopReq); };
+
+	int nb_recvs = m_cam->getNbRecvs();
+	for (int i = 0; i < nb_recvs; ++i) {
+		while ((det_packets.find(i) == det_packets.end()) &&
+		       !stopped()) {
+			Receiver::ImagePackets *image_packets;
+			Receiver *recv = m_cam->m_recv_list[i];
+			image_packets = recv->readImagePackets();
+			if (!image_packets)
+				break;
+			typedef DetImagePackets::value_type MapEntry;
+			FrameType f = image_packets->frame;
+			if (f == frame)  {
+				det_packets.emplace(MapEntry(i, image_packets));
+				break;
+			} else {
+				DetImagePackets& other = m_frame_packet_map[f];
+				other.emplace(MapEntry(i, image_packets));
+			}
+		}
+	}
+
+	if (stopped()) {
+		det_frame_packets.second.clear();
+		m_frame_packet_map.clear();
+	}
+
+	return det_frame_packets;
 }
 
 void Camera::AcqThread::cleanUp(AutoMutex& l)
@@ -292,6 +342,14 @@ void Camera::AcqThread::startAcq()
 void Camera::AcqThread::stopAcq()
 {
 	DEB_MEMBER_FUNCT();
+
+	{
+		AutoMutex l(m_cam->lock());
+		if (m_acq_stopped)
+			return;
+		m_acq_stopped = true;
+	}
+
 	sls::Detector *det = m_cam->m_det;
 	DetStatus det_status = m_cam->getDetStatus();
 	bool xfer_active = m_cam->m_model->isXferActive();
@@ -309,18 +367,6 @@ void Camera::AcqThread::stopAcq()
 	det->stopReceiver();
 	DEB_TRACE() << "calling Model::stopAcq";
 	m_cam->m_model->stopAcq();
-}
-
-Camera::AcqThread::Status Camera::AcqThread::newFrameReady(FrameType frame)
-{
-	DEB_MEMBER_FUNCT();
-	HwFrameInfoType frame_info;
-	frame_info.acq_frame_nb = frame;
-	StdBufferCbMgr *cb_mgr = m_cam->m_buffer.getBufferCbMgr(LimaBuffer);
-	bool cont_acq = cb_mgr->newFrameReady(frame_info);
-	bool acq_end = (frame == m_cam->m_lima_nb_frames - 1);
-	cont_acq &= !acq_end;
-	return Status(cont_acq, acq_end);
 }
 
 Camera::Camera(string config_fname, int det_id) 
@@ -363,7 +409,7 @@ Camera::Camera(string config_fname, int det_id)
 	EXC_CHECK(m_det->setRxSilentMode(1));
 	EXC_CHECK(m_det->setRxFrameDiscardPolicy(
 				  slsDetectorDefs::DISCARD_PARTIAL_FRAMES));
-	setReceiverFifoDepth(4);
+	setReceiverFifoDepth(16);
 
 	sls::Result<int> dr_res;
 	EXC_CHECK(dr_res = m_det->getDynamicRange());
@@ -874,6 +920,10 @@ void Camera::prepareAcq()
 		m_next_ready_ts = Timestamp();
 	}
 
+	RecvList::iterator rit, rend = m_recv_list.end();
+	for (rit = m_recv_list.begin(); rit != rend; ++rit)
+		(*rit)->prepareAcq();
+
 	m_model->prepareAcq();
 	m_global_cpu_affinity_mgr.prepareAcq();
 	m_model->getReconstruction()->prepare();
@@ -948,54 +998,6 @@ Camera::DetStatus Camera::getDetTrigStatus()
 	return trig_status;
 }
 
-DetFrameImagePackets Camera::readRecvPackets()
-{
-	DEB_MEMBER_FUNCT();
-
-	FrameType frame = m_model->m_next_frame++;
-
-	DetFrameImagePackets det_frame_packets{frame, {}};
-	DetImagePackets& det_packets = det_frame_packets.second;
-	FramePacketMap::iterator it = m_frame_packet_map.find(frame);
-	if (it != m_frame_packet_map.end()) {
-		det_packets = std::move(det_packets);
-		m_frame_packet_map.erase(it);
-	}
-
-	int nb_recvs = getNbRecvs();
-	for (int i = 0; i < nb_recvs; ++i) {
-		while (det_packets.find(i) == det_packets.end()) {
-			Receiver::ImagePackets *image_packets;
-			image_packets = m_recv_list[i]->readImagePackets();
-			if (!image_packets)
-				break;
-			typedef DetImagePackets::value_type MapEntry;
-			FrameType f = image_packets->frame;
-			if (f == frame)  {
-				det_packets.emplace(MapEntry(i, image_packets));
-				break;
-			} else {
-				DetImagePackets& other = m_frame_packet_map[f];
-				other.emplace(MapEntry(i, image_packets));
-			}
-		}
-	}
-
-	FrameType& m_last_frame = m_model->m_last_frame;
-	if ((int(m_last_frame) == -1) || (frame > m_last_frame))
-		m_last_frame = frame;
-
-	return det_frame_packets;
-}
-
-void Camera::publishFrame(FrameType frame)
-{
-	DEB_MEMBER_FUNCT();
-	FrameMap::Item *mi = m_frame_map.getItem(0);
-	Model::FinishInfo finfo = mi->frameFinished(frame, true, true);
-	m_model->processFinishInfo(finfo);
-}
-
 void Camera::assemblePackets(DetFrameImagePackets&& det_frame_packets)
 {
 	DEB_MEMBER_FUNCT();
@@ -1015,56 +1017,6 @@ void Camera::assemblePackets(DetFrameImagePackets&& det_frame_packets)
 		if (!ok)
 			m_recv_list[i]->fillBadFrame(bptr);
 	}
-}
-
-bool Camera::checkLostPackets()
-{
-	DEB_MEMBER_FUNCT();
-
-	FrameArray ifa = m_frame_map.getItemFrameArray();
-	if (ifa != m_prev_ifa) {
-		m_prev_ifa = ifa;
-		return false;
-	}
-
-	FrameType last_frame = getLatestFrame(ifa);
-	if (getOldestFrame(ifa) == last_frame) {
-		DEB_RETURN() << DEB_VAR1(false);
-		return false;
-	}
-
-	if (!m_tol_lost_packets) {
-		ostringstream err_msg;
-		err_msg << "checkLostPackets: frame_map=" << m_frame_map;
-		Event::Code err_code = Event::CamOverrun;
-		Event *event = new Event(Hardware, Event::Error, Event::Camera, 
-					 err_code, err_msg.str());
-		DEB_EVENT(*event) << DEB_VAR1(*event);
-		reportEvent(event);
-		DEB_RETURN() << DEB_VAR1(true);
-		return true;
-	}
-
-	int nb_items = m_model->getNbFrameMapItems();
-	IntList first_bad(nb_items);
-	if (DEB_CHECK_ANY(DebTypeWarning)) {
-		for (int i = 0; i < nb_items; ++i) {
-			FrameMap::Item *item = m_frame_map.getItem(i);
-			first_bad[i] = item->getNbBadFrames();
-		}
-	}
-	if (DEB_CHECK_ANY(DebTypeWarning)) {
-		IntList last_bad(nb_items);
-		for (int i = 0; i < nb_items; ++i)
-			last_bad[i] = m_frame_map.getItem(i)->getNbBadFrames();
-		IntList bfl;
-		getSortedBadFrameList(first_bad, last_bad, bfl);
-		DEB_WARNING() << "bad_frames=" << bfl.size() << ": " 
-			      << PrettyIntList(bfl);
-	}
-
-	DEB_RETURN() << DEB_VAR1(false);
-	return false;
 }
 
 FrameType Camera::getLastReceivedFrame()

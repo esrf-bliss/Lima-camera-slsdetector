@@ -593,86 +593,6 @@ Eiger::Beb::Beb(const std::string& host_name)
 {
 }
 
-Eiger::Thread::Thread(Eiger *eiger, int idx)
-	: m_eiger(eiger), m_idx(idx)
-{
-	DEB_MEMBER_FUNCT();
-
-	AutoMutex l = lock();
-	m_state = Init;
-
-	start();
-
-	struct sched_param param;
-	param.sched_priority = 50;
-	int ret = pthread_setschedparam(m_thread, SCHED_RR, &param);
-	if (ret != 0)
-		DEB_ERROR() << "Could not set real-time priority!!";
-
-	while (m_state == Init)
-		wait();
-}
-
-Eiger::Thread::~Thread()
-{
-	DEB_DESTRUCTOR();
-
-	AutoMutex l = lock();
-	m_state = Quitting;
-	broadcast();
-	while (m_state != End)
-		wait();
-}
-
-void Eiger::Thread::threadFunction()
-{
-	DEB_MEMBER_FUNCT();
-
-	State& s = m_state;
-
-	AutoMutex l = lock();
-	s = Ready;
-	broadcast();
-
-	while (s != Quitting) {
-		while ((s == Ready) || (s == Stopping)
-		       || ((s == Running) && m_eiger->allFramesAcquired())) {
-			if (s == Stopping) {
-				s = Ready;
-				broadcast();
-			}
-			wait();
-		}
-		if (s == Running) {
-			try {
-				AutoMutexUnlock u(l);
-				m_eiger->processPackets();
-			} catch (Exception& e) {
-				Camera *cam = m_eiger->getCamera();
-				string name = ("Eiger::Thread::"
-					       "threadFunction");
-				cam->reportException(e, name);
-			}
-		}
-	}
-
-	s = End;
-	broadcast();
-}
-
-void Eiger::Thread::setCPUAffinity(CPUAffinity aff)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(aff);
-
-        aff.applyToTask(getThreadID(), false);
-}
-
-void Eiger::Thread::prepareAcq()
-{
-	DEB_MEMBER_FUNCT();
-}
-
 Eiger::Eiger(Camera *cam)
 	: Model(cam, EigerDet), m_fixed_clock_div(false)
 {
@@ -692,8 +612,6 @@ Eiger::Eiger(Camera *cam)
 
 	for (int i = 0; i < nb_det_modules; ++i)
 		m_recv_list.push_back(cam->getRecv(i));
-
-	setNbProcessingThreads(1);
 
 	if (isTenGigabitEthernetEnabled()) {
 		DEB_TRACE() << "Forcing 10G Ethernet flow control";
@@ -1200,46 +1118,6 @@ int Eiger::getNbRecvs()
 	return nb_recvs;
 }
 
-void Eiger::setNbProcessingThreads(int nb_proc_threads)
-{
-	DEB_MEMBER_FUNCT();
-	int curr_nb_proc_threads = m_thread_list.size();
-	DEB_PARAM() << DEB_VAR2(curr_nb_proc_threads, nb_proc_threads);
-
-	if (nb_proc_threads != 1)
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(nb_proc_threads);
-	if (nb_proc_threads == curr_nb_proc_threads)
-		return;
-
-	if (nb_proc_threads < curr_nb_proc_threads)
-		m_thread_list.resize(nb_proc_threads);
-
-	for (int i = curr_nb_proc_threads; i < nb_proc_threads; ++i) {
-		Thread *t = new Thread(this, i);
-		m_thread_list.push_back(t);
-	}
-}
-
-int Eiger::getNbProcessingThreads()
-{
-	DEB_MEMBER_FUNCT();
-	int nb_proc_threads = m_thread_list.size();
-	DEB_RETURN() << DEB_VAR1(nb_proc_threads);
-	return nb_proc_threads;
-}
-
-void Eiger::setThreadCPUAffinity(const CPUAffinityList& aff_list)
-{
-	DEB_MEMBER_FUNCT();
-
-	setNbProcessingThreads(aff_list.size());
-
-	CPUAffinityList::const_iterator rit = aff_list.begin();
-	ThreadList::iterator it, end = m_thread_list.end();
-	for (it = m_thread_list.begin(); it != end; ++it, ++rit)
-		(*it)->setCPUAffinity(*rit);
-}
-
 bool Eiger::isTenGigabitEthernetEnabled()
 {
 	DEB_MEMBER_FUNCT();
@@ -1263,19 +1141,6 @@ void Eiger::prepareAcq()
 
 	m_geom.prepareAcq();
 
-	Camera *cam = getCamera();
-	cam->getNbFrames(m_nb_frames);
-	m_next_frame = 0;
-	m_last_frame = -1;
-
-	RecvList::iterator rit, rend = m_recv_list.end();
-	for (rit = m_recv_list.begin(); rit != rend; ++rit)
-		(*rit)->prepareAcq();
-
-	ThreadList::iterator tit, tend = m_thread_list.end();
-	for (tit = m_thread_list.begin(); tit != tend; ++tit)
-		(*tit)->prepareAcq();
-
 	CorrList::iterator cit, cend = m_corr_list.end();
 	for (cit = m_corr_list.begin(); cit != cend; ++cit)
 		(*cit)->prepareAcq();
@@ -1284,17 +1149,11 @@ void Eiger::prepareAcq()
 void Eiger::startAcq()
 {
 	DEB_MEMBER_FUNCT();
-	ThreadList::iterator it, end = m_thread_list.end();
-	for (it = m_thread_list.begin(); it != end; ++it)
-		(*it)->startAcq();
 }
 
 void Eiger::stopAcq()
 {
 	DEB_MEMBER_FUNCT();
-	ThreadList::iterator it, end = m_thread_list.end();
-	for (it = m_thread_list.begin(); it != end; ++it)
-		(*it)->stopAcq();
 }
 
 Eiger::CorrBase *Eiger::createBadRecvFrameCorr()

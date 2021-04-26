@@ -34,9 +34,6 @@ public:
 	Model(SlsDetector::Camera *cam, SlsDetector::Type type);
 	virtual ~Model();
 
-	virtual void setThreadCPUAffinity(const SlsDetector::CPUAffinityList&
-						det_thread_aff_list) = 0;
-
 	virtual void getFrameDim(FrameDim& frame_dim /Out/,
 				 bool raw = false) = 0;
 	virtual void getAcqFrameDim(FrameDim& frame_dim /Out/,

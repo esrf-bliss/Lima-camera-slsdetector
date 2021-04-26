@@ -186,7 +186,6 @@ private:
 	public:
 		AcqThread(Camera *cam);
 
-		void queueFinishedFrame(FrameType frame);
 		virtual void start(AutoMutex& l);
 		void stop(AutoMutex& l, bool wait);
 
@@ -208,6 +207,7 @@ private:
 			AutoMutex& m_lock;
 		};
 
+		DetFrameImagePackets readRecvPackets(FrameType frame);
 		Status newFrameReady(FrameType frame);
 		void startAcq();
 		void stopAcq();
@@ -216,7 +216,8 @@ private:
 		Camera *m_cam;
 		Cond& m_cond;
 		AcqState& m_state;
-		FrameQueue m_frame_queue;
+		FramePacketMap m_frame_packet_map;
+		bool m_acq_stopped;
 	};
 
 	friend class BufferMgr;
@@ -248,8 +249,6 @@ private:
 	void removeSharedMem();
 	void createReceivers();
 
-	DetFrameImagePackets readRecvPackets();
-	void publishFrame(FrameType frame);
 	void assemblePackets(DetFrameImagePackets&& det_frame_packets);
 
 	bool checkLostPackets();
@@ -317,7 +316,6 @@ private:
 	PixelDepthCPUAffinityMap m_cpu_affinity_map;
 	GlobalCPUAffinityMgr m_global_cpu_affinity_mgr;
 	AutoPtr<AcqThread> m_acq_thread;
-	FramePacketMap m_frame_packet_map;
 };
 
 } // namespace SlsDetector

@@ -227,98 +227,6 @@ std::ostream& lima::SlsDetector::operator <<(std::ostream& os,
 
 
 /*
- * Jungfrau::Thread class
- */
-
-Jungfrau::Thread::Thread(Jungfrau *jungfrau, int idx)
-	: m_jungfrau(jungfrau), m_idx(idx)
-{
-	DEB_MEMBER_FUNCT();
-
-	AutoMutex l = lock();
-	m_state = Init;
-
-	start();
-
-	struct sched_param param;
-	param.sched_priority = 50;
-	int ret = pthread_setschedparam(m_thread, SCHED_RR, &param);
-	if (ret != 0)
-		DEB_ERROR() << "Could not set real-time priority!!";
-
-	while (m_state == Init)
-		wait();
-}
-
-Jungfrau::Thread::~Thread()
-{
-	DEB_DESTRUCTOR();
-
-	AutoMutex l = lock();
-	m_state = Quitting;
-	broadcast();
-	while (m_state != End)
-		wait();
-}
-
-void Jungfrau::Thread::threadFunction()
-{
-	DEB_MEMBER_FUNCT();
-
-	State& s = m_state;
-
-	AutoMutex l = lock();
-	s = Ready;
-	broadcast();
-
-	while (s != Quitting) {
-		while ((s == Ready) || (s == Stopping)
-		       || ((s == Running) && m_jungfrau->allFramesAcquired())) {
-			if (s == Stopping) {
-				s = Ready;
-				broadcast();
-			}
-			wait();
-		}
-		if (s == Running)
-			try {
-				AutoMutexUnlock u(l);
-				m_jungfrau->processPackets();
-			} catch (Exception& e) {
-				Camera *cam = m_jungfrau->getCamera();
-				string name = ("Jungfrau::Thread::"
-					       "threadFunction");
-				cam->reportException(e, name);
-			}
-	}
-
-	s = End;
-	broadcast();
-}
-
-void Jungfrau::Thread::setCPUAffinity(CPUAffinity aff)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(aff);
-
-        aff.applyToTask(getThreadID(), false);
-}
-
-void Jungfrau::Thread::prepareAcq()
-{
-	DEB_MEMBER_FUNCT();
-
-	FrameType nb_frames;
-	Camera *cam = m_jungfrau->getCamera();
-	cam->getNbFrames(nb_frames);
-
-	m_jungfrau->m_nb_frames = nb_frames;
-	m_jungfrau->m_next_frame = 0;
-	m_jungfrau->m_last_frame = -1;
-}
-
-
-/*
  * Jungfrau::ImgProcTask class
  */
 
@@ -653,8 +561,6 @@ Jungfrau::Jungfrau(Camera *cam)
 
 	for (int i = 0; i < nb_det_modules; ++i)
 		m_recv_list.push_back(cam->getRecv(i));
-
-	setNbProcessingThreads(1);
 
 	m_gain_ped_img_proc = new GainPedImgProc(this);
 	m_gain_adc_map_img_proc = new GainADCMapImgProc(this);
@@ -1006,57 +912,9 @@ int Jungfrau::getNbRecvs()
 	return nb_recvs;
 }
 
-void Jungfrau::setNbProcessingThreads(int nb_proc_threads)
-{
-	DEB_MEMBER_FUNCT();
-	int curr_nb_proc_threads = m_thread_list.size();
-	DEB_PARAM() << DEB_VAR2(curr_nb_proc_threads, nb_proc_threads);
-
-	if (nb_proc_threads != 1)
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(nb_proc_threads);
-	if (nb_proc_threads == curr_nb_proc_threads)
-		return;
-
-	if (nb_proc_threads < curr_nb_proc_threads)
-		m_thread_list.resize(nb_proc_threads);
-
-	for (int i = curr_nb_proc_threads; i < nb_proc_threads; ++i) {
-		Thread *t = new Thread(this, i);
-		m_thread_list.push_back(t);
-	}
-}
-
-int Jungfrau::getNbProcessingThreads()
-{
-	DEB_MEMBER_FUNCT();
-	int nb_proc_threads = m_thread_list.size();
-	DEB_RETURN() << DEB_VAR1(nb_proc_threads);
-	return nb_proc_threads;
-}
-
-void Jungfrau::setThreadCPUAffinity(const CPUAffinityList& aff_list)
-{
-	DEB_MEMBER_FUNCT();
-
-	setNbProcessingThreads(aff_list.size());
-
-	CPUAffinityList::const_iterator rit = aff_list.begin();
-	ThreadList::iterator it, end = m_thread_list.end();
-	for (it = m_thread_list.begin(); it != end; ++it, ++rit)
-		(*it)->setCPUAffinity(*rit);
-}
-
 void Jungfrau::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
-
-	RecvList::iterator rit, rend = m_recv_list.end();
-	for (rit = m_recv_list.begin(); rit != rend; ++rit)
-		(*rit)->prepareAcq();
-
-	ThreadList::iterator tit, tend = m_thread_list.end();
-	for (tit = m_thread_list.begin(); tit != tend; ++tit)
-		(*tit)->prepareAcq();
 
 	ImgProcList::iterator pit, pend = m_img_proc_list.end();
 	for (pit = m_img_proc_list.begin(); pit != pend; ++pit)
@@ -1066,17 +924,11 @@ void Jungfrau::prepareAcq()
 void Jungfrau::startAcq()
 {
 	DEB_MEMBER_FUNCT();
-	ThreadList::iterator it, end = m_thread_list.end();
-	for (it = m_thread_list.begin(); it != end; ++it)
-		(*it)->startAcq();
 }
 
 void Jungfrau::stopAcq()
 {
 	DEB_MEMBER_FUNCT();
-	ThreadList::iterator it, end = m_thread_list.end();
-	for (it = m_thread_list.begin(); it != end; ++it)
-		(*it)->stopAcq();
 }
 
 bool Jungfrau::isXferActive()

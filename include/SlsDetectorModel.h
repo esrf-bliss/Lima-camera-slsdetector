@@ -47,8 +47,6 @@ class Model
  public:
 	typedef Defs::Settings Settings;
 
-	typedef FrameMap::FinishInfo FinishInfo;
-
 	Model(Camera *cam, Type type);
 	virtual ~Model();
 	
@@ -86,11 +84,7 @@ class Model
 	virtual bool isAcqActive();
 	virtual bool isXferActive() = 0;
 
-	virtual void setThreadCPUAffinity(const CPUAffinityList& aff_list) = 0;
-
 	virtual Reconstruction *getReconstruction();
-
-	void processPackets();
 
  protected:
 	void updateCameraModel();
@@ -110,8 +104,6 @@ class Model
 	virtual void startAcq() = 0;
 	virtual void stopAcq() = 0;
 
-	void processFinishInfo(const FinishInfo& finfo);
-
 	BufferMgr *getBuffer();
 
  private:
@@ -125,8 +117,6 @@ class Model
 
  protected:
 	AutoPtr<sls::Detector> m_det;
-	FrameType m_next_frame;
-	FrameType m_last_frame;
 };
 
 

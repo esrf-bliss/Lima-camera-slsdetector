@@ -268,8 +268,6 @@ class Eiger : public Model
 	virtual int getNbFrameMapItems();
 	virtual void updateFrameMapItems(FrameMap *map);
 
-	virtual void setThreadCPUAffinity(const CPUAffinityList& aff_list);
-
 	virtual void updateImageSize();
 
 	virtual bool checkSettings(Settings settings);
@@ -289,57 +287,6 @@ class Eiger : public Model
 	typedef std::vector<AutoPtr<Beb> > BebList;
 
 	typedef std::vector<Receiver *> RecvList;
-
-	class Thread : public lima::Thread
-	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Thread", "SlsDetector");
-	public:
-		enum State {
-			Init, Ready, Running, Stopping, Quitting, End,
-		};
-
-		Thread(Eiger *eiger, int idx);
-		virtual ~Thread();
-
-		void setCPUAffinity(CPUAffinity aff);
-
-		void prepareAcq();
-
-		void startAcq()
-		{ setState(Running); }
-		void stopAcq()
-		{
-			setState(Stopping);
-			AutoMutex l = lock();
-			while (m_state != Ready)
-				wait();
-		}
-
-	protected:
-		virtual void threadFunction();
-
-	private:
-		friend class Eiger;
-
-		AutoMutex lock()
-		{ return m_eiger->lock(); }
-		void wait()
-		{ m_eiger->wait(); }
-		void broadcast()
-		{ m_eiger->broadcast(); }
-
-		void setState(State state)
-		{
-			AutoMutex l = lock();
-			m_state = state;
-			broadcast();
-		}
-
-		Eiger *m_eiger;
-		int m_idx;
-		State m_state;
-	};
-	typedef std::vector<AutoPtr<Thread> > ThreadList;
 
 	class CorrBase
 	{
@@ -532,20 +479,7 @@ class Eiger : public Model
 	const FrameDim& getRecvFrameDim()
 	{ return m_geom.m_recv_frame_dim; }
 
-	AutoMutex lock()
-	{ return AutoMutex(m_cond.mutex()); }
-	void wait()
-	{ m_cond.wait(); }
-	void broadcast()
-	{ m_cond.broadcast(); }
-
-	bool allFramesAcquired()
-	{ return m_next_frame == m_nb_frames; }
-
 	int getNbRecvs();
-
-	int getNbProcessingThreads();
-	void setNbProcessingThreads(int nb_proc_threads);
 
 	CorrBase *createBadRecvFrameCorr();
 	CorrBase *createChipBorderCorr(ImageType image_type);
@@ -586,14 +520,11 @@ class Eiger : public Model
 	static const unsigned long BebFpgaReadPtrAddr;
 	static const unsigned long BebFpgaPtrRange;
 
-	Cond m_cond;
 	BebList m_beb_list;
 	Geometry m_geom;
 	CorrList m_corr_list;
 	RecvList m_recv_list;
 	ModelReconstruction *m_reconstruction;
-	FrameType m_nb_frames;
-	ThreadList m_thread_list;
 	bool m_fixed_clock_div;
 	ClockDiv m_clock_div;
 };

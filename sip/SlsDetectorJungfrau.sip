@@ -201,9 +201,6 @@ class Jungfrau : public SlsDetector::Model
 
 	virtual bool checkSettings(SlsDetector::Defs::Settings settings);
 
-	virtual void setThreadCPUAffinity(const SlsDetector::CPUAffinityList&
-						det_thread_aff_list);
-
 	virtual void prepareAcq();
 	virtual void startAcq();
 	virtual void stopAcq();
