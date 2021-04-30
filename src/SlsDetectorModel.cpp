@@ -101,11 +101,6 @@ BufferMgr *Model::getBuffer()
 	return m_cam->getBuffer();
 }
 
-char *Model::getAcqFrameBufferPtr(FrameType frame_nb)
-{
-	return getBuffer()->getAcqFrameBufferPtr(frame_nb);
-}
-
 void Model::getAcqFrameDim(FrameDim& frame_dim, bool raw)
 {
 	DEB_MEMBER_FUNCT();

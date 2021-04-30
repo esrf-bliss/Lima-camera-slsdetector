@@ -33,56 +33,40 @@ namespace lima
 namespace SlsDetector
 {
 
-enum BufferType {
-	AcqBuffer, LimaBuffer
-};
+inline Data GetMappedData(void *buffer, const FrameDim& frame_dim)
+{
+	Data d;
+	switch (frame_dim.getImageType()) {
+	case Bpp8:  d.type = Data::UINT8;  break;
+	case Bpp16: d.type = Data::UINT16; break;
+	case Bpp32: d.type = Data::UINT32; break;
+	default: throw LIMA_HW_EXC(Error, "Invalid image type");
+	}
+	const Size& size = frame_dim.getSize();
+	d.dimensions = {size.getWidth(), size.getHeight()};
+	Buffer *b = new Buffer;
+	b->owner = Buffer::MAPPED;
+	b->data = buffer;
+	d.setBuffer(b);
+	b->unref();
+	return d;
+}
 
 class BufferCtrlObj : public NumaSoftBufferCtrlObj {
 
  public:
-	BufferCtrlObj() : m_type(AcqBuffer) {}
-
 	void releaseBuffers() { getBuffer().releaseBuffers(); }
 
-	void setType(BufferType type)
-	{
-		if (type == m_type)
-			return;
-		releaseBuffers();
-		m_type = type;
-	}
-
 	virtual void getMaxNbBuffers(int& max_nb_buffers)
-	{
-		if (m_type == LimaBuffer)
-			max_nb_buffers = 1024;
-		else
-			NumaSoftBufferCtrlObj::getMaxNbBuffers(max_nb_buffers);
-	}
+	{ max_nb_buffers = 1024; }
 
 	Data getFrameData(FrameType frame)
 	{
-		Data d;
 		StdBufferCbMgr& buffer = getBuffer();
+		void *buffer_ptr = buffer.getFrameBufferPtr(frame);
 		const FrameDim& frame_dim = buffer.getFrameDim();
-		switch (frame_dim.getImageType()) {
-		case Bpp8:  d.type = Data::UINT8;  break;
-		case Bpp16: d.type = Data::UINT16; break;
-		case Bpp32: d.type = Data::UINT32; break;
-		default: throw LIMA_HW_EXC(Error, "Invalid image type");
-		}
-		const Size& size = frame_dim.getSize();
-		d.dimensions = {size.getWidth(), size.getHeight()};
-		Buffer *b = new Buffer;
-		b->owner = Buffer::MAPPED;
-		b->data = buffer.getFrameBufferPtr(frame);;
-		d.setBuffer(b);
-		b->unref();
-		return d;
+		return GetMappedData(buffer_ptr, frame_dim);
 	}
-
- private:
-	BufferType m_type;
 };
 
 class BufferMgr
@@ -90,8 +74,6 @@ class BufferMgr
 	DEB_CLASS_NAMESPC(DebModCamera, "BufferMgr", "SlsDetector");
 
 public:
-	enum Mode { Single, Dual };
-
 	void setLimaBufferCtrlObj(BufferCtrlObj *buffer_ctrl_obj);
 
 	void setAcqBufferCPUAffinity(CPUAffinity buffer_affinity);
@@ -99,16 +81,12 @@ public:
 	void waitLimaFrame(FrameType frame_nb, AutoMutex& l);
 	char *getAcqFrameBufferPtr(FrameType frame_nb);
 
-	BufferCtrlObj *getBufferCtrlObj(BufferType type)
-	{
-		bool lima = ((type == LimaBuffer) || (m_mode == Single));
-		return lima ? m_lima_buffer_ctrl_obj :
-			      m_acq_buffer_ctrl_obj.getPtr();
-	}
+	BufferCtrlObj *getBufferCtrlObj()
+	{ return m_lima_buffer_ctrl_obj; }
 
-	StdBufferCbMgr *getBufferCbMgr(BufferType type)
+	StdBufferCbMgr *getBufferCbMgr()
 	{
-		BufferCtrlObj *buffer = getBufferCtrlObj(type);
+		BufferCtrlObj *buffer = getBufferCtrlObj();
 		return buffer ? &buffer->getBuffer() : NULL;
 	}
 
@@ -116,9 +94,6 @@ public:
 	void getMaxMemory(short& max_memory);
 
 	void getMaxNbBuffers(long& nb_buffers);
-
-	void setMode(Mode  mode);
-	void getMode(Mode& mode);
 
 	void prepareAcq();
 
@@ -133,11 +108,9 @@ private:
 
 	Camera *m_cam;
 	Cond& m_cond;
-	Mode m_mode;
 	CPUAffinity m_buffer_affinity;
 	BufferCtrlObj *m_lima_buffer_ctrl_obj;
 	BufferSync *m_lima_buffer_sync;
-	AutoPtr<BufferCtrlObj> m_acq_buffer_ctrl_obj;
 	int m_max_memory;
 };
 

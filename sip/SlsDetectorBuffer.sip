@@ -30,11 +30,6 @@ namespace SlsDetector
 class BufferMgr
 {
 public:
-	enum Mode { Single, Dual };
-
-	void setMode(SlsDetector::BufferMgr::Mode  mode);
-	void getMode(SlsDetector::BufferMgr::Mode& mode /Out/);
-
 	void setMaxMemory(short  max_memory);
 	void getMaxMemory(short& max_memory /Out/);
 

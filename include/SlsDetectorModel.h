@@ -96,8 +96,6 @@ class Model
 	void putCmd(const std::string& s, int idx = -1);
 	std::string getCmd(const std::string& s, int idx = -1);
 
-	char *getAcqFrameBufferPtr(FrameType frame_nb);
-
 	virtual bool checkSettings(Settings settings) = 0;
 
 	virtual void prepareAcq() = 0;

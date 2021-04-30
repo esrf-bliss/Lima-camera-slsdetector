@@ -228,6 +228,7 @@ class Jungfrau : public Model
 		virtual void updateImageSize(Size size, bool raw);
 		virtual void prepareAcq();
 		virtual void clear();
+		virtual bool consumesRawData() = 0;
 		virtual void processFrame(Data& data) = 0;
 
 	protected:
@@ -347,6 +348,7 @@ class Jungfrau : public Model
 
 		virtual void updateImageSize(Size size, bool raw);
 		virtual void clear();
+		virtual bool consumesRawData() { return true; }
 		virtual void processFrame(Data& data);
 
 		void readGainADCMaps(Data& gain_map, Data& adc_map,
@@ -387,6 +389,7 @@ class Jungfrau : public Model
 
 		virtual void updateImageSize(Size size, bool raw);
 		virtual void clear();
+		virtual bool consumesRawData() { return true; }
 		virtual void processFrame(Data& data);
 
 		void readProcMap(Data& proc_map, FrameType& frame);
@@ -421,6 +424,7 @@ class Jungfrau : public Model
 
 		virtual void updateImageSize(Size size, bool raw);
 		virtual void clear();
+		virtual bool consumesRawData() { return false; }
 		virtual void processFrame(Data& data);
 
 		void readAveMap(Data& ave_map, FrameType& nb_frames,
@@ -523,13 +527,7 @@ class Jungfrau : public Model
 	void doSetImgProcConfig(std::string config, bool force);
 
 	Data getRawData(Data& data)
-	{
-		if (m_img_src == Raw)
-			return data;
-		BufferMgr *buffer_mgr = getBuffer();
-		BufferCtrlObj *buffer = buffer_mgr->getBufferCtrlObj(AcqBuffer);
-		return buffer->getFrameData(data.frameNumber);
-	}
+	{ return m_reconstruction->getRawData(data); }
 
 	int getNbJungfrauModules()
 	{ return getNbDetModules(); }

@@ -549,7 +549,7 @@ class SlsDetectorClass(PyTango.DeviceClass):
          "or CPU(<cpu1>[, ..., <cpuN>]) for independent CPU enumeration", []],
         'buffer_max_memory':
         [PyTango.DevString,
-         "The maximum memory (percent) for Acq image buffers in Dual mode, "
+         "The maximum memory (percent) for image packet buffers (Fifo length), "
          "similar to LimaCCDs.BufferMaxMemory", []],
         }
 

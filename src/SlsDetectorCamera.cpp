@@ -153,7 +153,7 @@ Camera::AcqThread::Status Camera::AcqThread::newFrameReady(FrameType frame)
 	DEB_MEMBER_FUNCT();
 	HwFrameInfoType frame_info;
 	frame_info.acq_frame_nb = frame;
-	StdBufferCbMgr *cb_mgr = m_cam->m_buffer.getBufferCbMgr(LimaBuffer);
+	StdBufferCbMgr *cb_mgr = m_cam->m_buffer.getBufferCbMgr();
 	bool cont_acq = cb_mgr->newFrameReady(frame_info);
 	bool acq_end = (frame == m_cam->m_lima_nb_frames - 1);
 	cont_acq &= !acq_end;
@@ -409,7 +409,7 @@ Camera::Camera(string config_fname, int det_id)
 	EXC_CHECK(m_det->setRxSilentMode(1));
 	EXC_CHECK(m_det->setRxFrameDiscardPolicy(
 				  slsDetectorDefs::DISCARD_PARTIAL_FRAMES));
-	setReceiverFifoDepth(16);
+	setReceiverFifoDepth(128);
 
 	sls::Result<int> dr_res;
 	EXC_CHECK(dr_res = m_det->getDynamicRange());
@@ -880,11 +880,9 @@ void Camera::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
 
-	StdBufferCbMgr *cb_mgr = m_buffer.getBufferCbMgr(AcqBuffer);
+	StdBufferCbMgr *cb_mgr = m_buffer.getBufferCbMgr();
 	if (!cb_mgr)
 		THROW_HW_ERROR(Error) << "No Acq BufferCbMgr defined";
-	else if (!m_buffer.getBufferCbMgr(LimaBuffer))
-		THROW_HW_ERROR(Error) << "No Lima BufferCbMgr defined";
 	if (!m_model)
 		THROW_HW_ERROR(Error) << "No Model defined";
 
@@ -941,7 +939,7 @@ void Camera::startAcq()
 	if (m_acq_thread)
 		THROW_HW_ERROR(Error) << "Must call prepareAcq first";
 
-	StdBufferCbMgr *cb_mgr = m_buffer.getBufferCbMgr(LimaBuffer);
+	StdBufferCbMgr *cb_mgr = m_buffer.getBufferCbMgr();
 	cb_mgr->setStartTimestamp(Timestamp::now());
 
 	m_acq_thread = new AcqThread(this);
@@ -1004,8 +1002,11 @@ void Camera::assemblePackets(DetFrameImagePackets&& det_frame_packets)
 
 	const FrameType& frame = det_frame_packets.first;
 	DetImagePackets& det_packets = det_frame_packets.second;
-		
-	char *bptr = m_buffer.getAcqFrameBufferPtr(frame);
+
+	Data frame_data = m_buffer.getBufferCtrlObj()->getFrameData(frame);
+	Reconstruction *reconstruct = m_model->getReconstruction();
+	Data raw_data = reconstruct->getRawData(frame_data);
+	char *bptr = (char *) raw_data.data();
 
 	int nb_recvs = getNbRecvs();
 	for (int i = 0; i < nb_recvs; ++i) {

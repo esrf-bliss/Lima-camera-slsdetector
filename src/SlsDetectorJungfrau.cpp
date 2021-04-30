@@ -242,10 +242,13 @@ void Jungfrau::ImgProcTask::process(Data& data)
 
 	DEB_PARAM() << DEB_VAR2(data.frameNumber, data.data());
 
+	bool img_is_raw = (m_jungfrau->m_img_src == Raw);
+
 	ImgProcList& img_proc_list = m_jungfrau->m_img_proc_list;
 	ImgProcList::iterator it, end = img_proc_list.end();
 	for (it = img_proc_list.begin(); it != end; ++it)
-		(*it)->processFrame(data);
+		if ((*it)->consumesRawData() == img_is_raw)
+			(*it)->processFrame(data);
 }
 
 
@@ -534,10 +537,13 @@ Data Jungfrau::ModelReconstruction::processModel(Data& data)
 
 	Data ret = _processingInPlaceFlag ? data : data.copy();
 
-	FrameType frame = ret.frameNumber;
-	BufferMgr *buffer_mgr = m_jungfrau->getBuffer();
-	BufferCtrlObj *buffer = buffer_mgr->getBufferCtrlObj(AcqBuffer);
-	Data raw = buffer->getFrameData(frame);
+	ImgProcList& img_proc_list = m_jungfrau->m_img_proc_list;
+	ImgProcList::iterator it, end = img_proc_list.end();
+	for (it = img_proc_list.begin(); it != end; ++it)
+		if ((*it)->consumesRawData())
+			(*it)->processFrame(data);
+
+	Data raw = m_jungfrau->getRawData(data);
 	DEB_TRACE() << DEB_VAR1(raw);
 	GainPed& gain_ped = m_jungfrau->m_gain_ped_img_proc->m_gain_ped;
 	gain_ped.processFrame(raw, ret);
@@ -588,15 +594,19 @@ void Jungfrau::setImgSrc(ImgSrc img_src)
 		return;
 
 	m_img_src = img_src;
-	bool do_proc = (m_img_src == GainPedCorr);
+	bool do_corr = (m_img_src == GainPedCorr);
 
 	doSetImgProcConfig(m_img_proc_config, true);
 
-	m_reconstruction->setActive(do_proc);
+	Reconstruction::LimaBufferMode lbm;
+	lbm = do_corr ? Reconstruction::CorrData : Reconstruction::RawData;
+	m_reconstruction->setLimaBufferMode(lbm);
+	m_reconstruction->setActive(do_corr);
 
-	BufferMgr *buffer = getCamera()->getBuffer();
+	Camera *cam = getCamera();
+	BufferMgr *buffer = cam->getBuffer();
 	buffer->releaseBuffers();
-	buffer->setMode(do_proc ? BufferMgr::Dual : BufferMgr::Single);
+	updateCameraImageSize();
 }
 
 void Jungfrau::getImgSrc(ImgSrc& img_src)

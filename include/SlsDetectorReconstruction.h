@@ -60,15 +60,22 @@ public:
 		Reconstruction *m_r;
 	};
 
+	enum LimaBufferMode { RawData, CorrData };
+			     
 	Reconstruction(Camera *cam);
 	virtual ~Reconstruction();
 
 	void setActive(bool  active);
 	void getActive(bool& active);
 
+	void setLimaBufferMode(LimaBufferMode  lima_buffer_mode);
+	void getLimaBufferMode(LimaBufferMode& lima_buffer_mode);
+	
 	virtual void prepare();
 
 	void addFramePackets(DetFrameImagePackets&& det_frame_packets);
+
+	Data getRawData(Data& data);
 
 	virtual Data process(Data& data);
 	virtual Data processModel(Data& data) = 0;
@@ -76,10 +83,19 @@ public:
 	virtual void cleanUp();
 
 private:
+	struct ThreadData {
+		void *ptr;
+		long size;
+	};
+	
+	static void releaseThreadData(void *thread_data);
+
 	friend class CtrlObjProxy;
 	Camera *m_cam;
 	CtrlObjProxy *m_proxy;
 	bool m_active;
+	LimaBufferMode m_lima_buffer_mode;
+	FrameDim m_raw_frame_dim;
 	Mutex m_mutex;
 	FramePacketMap m_frame_packet_map;
 };

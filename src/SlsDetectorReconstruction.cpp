@@ -59,7 +59,8 @@ LinkTask *Reconstruction::CtrlObjProxy::getReconstructionTask()
 }
 
 Reconstruction::Reconstruction(Camera *cam)
-	: m_cam(cam), m_proxy(NULL), m_active(false)
+	: m_cam(cam), m_proxy(NULL), m_active(false),
+	  m_lima_buffer_mode(RawData)
 {
 	DEB_CONSTRUCTOR();
 }
@@ -76,8 +77,6 @@ void Reconstruction::setActive(bool active)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR2(active, m_active);
 	m_active = active;
-	if (m_proxy)
-		m_proxy->reconstructionChange(this);
 }
 
 void Reconstruction::getActive(bool& active)
@@ -87,11 +86,68 @@ void Reconstruction::getActive(bool& active)
 	DEB_RETURN() << DEB_VAR1(active);
 }
 
+void Reconstruction::setLimaBufferMode(LimaBufferMode lima_buffer_mode)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(lima_buffer_mode, m_lima_buffer_mode);
+	m_lima_buffer_mode = lima_buffer_mode;
+}
+
+void Reconstruction::getLimaBufferMode(LimaBufferMode& lima_buffer_mode)
+{
+	DEB_MEMBER_FUNCT();
+	lima_buffer_mode = m_lima_buffer_mode;
+	DEB_RETURN() << DEB_VAR1(lima_buffer_mode);
+}
+
 void Reconstruction::prepare()
 {
 	DEB_MEMBER_FUNCT();
+
+	Model *model = m_cam->getModel();
+	if (!model)
+		THROW_HW_ERROR(Error) << "Camera has no model";
+	model->getAcqFrameDim(m_raw_frame_dim, m_cam->m_raw_mode);
+	
 	AutoMutex l(m_mutex);
 	m_frame_packet_map.clear();
+}
+
+Data Reconstruction::getRawData(Data& data)
+{
+	DEB_MEMBER_FUNCT();
+
+	if (m_lima_buffer_mode == RawData)
+		return data;
+
+	static pthread_key_t thread_data_key;
+	EXEC_ONCE(pthread_key_create(&thread_data_key, &releaseThreadData));
+
+	ThreadData *d = (ThreadData *) pthread_getspecific(thread_data_key);
+	if (d == NULL) {
+		d = new ThreadData();
+		pthread_setspecific(thread_data_key, d);
+		d->ptr = NULL;
+		d->size = 0;
+	}
+	long size = m_raw_frame_dim.getMemSize();
+	if (d->size != size) {
+		void *p = realloc(d->ptr, size);
+		if (!p)
+			THROW_HW_ERROR(Error) << "Cannot re-allocate "
+					      << size << " bytes";
+		d->ptr = p;
+		d->size = size;
+	}
+
+	return GetMappedData(d->ptr, m_raw_frame_dim);
+}
+
+void Reconstruction::releaseThreadData(void *thread_data)
+{
+	ThreadData *d = (ThreadData *) thread_data;
+	free(d->ptr);
+	delete d;
 }
 
 void Reconstruction::cleanUp()
