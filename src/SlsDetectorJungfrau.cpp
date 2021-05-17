@@ -345,8 +345,10 @@ void Jungfrau::GainADCMapImgProc::processFrame(Data& data)
 	{
 		src = (unsigned short *) raw.data();
 		unsigned char *dst = (unsigned char *) m.gain_map.data();
-		for (int i = 0; i < m_pixels; ++i, ++src, ++dst)
-			*dst = *src >> 14;
+		for (int i = 0; i < m_pixels; ++i, ++src, ++dst) {
+			int gain = *src >> 14;
+			*dst = (gain == 3) ? 2 : gain;
+		}
 		m.gain_map.frameNumber = frame;
 	}
 	{
