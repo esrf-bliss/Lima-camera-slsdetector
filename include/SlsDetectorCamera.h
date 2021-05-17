@@ -249,7 +249,7 @@ private:
 	void removeSharedMem();
 	void createReceivers();
 
-	void assemblePackets(DetFrameImagePackets&& det_frame_packets);
+	void assemblePackets(DetFrameImagePackets det_frame_packets);
 
 	bool checkLostPackets();
 	FrameType getLastReceivedFrame();

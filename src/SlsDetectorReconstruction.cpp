@@ -157,7 +157,7 @@ void Reconstruction::cleanUp()
 	m_frame_packet_map.clear();
 }
 
-void Reconstruction::addFramePackets(DetFrameImagePackets&& det_frame_packets)
+void Reconstruction::addFramePackets(DetFrameImagePackets det_frame_packets)
 {
 	DEB_MEMBER_FUNCT();
 	AutoMutex l(m_mutex);

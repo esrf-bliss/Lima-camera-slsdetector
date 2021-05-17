@@ -996,7 +996,7 @@ Camera::DetStatus Camera::getDetTrigStatus()
 	return trig_status;
 }
 
-void Camera::assemblePackets(DetFrameImagePackets&& det_frame_packets)
+void Camera::assemblePackets(DetFrameImagePackets det_frame_packets)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -1011,10 +1011,8 @@ void Camera::assemblePackets(DetFrameImagePackets&& det_frame_packets)
 	int nb_recvs = getNbRecvs();
 	for (int i = 0; i < nb_recvs; ++i) {
 		bool ok = false;
-		if (det_packets[i]) {
+		if (det_packets[i])
 			ok = det_packets[i]->assemble(bptr);
-			det_packets[i].free();
-		}
 		if (!ok)
 			m_recv_list[i]->fillBadFrame(bptr);
 	}

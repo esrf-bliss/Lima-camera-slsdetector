@@ -73,7 +73,7 @@ public:
 	
 	virtual void prepare();
 
-	void addFramePackets(DetFrameImagePackets&& det_frame_packets);
+	void addFramePackets(DetFrameImagePackets det_frame_packets);
 
 	Data getRawData(Data& data);
 
