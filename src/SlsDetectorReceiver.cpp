@@ -31,7 +31,6 @@ using namespace lima::SlsDetector;
 using namespace FrameAssembler;
 
 struct RecvImagePackets : public Receiver::ImagePackets {
-	friend class Receiver;
 	using Receiver::ImagePackets::ImagePackets;
 	AnyPacketBlockList blocks;
 };
@@ -153,7 +152,7 @@ AutoPtr<Receiver::ImagePackets> Receiver::readSkippableImagePackets()
 	return image_data;
 }
 
-Receiver::ImagePackets *Receiver::readImagePackets()
+AutoPtr<Receiver::ImagePackets> Receiver::readImagePackets()
 {
 	DEB_MEMBER_FUNCT();
 
@@ -216,7 +215,7 @@ Receiver::ImagePackets *Receiver::readImagePackets()
 	m_stats.stats.cb_exec.add(t1 - t0);
 	m_stats.last_t1 = t1;
 
-	return image_data.forget();
+	return image_data;
 }
 
 bool Receiver::asmImagePackets(ImagePackets *image_data, char *buffer)

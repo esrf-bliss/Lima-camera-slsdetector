@@ -85,7 +85,7 @@ public:
 
 	void setCPUAffinity(const RecvCPUAffinity& recv_affinity);
 
-	ImagePackets *readImagePackets();
+	AutoPtr<ImagePackets> readImagePackets();
 
 	void fillBadFrame(char *buf);
 
