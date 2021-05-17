@@ -268,6 +268,8 @@ DetFrameImagePackets Camera::AcqThread::readRecvPackets(FrameType frame)
 
 	auto stopped = [&]() { return (m_cam->getAcqState() == StopReq); };
 
+	const int age_margin = 10;
+
 	int nb_recvs = m_cam->getNbRecvs();
 	for (int i = 0; i < nb_recvs; ++i) {
 		while ((det_packets.find(i) == det_packets.end()) &&
@@ -281,10 +283,13 @@ DetFrameImagePackets Camera::AcqThread::readRecvPackets(FrameType frame)
 			FrameType f = image_packets->frame;
 			if (f == frame)  {
 				det_packets.emplace(MapEntry(i, image_packets));
-				break;
+			} else if (f < frame) {
+				continue;
 			} else {
 				DetImagePackets& other = m_frame_packet_map[f];
 				other.emplace(MapEntry(i, image_packets));
+				if (f > frame + age_margin)
+					break;
 			}
 		}
 	}
