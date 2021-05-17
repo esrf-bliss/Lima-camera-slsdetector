@@ -23,7 +23,8 @@
 #include "SlsDetectorJungfrau.h"
 #include "lima/MiscUtils.h"
 
-#include "sls/Geometry.h"
+#include "sls/detectors/jungfrau/Geometry.h"
+#include "sls/Pixel.h"
 
 #include <emmintrin.h>
 #include <sched.h>
@@ -33,18 +34,17 @@ using namespace lima;
 using namespace lima::SlsDetector;
 using namespace lima::SlsDetector::Defs;
 
-
 #define applyDetGeom(j, f, raw)						\
-	using namespace sls::Geom::Jungfrau;				\
+	using namespace sls::Jungfrau::Geom;				\
 	int ifaces;							\
 	j->getNbUDPInterfaces(ifaces);					\
 	auto any_nb_ifaces = AnyNbUDPIfacesFromNbUDPIfaces(ifaces);	\
 	std::visit([&](auto nb) {					\
-	    constexpr int nb_udp_ifaces = nb;				\
+	    using nb_udp_ifaces = decltype(nb);				\
 	    Defs::xy det_size = j->m_det->getDetectorSize();		\
 	    auto any_geom = AnyDetGeomFromDetSize<nb_udp_ifaces>({det_size.x, \
 								  det_size.y});\
-	    std::visit([&](auto geom) {					\
+	    std::visit([&](auto const &geom) {				\
 	        if (raw)						\
 			f(geom.raw_geom);				\
 		else							\
@@ -85,10 +85,11 @@ void Jungfrau::GainPed::Impl<M>::getDefaultCalib(Calib& calib)
 		init(calib.ped_map[g]);
 		p[g][1] = (double *) calib.ped_map[g].data();
 	}
-	auto f = [&](auto det_geom) {
+	auto f = [&](auto const &det_geom) {
 		using namespace sls::Geom;
 		det_for_each_pixel(det_geom,
-				   [&](auto &chip_view, auto &pixel) {
+				   [&](auto const &chip_view,
+				       auto const &pixel) {
 			int i = chip_view.calcMapPixelIndex(pixel);
 			for (int g = 0; g < 3; ++g) {
 				p[g][0][i] = M::DefaultCoeffs[g][0];
@@ -262,7 +263,7 @@ Jungfrau::ImgProcBase::ImgProcBase(Jungfrau *jungfrau, std::string name)
 	DEB_CONSTRUCTOR();
 	DEB_PARAM() << DEB_VAR1(m_name);
 	m_nb_jungfrau_modules = m_jungfrau->getNbJungfrauModules();
-	auto f = [&](auto det_geom) {
+	auto f = [&](auto const &det_geom) {
 		m_det_mods = Point(det_geom.det_mods.x, det_geom.det_mods.y);
 		DEB_TRACE() << DEB_VAR2(m_det_mods, m_nb_jungfrau_modules);
 	};
@@ -637,7 +638,7 @@ void Jungfrau::getAcqFrameDim(FrameDim& frame_dim, bool raw)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(raw);
 	Size size;
-	auto f = [&](auto det_geom) {
+	auto f = [&](auto const &det_geom) {
 		size = Size(det_geom.size.x, det_geom.size.y);
 		DEB_TRACE() << DEB_VAR1(size);
 	};
@@ -665,7 +666,7 @@ FrameDim Jungfrau::getModuleFrameDim(int idx, bool raw)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR2(idx, raw);
 	Size size;
-	auto f = [&](auto det_geom) {
+	auto f = [&](auto const &det_geom) {
 		auto mod_geom = det_geom.getModGeom({0, 0});
 		bool last_x = true;  // only raw mode supported
 		bool last_y = (idx == getNbJungfrauModules() - 1);
@@ -684,13 +685,13 @@ int Jungfrau::getModuleDataOffset(int idx, bool raw)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR2(idx, raw);
 	int data_offset;
-	auto f = [&](auto det_geom) {
+	auto f = [&](auto const &det_geom) {
 		auto mod_pos = getModulePosition(det_geom, idx);
 		auto mod_view = det_geom.getModView({mod_pos.x,
 					mod_pos.y});
 		auto origin = mod_view.calcViewOrigin();
 		int pixel_offset = mod_view.calcMapPixelIndex(origin);
-		data_offset = pixel_offset * sls::Geom::Pixel16::depth();
+		data_offset = pixel_offset * sls::Pixel16::depth();
 		DEB_TRACE() << DEB_VAR1(data_offset);
 	};
 	applyDetGeom(this, f, raw);
@@ -709,14 +710,15 @@ void Jungfrau::getDetMap(Data& det_map)
 	if (!raw)
 		memset(det_map.data(), 0xff, det_map.size());
 
-	auto f = [&](auto det_geom) {
+	auto f = [&](auto const &det_geom) {
 		using namespace sls::Geom;
 		unsigned int *p = (unsigned int *) det_map.data();
 		int chip_idx = 0;
 		det_for_each_chip(det_geom,
-				  [&](auto &chip, auto &chip_view) {
+				  [&](auto const &chip, auto const &chip_view) {
 		    view_for_each_pixel(chip_view,
-					[&](auto &chip_view, auto &pixel) {
+					[&](auto const &chip_view,
+					    auto const &pixel) {
 			    int i = chip_view.calcMapPixelIndex(pixel);
 			    p[i] = chip_idx;
 			});

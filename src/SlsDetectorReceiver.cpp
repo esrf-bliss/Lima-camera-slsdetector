@@ -28,7 +28,9 @@ using namespace std;
 using namespace lima;
 using namespace lima::SlsDetector;
 
-using namespace FrameAssembler;
+using namespace sls::FrameAssembler;
+
+using AnyPacketBlockList = sls::AnyPacketBlockList;
 
 struct RecvImagePackets : public Receiver::ImagePackets {
 	using Receiver::ImagePackets::ImagePackets;
@@ -129,15 +131,9 @@ AutoPtr<Receiver::ImagePackets> Receiver::readSkippableImagePackets()
 		std::visit([&](auto &block) {
 			bool valid = block;
 			image_data->validPortData[i] = valid;
-			if (valid && (header.frameNumber == uint64_t(-1))) {
-				for (int p = 0; p < (*block).NbPackets; ++p) {
-					if ((*block)[p].valid()) {
-						auto packet = (*block)[p];
-						header = *packet.networkHeader();
-						break;
-					}
-				}
-			}
+			if (valid && (header.frameNumber == uint64_t(-1)) &&
+			    block->getNetworkHeader())
+				header = *block->getNetworkHeader();
 		    }, blocks[i]);
 	}
 	if (image_data->validPortData.none())
@@ -221,10 +217,10 @@ AutoPtr<Receiver::ImagePackets> Receiver::readImagePackets()
 bool Receiver::asmImagePackets(ImagePackets *image_data, char *buffer)
 {
 	DEB_MEMBER_FUNCT();
-	FrameAssembler::Result res;
+	sls::FrameAssembler::Result res;
 	MPFrameAssemblerPtr::pointer a = m_asm_impl->m_asm.get();
 	res = a->assembleFrame(std::move(RecvImagePacketBlocks(image_data)),
-			       &image_data->header, buffer);
+			       buffer);
 	image_data->numberOfPorts = res.nb_ports;
 	image_data->validPortData = res.valid_data;
 	bool got_data = image_data->validPortData.any();
