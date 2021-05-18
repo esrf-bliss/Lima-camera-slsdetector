@@ -110,7 +110,12 @@ void Reconstruction::prepare()
 	model->getAcqFrameDim(m_raw_frame_dim, m_cam->m_raw_mode);
 	
 	AutoMutex l(m_mutex);
-	m_frame_packet_map.clear();
+	m_stopped = false;
+	if (!m_frame_packet_map.empty()) {
+		DEB_ERROR() << "m_frame_packet_map not empty!";
+		AutoMutexUnlock u(l);
+		m_frame_packet_map.clear();
+	}
 }
 
 Data Reconstruction::getRawData(Data& data)
@@ -150,26 +155,35 @@ void Reconstruction::releaseThreadData(void *thread_data)
 	delete d;
 }
 
-void Reconstruction::cleanUp()
+void Reconstruction::stop()
 {
 	DEB_MEMBER_FUNCT();
 	AutoMutex l(m_mutex);
+	if (m_stopped)
+		return;
+	m_stopped = true;
+	l.unlock();
 	m_frame_packet_map.clear();
 }
 
-void Reconstruction::addFramePackets(DetFrameImagePackets det_frame_packets)
+bool Reconstruction::addFramePackets(DetFrameImagePackets det_frame_packets)
 {
 	DEB_MEMBER_FUNCT();
 	AutoMutex l(m_mutex);
+	if (m_stopped)
+		return false;
 	m_frame_packet_map.emplace(std::move(det_frame_packets));
+	return true;
 }
 
 Data Reconstruction::process(Data& data)
 {
 	DEB_MEMBER_FUNCT();
 
-	FrameType frame = data.frameNumber;
 	AutoMutex l(m_mutex);
+	if (m_stopped)
+		return data;
+	FrameType frame = data.frameNumber;
 	FramePacketMap::iterator it = m_frame_packet_map.find(frame);
 	if (it == m_frame_packet_map.end())
 		return data;

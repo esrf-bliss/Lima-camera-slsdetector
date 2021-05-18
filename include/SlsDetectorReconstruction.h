@@ -73,14 +73,14 @@ public:
 	
 	virtual void prepare();
 
-	void addFramePackets(DetFrameImagePackets det_frame_packets);
+	bool addFramePackets(DetFrameImagePackets det_frame_packets);
 
 	Data getRawData(Data& data);
 
 	virtual Data process(Data& data);
 	virtual Data processModel(Data& data) = 0;
 
-	virtual void cleanUp();
+	virtual void stop();
 
 private:
 	struct ThreadData {
@@ -98,6 +98,7 @@ private:
 	FrameDim m_raw_frame_dim;
 	Mutex m_mutex;
 	FramePacketMap m_frame_packet_map;
+	bool m_stopped;
 };
 
 } // namespace SlsDetector

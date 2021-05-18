@@ -191,7 +191,8 @@ void Camera::AcqThread::threadFunction()
 	auto get_next_frame = [&]() {
 		DetFrameImagePackets packets = readRecvPackets(next_frame++);
 		FrameType frame = packets.first;
-		reconstruct->addFramePackets(std::move(packets));
+		if (!reconstruct->addFramePackets(std::move(packets)))
+			frame = -1;
 		return frame;
 	};
 	
@@ -203,6 +204,8 @@ void Camera::AcqThread::threadFunction()
 			frame = get_next_frame();
 			DEB_TRACE() << DEB_VAR2(next_frame, frame);
 		}
+		if ((frame == -1) || (m_state == StopReq))
+			break;
 		m_cam->m_buffer.waitLimaFrame(frame, l);
 		{
 			AutoMutexUnlock u(l);
@@ -211,6 +214,10 @@ void Camera::AcqThread::threadFunction()
 			acq_end = status.second;
 			had_frames = true;
 		}
+	}
+	{
+		AutoMutexUnlock u(l);
+		m_frame_packet_map.clear();
 	}
 
 	AcqState prev_state = m_state;
@@ -292,11 +299,6 @@ DetFrameImagePackets Camera::AcqThread::readRecvPackets(FrameType frame)
 					break;
 			}
 		}
-	}
-
-	if (stopped()) {
-		det_frame_packets.second.clear();
-		m_frame_packet_map.clear();
 	}
 
 	return det_frame_packets;
@@ -957,7 +959,7 @@ void Camera::stopAcq()
 
 	Reconstruction *r = m_model ? m_model->getReconstruction() : NULL;
 	if (r)
-		r->cleanUp();
+		r->stop();
 	m_global_cpu_affinity_mgr.stopAcq();
 
 	AutoMutex l = lock();
