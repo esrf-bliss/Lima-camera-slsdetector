@@ -330,8 +330,26 @@ int CPUAffinity::getNbSystemCPUs(bool max_nb)
 	EXEC_ONCE(nb_cpus = findNbSystemCPUs());
 	static int max_nb_cpus = 0;
 	EXEC_ONCE(max_nb_cpus = findMaxNbSystemCPUs());
+	if (max_nb_cpus > MaxNbCPUs)
+		throw LIMA_HW_EXC(Error, "Too many CPUS: ")
+			<< max_nb_cpus << ", MaxNbCPUs=" << MaxNbCPUs;
 	int cpus = (max_nb && max_nb_cpus) ? max_nb_cpus : nb_cpus;
 	return cpus;
+}
+
+const CPUAffinity::Mask &CPUAffinity::allCPUs(bool max_nb)
+{
+	if (max_nb) {
+		static Mask max_nb_mask;
+		EXEC_ONCE(for (int i = 0; i < getNbSystemCPUs(true); ++i)
+				max_nb_mask.set(i));
+		return max_nb_mask;
+	} else {
+		static Mask mask;
+		EXEC_ONCE(for (int i = 0; i < getNbSystemCPUs(false); ++i)
+				mask.set(i));
+		return mask;
+	}
 }
 
 std::string CPUAffinity::getProcDir(bool local_threads)
@@ -361,9 +379,9 @@ std::string CPUAffinity::getTaskProcDir(pid_t task, bool is_thread)
 void CPUAffinity::initCPUSet(cpu_set_t& cpu_set) const
 {
 	CPU_ZERO(&cpu_set);
-	uint64_t mask = getMask();
-	for (unsigned int i = 0; i < sizeof(mask) * 8; ++i) {
-		if ((mask >> i) & 1)
+	Mask mask = getMask();
+	for (unsigned int i = 0; i < MaxNbCPUs; ++i) {
+		if (mask.test(i))
 			CPU_SET(i, &cpu_set);
 	}
 }
@@ -452,9 +470,9 @@ void CPUAffinity::getNUMANodeMask(vector<unsigned long>& node_mask,
 
 	node_mask.assign(nb_items, 0);
 
-	uint64_t mask = getMask();
-	for (unsigned int i = 0; i < sizeof(mask) * 8; ++i) {
-		if ((mask >> i) & 1) {
+	Mask mask = getMask();
+	for (unsigned int i = 0; i < MaxNbCPUs; ++i) {
+		if (mask.test(i)) {
 			unsigned int n = numa_node_of_cpu(i);
 			Array::reference v = node_mask[n / item_bits];
 			v |= 1L << (n % item_bits);
@@ -472,6 +490,95 @@ void CPUAffinity::getNUMANodeMask(vector<unsigned long>& node_mask,
 			     << DEB_VAR1(max_node);
 	}
 }
+
+void CPUAffinity::maskToULongArray(const Mask& mask, ULongArray& array)
+{
+	constexpr Mask ULongMask(std::numeric_limits<unsigned long>::max());
+	for (int i = 0; i < NbULongs; ++i)
+		array[i] = ((mask >> (i * NbULongBits)) & ULongMask).to_ulong();
+}
+
+CPUAffinity::Mask CPUAffinity::maskFromULongArray(const ULongArray& array)
+{
+	Mask mask;
+	for (int i = 0; i < NbULongs; ++i)
+		mask |= Mask(array[i]) << (i * NbULongBits);
+	return mask;
+}
+
+string CPUAffinity::maskToString(const Mask& mask, int base, bool comma_sep)
+{
+	if (base == 2)
+		return mask.to_string();
+	else if (base != 16)
+		throw LIMA_HW_EXC(InvalidValue, "Invalid base: ") << base;
+		
+	ostringstream os;
+	ULongArray array;
+	maskToULongArray(mask, array);
+	os << hex << setfill('0');
+	string sep;
+	for (int i = NbULongs - 1; i >= 0; --i) {
+		unsigned long ul_val = array[i];
+		constexpr int NbULongInts = NbULongBits / 32;
+		for (int j = NbULongInts - 1; j >= 0; --j) {
+			uint32_t ui_val = (ul_val >> (j * 32)) & 0xffffffff;
+			os << sep << setw(32 / 4) << ui_val;
+			if (sep.empty() && comma_sep)
+				sep = ",";
+		}
+	}
+	return os.str();
+}
+
+CPUAffinity::Mask CPUAffinity::maskFromString(string aff_str, int base)
+{
+	if ((base != 2) && (base != 16))
+		throw LIMA_HW_EXC(InvalidValue, "Invalid base: ") << base;
+	
+	if (!aff_str.empty() && (base == 16) && (aff_str.find("0x") == 0))
+		aff_str.erase(0, 2);
+	size_t len = aff_str.size();
+	if (len && (aff_str.rfind('L') == len - 1))
+		aff_str.erase(len - 1);
+
+#define convert_to_ulong(s, v)						\
+	do {								\
+		size_t pos;						\
+		v = stoul(s, &pos, base);				\
+		if (pos != s.size())					\
+			throw LIMA_HW_EXC(InvalidValue, "Invalid mask: ") \
+						<< aff_str;		\
+	} while (0)
+
+	ULongArray array;
+	const size_t bits_per_char = (base == 16) ? 4 : 1;
+	const size_t chars_per_ulong = NbULongBits / bits_per_char;
+	int idx = 0;
+	string val;
+	string::const_reverse_iterator it, end = aff_str.rend();
+	for (it = aff_str.rbegin(); it != end; ++it) {
+		if (*it == ',')
+			continue;
+		else if (idx == NbULongs)
+			throw LIMA_HW_EXC(InvalidValue, "Invalid mask: ")
+							<< aff_str;
+		val.insert(0, 1, *it);
+		if (val.size() == chars_per_ulong) {
+			convert_to_ulong(val, array[idx++]);
+			val.clear();
+		}
+	}
+	if (!val.empty())
+		convert_to_ulong(val, array[idx++]);
+	while (idx < NbULongs)
+		array[idx++] = 0;
+
+#undef convert_to_ulong
+
+	return maskFromULongArray(array);
+}
+
 
 bool IrqMgr::m_irqbalance_stopped = false;
 StringList IrqMgr::m_dev_list;
@@ -531,15 +638,15 @@ IntList IrqMgr::getIrqList()
 	ifstream proc_ints("/proc/interrupts");
 	ostringstream os;
 	int nb_cpus = CPUAffinity::getNbSystemCPUs();
+	string info_token_re = "([^ \t]+)[ \t]*";
 	os << "[ \t]*"
 	   << "(?P<irq>[0-9]+):[ \t]+"
 	   << "(?P<counts>(([0-9]+)[ \t]+){" << nb_cpus << "})"
-	   << "(?P<type>[-A-Za-z0-9_]+)[ \t]+"
-	   << "(?P<name>[-A-Za-z0-9_]+)";
+	   << "(?P<info>(" << info_token_re << "){2,4})";
 	DEB_TRACE() << DEB_VAR1(os.str());
 	RegEx int_re(os.str());
 	while (proc_ints) {
-		char buffer[1024];
+		char buffer[4096];
 		proc_ints.getline(buffer, sizeof(buffer));
 		string s = buffer;
 		DEB_TRACE() << DEB_VAR1(s);
@@ -548,8 +655,14 @@ IntList IrqMgr::getIrqList()
 			continue;
 		int irq;
 		istringstream(match["irq"]) >> irq;
-		DEB_TRACE() << "found match: " << irq << ": " 
-			     << string(match["name"]);
+		if (DEB_CHECK_ANY(DebTypeTrace)) {
+			string info = match["info"];
+			SimpleRegEx info_re(info_token_re);
+			RegEx::MatchListType match_list;
+			info_re.multiSearch(info, match_list);
+			string name = match_list.back()[1];
+			DEB_TRACE() << "found match: " << irq << ": " << name;
+		}
 		IntStringList::iterator it, end = dev_irqs.end();
 		bool ok = false;
 		for (it = dev_irqs.begin(); !ok && (it != end); ++it)
@@ -720,7 +833,8 @@ void NetDevRxQueueMgr::apply(Task task, int queue, CPUAffinity a)
 			ok = applyWithSetter(task, *it, a);
 		if (ok)
 			return;
-		DEB_ERROR() << "Could not use setter";
+		DEB_ERROR() << "Could not use setter: "
+			    << DEB_VAR4(m_dev, task, queue, a);
 		did_error_setter[task] = true;
 	}
 }
@@ -806,12 +920,11 @@ bool NetDevRxQueueMgr::applyWithFile(const string& fname, CPUAffinity a)
 {
 	DEB_MEMBER_FUNCT();
 
-	ostringstream os;
-	os << hex << a.getZeroDefaultMask();
-	DEB_TRACE() << "writing " << os.str() << " to " << fname;
+	string s = a.toString(16, true);
+	DEB_TRACE() << "writing " << s << " to " << fname;
 	ofstream aff_file(fname.c_str());
 	if (aff_file)
-		aff_file << os.str();
+		aff_file << s;
 	if (aff_file)
 		aff_file.close();
 	bool file_ok(aff_file);
@@ -828,8 +941,9 @@ bool NetDevRxQueueMgr::applyWithSetter(Task task, const string& irq_queue,
 	static string desc = getSetterSudoDesc();
 	SystemCmd setter(AffinitySetterName, desc);
 	ConstStr task_opt = (task == Irq) ? "-i" : "-r";
+	const CPUAffinity::Mask& mask = a.getZeroDefaultMask();
 	setter.args() << task_opt << " " << m_dev << " " << irq_queue << " "
-		      << hex << "0x" << a.getZeroDefaultMask();
+		      << CPUAffinity::maskToString(mask, 16, true);
 	bool setter_ok = (setter.execute() == 0);
 	DEB_RETURN() << DEB_VAR1(setter_ok);
 	return setter_ok;
@@ -880,9 +994,8 @@ static const char *NetDevRxQueueMgrAffinitySetterSrcCList[] = {
 "",
 "int main(int argc, char *argv[])",
 "{",
-"	char *dev, *irq_queue, *p, fname[256], buffer[128];",
+"	char *dev, *irq_queue, *p, fname[256];",
 "	int irq, rps, fd, len, ret;",
-"	long aff;",
 "",
 "	if (argc != 5)",
 "		exit(1);",
@@ -896,36 +1009,26 @@ static const char *NetDevRxQueueMgrAffinitySetterSrcCList[] = {
 "	dev = argv[2];",
 "	irq_queue = argv[3];",
 "",
-"	errno = 0;",
-"	aff = strtol(argv[4], &p, 0);",
-"	if (errno || *p)",
-"		exit(3);",
-"",
 "	len = sizeof(fname);",
 "	if (irq)",
-"		ret = snprintf(fname, len, \"/proc/irq/%s/smp_affinity\",", 
+"		ret = snprintf(fname, len, \"/proc/irq/%s/smp_affinity\",",
 "			       irq_queue);",
 "	else",
-"		ret = snprintf(fname, len, \"/sys/class/net/%s/queues/%s/rps_cpus\",", 
+"		ret = snprintf(fname, len, \"/sys/class/net/%s/queues/%s/rps_cpus\",",
 "			       dev, irq_queue);",
 "	if ((ret < 0) || (ret == len))",
-"		exit(4);",
-"",
-"	len = sizeof(buffer);",
-"	ret = snprintf(buffer, len, \"%016lx\", aff);",
-"	if ((ret < 0) || (ret == len))",
-"		exit(5);",
+"		exit(3);",
 "",
 "	fd = open(fname, O_WRONLY);",
 "	if (fd < 0)",
-"		exit(6);",
-"",	
-"	for (p = buffer; *p; p += ret)",
+"		exit(4);",
+"",
+"	for (p = argv[4]; *p; p += ret)",
 "		if ((ret = write(fd, p, strlen(p))) < 0)",
-"			exit(7);",
+"			exit(5);",
 "",
 "	if (close(fd) < 0)",
-"		exit(8);",
+"		exit(6);",
 "	return 0;",
 "}",
 };
@@ -946,7 +1049,7 @@ IntList NetDevRxQueueMgr::getRxQueueList()
 	StringList out, err;
 	ethtool.execute(out, err);
 
-	RegEx re("^[ \t]*rx_queue_(?P<queue>[0-9]+)_packets:[ \t]+"
+	RegEx re("^[ \t]*rx(_queue_)?(?P<queue>[0-9]+)_packets:[ \t]+"
 		 "(?P<packets>[0-9]+)\n$");
 	StringList::iterator it, end = out.end();
 	for (it = out.begin(); it != end; ++it) {
@@ -1075,10 +1178,14 @@ void SystemCPUAffinityMgr::WatchDog::childFunction()
 		do {
 			Packet packet = readParentCmd();
 			if (packet.cmd == SetProcAffinity) {
-				procAffinitySetter(packet.u.proc_affinity);
+				typedef CPUAffinity::ULongArray ULongArray;
+				ULongArray& array = packet.u.proc_affinity;
+				CPUAffinity proc_affinity =
+					CPUAffinity::fromULongArray(array);
+				procAffinitySetter(proc_affinity);
 			} else if (packet.cmd == SetNetDevAffinity) {
 				NetDevGroupCPUAffinity netdev_affinity =
-					netDevAffinityEncode(packet);
+					netDevAffinityDecode(packet);
 				netDevAffinitySetter(netdev_affinity);
 			} else if (packet.cmd == CleanUp) {
 				cleanup_req = true;
@@ -1103,7 +1210,7 @@ void
 SystemCPUAffinityMgr::WatchDog::procAffinitySetter(CPUAffinity cpu_affinity)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(cpu_affinity);
+	DEB_PARAM() << DEB_VAR2(cpu_affinity, m_other);
 
 	static bool aff_set = false;
 	if (aff_set && (cpu_affinity == m_other))
@@ -1154,7 +1261,7 @@ StringList SystemCPUAffinityMgr::WatchDog::splitStringList(string str)
 }
 
 NetDevGroupCPUAffinity
-SystemCPUAffinityMgr::WatchDog::netDevAffinityEncode(const Packet& packet)
+SystemCPUAffinityMgr::WatchDog::netDevAffinityDecode(const Packet& packet)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -1166,8 +1273,8 @@ SystemCPUAffinityMgr::WatchDog::netDevAffinityEncode(const Packet& packet)
 	const PacketNetDevQueueAffinity *a = packet_affinity.queue_affinity;
 	for (unsigned int i = 0; i < nb_queues; ++i, ++a) {
 		NetDevRxQueueCPUAffinity qa;
-		qa.irq = a->irq;
-		qa.processing = a->processing;
+		qa.irq = CPUAffinity::fromULongArray(a->irq);
+		qa.processing = CPUAffinity::fromULongArray(a->processing);
 		NetDevRxQueueAffinityMap::value_type v(a->queue, qa);
 		queue_affinity.insert(v);
 	}
@@ -1222,7 +1329,7 @@ SystemCPUAffinityMgr::WatchDog::setOtherCPUAffinity(CPUAffinity cpu_affinity)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(cpu_affinity);
 	Packet packet(SetProcAffinity);
-	packet.u.proc_affinity = cpu_affinity;
+	cpu_affinity.toULongArray(packet.u.proc_affinity);
 	sendChildCmd(packet);
 }
 
@@ -1246,8 +1353,8 @@ void SystemCPUAffinityMgr::WatchDog::setNetDevCPUAffinity(
 	PacketNetDevQueueAffinity *a = ndga.queue_affinity;
 	for (it = queue_affinity.begin(); it != end; ++it, ++a) {
 		a->queue = it->first;
-		a->irq = it->second.irq;
-		a->processing = it->second.processing;
+		it->second.irq.toULongArray(a->irq);
+		it->second.processing.toULongArray(a->processing);
 	}
 	sendChildCmd(packet);
 }
@@ -1295,9 +1402,10 @@ SystemCPUAffinityMgr::getProcList(Filter filter, CPUAffinity cpu_affinity)
 
 			re = "Cpus_allowed:?$";
 			if (re.match(s, full_match) && (filter != All)) {
-				uint64_t int_affinity;
-				status_file >> hex >> int_affinity >> dec;
-				CPUAffinity affinity = int_affinity;
+				string affinity_str;
+				status_file >> affinity_str;
+				CPUAffinity affinity =
+					CPUAffinity::fromString(affinity_str);
 				bool aff_match = (affinity == cpu_affinity);
 				bool filt_match = (filter == MatchAffinity);
 				has_good_affinity = (aff_match == filt_match);
@@ -1767,8 +1875,7 @@ void GlobalCPUAffinityMgr::cleanUp()
 
 ostream& lima::SlsDetector::operator <<(ostream& os, const CPUAffinity& a)
 {
-	return os << hex << "0x" << setw(CPUAffinity::getNbHexDigits())
-		  << setfill('0') << a.getMask() << dec << setfill(' ');
+	return os << a.toString();
 }
 
 ostream&
@@ -1828,7 +1935,12 @@ ostream& lima::SlsDetector::operator <<(ostream& os, const GlobalCPUAffinity& a)
 {
 	os << "<";
 	os << "recv=" << a.recv << ", lima=" << a.lima << ", other=" << a.other;
-	return os << ">";
+	os << "netdev=<";
+	bool first = true;
+	NetDevGroupCPUAffinityList::const_iterator it, end = a.netdev.end();
+	for (it = a.netdev.begin(); it != end; ++it, first = false)
+		os << (first ? "" : ", ") << *it;
+	return os << ">>";
 }
 
 ostream& 

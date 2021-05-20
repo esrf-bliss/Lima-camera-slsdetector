@@ -209,12 +209,60 @@ public:
 
 class CPUAffinity
 {
+%TypeCode
+	typedef ::SlsDetector::CPUAffinity::Mask CPUMask;
+
+	PyObject *maskToPyLong(const CPUMask& mask)
+	{
+		std::string r = mask.to_string();
+		return PyLong_FromString(r.c_str(), NULL, 2);
+	}
+
+	CPUMask pyBytesToCPUMask(PyObject *py_bytes)
+	{
+		char *r = PyBytes_AsString(py_bytes);
+		if (!r)
+			throw LIMA_HW_EXC(InvalidValue, "Invalid PyBytes");
+		int base = 2;
+		Py_ssize_t len = PyBytes_Size(py_bytes);
+		if ((len > 2) && (strncmp(r, "0x", 2) == 0))
+			base = 16;
+		return ::SlsDetector::CPUAffinity::maskFromString(r, base);
+	}
+%End
+
 public:
-	CPUAffinity(unsigned long m = 0);
+	CPUAffinity();
+	CPUAffinity(SIP_PYOBJECT mask);
+%MethodCode
+	Py_BEGIN_ALLOW_THREADS
+	try
+	{
+		if (!PyBytes_Check(a0))
+			throw LIMA_HW_EXC(InvalidValue, "CPUAffinity accepts "
+							"PyBytes objects only");
+		CPUMask mask = pyBytesToCPUMask(a0);
+		sipCpp = new ::SlsDetector::CPUAffinity(mask);
+	}
+	catch (...)
+	{
+		Py_BLOCK_THREADS
+		sipRaiseUnknownException();
+		return NULL;
+	}
+	Py_END_ALLOW_THREADS
+%End
 
 	static int getNbSystemCPUs(bool max_nb = false);
 	static int getNbHexDigits(bool max_nb = false);
-	static unsigned long allCPUs(bool max_nb = false);
+	static SIP_PYOBJECT allCPUs(bool max_nb = false);
+%MethodCode
+	CPUMask mask;
+	Py_BEGIN_ALLOW_THREADS
+	mask = ::SlsDetector::CPUAffinity::allCPUs(a0);
+	Py_END_ALLOW_THREADS
+	sipRes = maskToPyLong(mask);
+%End
 
 	int getNbCPUs() const;
 
@@ -222,10 +270,23 @@ public:
 	void applyToTask(int task, bool incl_threads = true,
 			 bool use_taskset = true) const;
 
-	unsigned long getMask() const;
-	unsigned long getZeroDefaultMask() const;
+	SIP_PYOBJECT getMask() const;
+%MethodCode
+	CPUMask mask;
+	Py_BEGIN_ALLOW_THREADS
+	mask = sipCpp->getMask();
+	Py_END_ALLOW_THREADS
+	sipRes = maskToPyLong(mask);
+%End
 
-	operator unsigned long() const;
+	SIP_PYOBJECT getZeroDefaultMask() const;
+%MethodCode
+	CPUMask mask;
+	Py_BEGIN_ALLOW_THREADS
+	mask = sipCpp->getZeroDefaultMask();
+	Py_END_ALLOW_THREADS
+	sipRes = maskToPyLong(mask);
+%End
 
 	SlsDetector::CPUAffinity& operator |=(const SlsDetector::CPUAffinity& o);
 
@@ -310,11 +371,11 @@ public:
 	static std::vector<int> getProcList(
 		SlsDetector::SystemCPUAffinityMgr::Filter filter
 			= SlsDetector::SystemCPUAffinityMgr::All,
-		SlsDetector::CPUAffinity cpu_affinity = 0);
+		SlsDetector::CPUAffinity cpu_affinity = CPUAffinity());
 	static std::vector<int> getThreadList(
 		SlsDetector::SystemCPUAffinityMgr::Filter filter
 			= SlsDetector::SystemCPUAffinityMgr::All,
-		SlsDetector::CPUAffinity cpu_affinity = 0);
+		SlsDetector::CPUAffinity cpu_affinity = CPUAffinity());
 
 	void setOtherCPUAffinity(
 		SlsDetector::CPUAffinity affinity);

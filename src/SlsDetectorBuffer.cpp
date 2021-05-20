@@ -79,7 +79,7 @@ void BufferMgr::setAcqBufferCPUAffinity(CPUAffinity buffer_affinity)
 	DEB_ALWAYS() << DEB_VAR1(buffer_affinity);
 	BufferCtrlObj *buffer = getBufferCtrlObj();
 	if (buffer)
-		buffer->setCPUAffinityMask(buffer_affinity);
+		buffer->setCPUAffinityMask(buffer_affinity.getMask());
 	m_buffer_affinity = buffer_affinity;
 }
 
