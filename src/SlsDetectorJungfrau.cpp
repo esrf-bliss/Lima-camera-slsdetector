@@ -1104,3 +1104,18 @@ std::ostream& lima::SlsDetector::operator <<(std::ostream& os,
 	return os << name;
 }
 
+std::istream& lima::SlsDetector::operator >>(std::istream& is,
+					     Jungfrau::ImgSrc& img_src)
+{
+	std::string s;
+	is >> s;
+	if (s == "Raw")
+		img_src = Jungfrau::Raw;
+	else if (s == "GainPedCorr")
+		img_src = Jungfrau::GainPedCorr;
+	else
+		throw LIMA_HW_EXC(InvalidValue, "Invalid Jungfrau::ImgSrc: ")
+			<< s;
+	return is;
+}
+

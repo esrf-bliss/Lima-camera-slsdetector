@@ -552,6 +552,7 @@ class Jungfrau : public Model
 
 std::ostream& operator <<(std::ostream& os, Jungfrau::GainPed::MapType map_type);
 std::ostream& operator <<(std::ostream& os, Jungfrau::ImgSrc src);
+std::istream& operator >>(std::istream& is, Jungfrau::ImgSrc& src);
 
 } // namespace SlsDetector
 

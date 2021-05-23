@@ -56,6 +56,7 @@ void TestApp::Pars::loadDefaults()
 	raw_mode = false;
 	debug_type_flags = 0;
 	out_dir = "/tmp";
+	jungfrau_img_src = Jungfrau::Raw;
 }
 
 void TestApp::Pars::loadOpts()
@@ -89,6 +90,11 @@ void TestApp::Pars::loadOpts()
 
 	o = new ArgOpt<string>(out_dir, "-o", "--out-dir",
 			       "out_dir");
+	m_opt_list.insert(o);
+
+	o = new ArgOpt<Jungfrau::ImgSrc>(jungfrau_img_src, "-i",
+					 "--jungfrau-img-src",
+					 "Jungfrau image source");
 	m_opt_list.insert(o);
 }
 
@@ -148,7 +154,10 @@ TestApp::TestApp(int argc, char *argv[])
 	if (det_type == EigerDet) {
 		m_model = new Eiger(m_cam);
 	} else if (det_type == JungfrauDet) {
-		m_model = new Jungfrau(m_cam);
+		Jungfrau *jungfrau = new Jungfrau(m_cam);
+		DEB_ALWAYS() << "Junfrau: ImgSrc=" << m_pars.jungfrau_img_src;
+		jungfrau->setImgSrc(m_pars.jungfrau_img_src);
+		m_model = jungfrau;
 	} else
 		THROW_HW_ERROR(Error) << "Unknown detector: " << det_type;
 

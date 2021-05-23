@@ -24,6 +24,8 @@
 #define __TEST_SLS_DETECTOR_H
 
 #include "SlsDetectorCamera.h"
+#include "SlsDetectorEiger.h"
+#include "SlsDetectorJungfrau.h"
 #include "lima/AcqState.h"
 
 #include <cstdlib>
@@ -54,6 +56,7 @@ class TestApp
 		bool raw_mode;
 		int debug_type_flags;
 		std::string out_dir;
+		Jungfrau::ImgSrc jungfrau_img_src;
 
 		Pars();
 		void parseArgs(Args& args);
