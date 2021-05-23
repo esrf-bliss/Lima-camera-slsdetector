@@ -240,16 +240,7 @@ Jungfrau::ImgProcTask::ImgProcTask(Jungfrau *jungfrau)
 void Jungfrau::ImgProcTask::process(Data& data)
 {
 	DEB_MEMBER_FUNCT();
-
 	DEB_PARAM() << DEB_VAR2(data.frameNumber, data.data());
-
-	bool img_is_raw = (m_jungfrau->m_img_src == Raw);
-
-	ImgProcList& img_proc_list = m_jungfrau->m_img_proc_list;
-	ImgProcList::iterator it, end = img_proc_list.end();
-	for (it = img_proc_list.begin(); it != end; ++it)
-		if ((*it)->consumesRawData() == img_is_raw)
-			(*it)->processFrame(data);
 }
 
 
@@ -546,11 +537,19 @@ Data Jungfrau::ModelReconstruction::processModel(Data& data)
 		if ((*it)->consumesRawData())
 			(*it)->processFrame(data);
 
+	if (m_jungfrau->m_img_src == Raw)
+		return data;
+
 	Data raw = m_jungfrau->getRawData(data);
 	DEB_TRACE() << DEB_VAR1(raw);
 	GainPed& gain_ped = m_jungfrau->m_gain_ped_img_proc->m_gain_ped;
 	gain_ped.processFrame(raw, ret);
 	DEB_TRACE() << DEB_VAR1(ret);
+
+	for (it = img_proc_list.begin(); it != end; ++it)
+		if (!(*it)->consumesRawData())
+			(*it)->processFrame(ret);
+
 	return ret;
 }
 
@@ -604,7 +603,6 @@ void Jungfrau::setImgSrc(ImgSrc img_src)
 	Reconstruction::LimaBufferMode lbm;
 	lbm = do_corr ? Reconstruction::CorrData : Reconstruction::RawData;
 	m_reconstruction->setLimaBufferMode(lbm);
-	m_reconstruction->setActive(do_corr);
 
 	Camera *cam = getCamera();
 	BufferMgr *buffer = cam->getBuffer();
@@ -956,7 +954,7 @@ bool Jungfrau::isXferActive()
 Jungfrau::ImgProcTask *Jungfrau::createImgProcTask()
 {
 	DEB_MEMBER_FUNCT();
-	return new ImgProcTask(this);
+	return false ? new ImgProcTask(this) : NULL;
 }
 
 void Jungfrau::addImgProc(ImgProcBase *img_proc)
@@ -1010,8 +1008,11 @@ void Jungfrau::doSetImgProcConfig(std::string config, bool force)
 		return;
 	StringList config_list = SplitString(config);
 	removeAllImgProc();
-	if (config_list.empty())
+	bool do_gain_ped_corr = (m_img_src == GainPedCorr);
+	if (config_list.empty()) {
+		m_reconstruction->setActive(do_gain_ped_corr);
 		return;
+	}
 	ImgProcList img_proc_list;
 	auto checkConfigAndDelete = [&](auto s) {
 		StringList::iterator it, end = config_list.end();
@@ -1022,7 +1023,7 @@ void Jungfrau::doSetImgProcConfig(std::string config, bool force)
 		return true;
 	};
 	if (checkConfigAndDelete("gain_ped")) {
-		if (m_img_src != GainPedCorr) {
+		if (!do_gain_ped_corr) {
 			DEB_TRACE() << "Adding gain_ped";
 			img_proc_list.push_back(m_gain_ped_img_proc);
 		} else {
@@ -1035,7 +1036,7 @@ void Jungfrau::doSetImgProcConfig(std::string config, bool force)
 		img_proc_list.push_back(m_gain_adc_map_img_proc);
 	}
 	if (checkConfigAndDelete("ave")) {
-		if (m_img_src == GainPedCorr) {
+		if (do_gain_ped_corr) {
 			DEB_TRACE() << "Adding ave";
 			img_proc_list.push_back(m_ave_img_proc);
 		} else {
@@ -1050,6 +1051,9 @@ void Jungfrau::doSetImgProcConfig(std::string config, bool force)
 		addImgProc(img_proc);
 
 	m_img_proc_config = config;
+
+	bool do_reconst = do_gain_ped_corr || !m_img_proc_config.empty();
+	m_reconstruction->setActive(do_reconst);
 }
 
 void Jungfrau::readGainADCMaps(Data& gain_map, Data& adc_map, FrameType& frame)
