@@ -29,6 +29,8 @@
 
 #include "sls/sls_detector_defs.h"
 
+#include "lima/AppPars.h"
+
 namespace sls
 {
 class Receiver;
@@ -117,7 +119,7 @@ private:
 	Camera *m_cam;
 	int m_idx;
 	int m_rx_port;
-	Args m_args;
+	AppArgs m_args;
 	bool m_gap_pixels_enable;
 	AutoPtr<sls::Receiver> m_recv;
 	AssemblerImpl *m_asm_impl;

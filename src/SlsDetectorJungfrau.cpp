@@ -226,6 +226,20 @@ std::ostream& lima::SlsDetector::operator <<(std::ostream& os,
 	return os << name;
 }
 
+std::istream& lima::SlsDetector::operator >>(std::istream& is,
+					     Jungfrau::GainPed::MapType& map_type)
+{
+	std::string s;
+	is >> s;
+	if (s == "Map16")
+		map_type = Jungfrau::GainPed::Map16;
+	else if (s == "Map32")
+		map_type = Jungfrau::GainPed::Map32;
+	else
+		throw LIMA_HW_EXC(InvalidValue,
+				  "Invalid Jungfrau::GainPed::MapType: ") << s;
+	return is;
+}
 
 /*
  * Jungfrau::ImgProcTask class

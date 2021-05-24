@@ -20,10 +20,10 @@
 // along with this program; if not, see <http://www.gnu.org/licenses/>.
 //###########################################################################
 
-#include "test_slsdetector.h"
-
 #include "SlsDetectorEiger.h"
 #include "SlsDetectorJungfrau.h"
+#include "SlsDetectorInterface.h"
+#include "lima/HwTestApp.h"
 
 using namespace std;
 using namespace lima;
@@ -31,257 +31,101 @@ using namespace lima::SlsDetector;
 
 DEB_GLOBAL(DebModTest);
 
-int main(int argc, char *argv[])
+class TestApp : public HwTestApp
 {
-	DEB_GLOBAL_FUNCT();
-	TestApp app(argc, argv);
-	app.run();
-	return 0;
+	DEB_CLASS_NAMESPC(DebModTest, "TestApp", "SlsDetector");
+
+ public:
+	class Pars : public HwTestApp::Pars
+	{
+		DEB_CLASS_NAMESPC(DebModTest, "TestApp::Pars", "SlsDetector");
+	public:
+		std::string config_fname;
+		bool raw_mode{false};
+		Jungfrau::ImgSrc jungfrau_img_src{Jungfrau::Raw};
+
+		Pars();
+	};
+
+	TestApp(int argc, char *argv[]) : HwTestApp(argc, argv) {}
+
+ protected:
+	virtual HwTestApp::Pars *getPars();
+	virtual HwInterface *getHwInterface();
+
+	AutoPtr<Pars> m_pars;
+	AutoPtr<Camera> m_cam;
+	AutoPtr<Eiger> m_eiger;
+	AutoPtr<Jungfrau> m_jungfrau;
+	AutoPtr<Interface> m_interface;
 };
+
 
 TestApp::Pars::Pars()
 {
 	DEB_CONSTRUCTOR();
-	loadDefaults();
-	loadOpts();
-}
-
-void TestApp::Pars::loadDefaults()
-{
-	DEB_MEMBER_FUNCT();
-	config_fname = getenv("SLSDETECTOR_CONFIG");
-	nb_frames = 10;
+	const char *env_config = getenv("SLSDETECTOR_CONFIG");
+	if (env_config)
+		config_fname = env_config;
 	exp_time = 2.0e-3;
-	frame_period = 2.5e-3;
-	raw_mode = false;
-	debug_type_flags = 0;
-	out_dir = "/tmp";
-	jungfrau_img_src = Jungfrau::Raw;
+	double frame_period = 2.5e-3;
+	latency_time = frame_period - exp_time;
+
+#define AddOpt(var, sopt, lopt, par)	\
+	m_opt_list.insert(MakeOpt(var, sopt, lopt, par))
+
+	AddOpt(config_fname, "-c", "--config-fname", "detector config file");
+
+	AddOpt(raw_mode, "-r", "--raw-mode", "raw mode");
+
+	AddOpt(jungfrau_img_src, "-i", "--jungfrau-img-src",
+	       "Jungfrau image source");
 }
 
-void TestApp::Pars::loadOpts()
+HwTestApp::Pars *TestApp::getPars()
+{
+	m_pars = new Pars();
+	return m_pars;
+}
+
+HwInterface *TestApp::getHwInterface()
 {
 	DEB_MEMBER_FUNCT();
 
-	AutoPtr<ArgOptBase> o;
+	if (m_pars->config_fname.empty())
+		THROW_HW_ERROR(Error) << "Missing config file";
 
-	o = new ArgOpt<string>(config_fname, "-c", "--config", 
-			       "config file name");
-	m_opt_list.insert(o);
-
-	o = new ArgOpt<int>(nb_frames, "-n", "--nb-frames", 
-			       "number of frames");
-	m_opt_list.insert(o);
-
-	o = new ArgOpt<double>(exp_time, "-e", "--exp-time", 
-			       "exposure time");
-	m_opt_list.insert(o);
-
-	o = new ArgOpt<double>(frame_period, "-p", "--frame-period", 
-			       "frame period");
-	m_opt_list.insert(o);
-
-	o = new ArgOpt<bool>(raw_mode, "-r", "--save-raw");
-	m_opt_list.insert(o);
-
-	o = new ArgOpt<int>(debug_type_flags, "-d", "--debug-type-flags", 
-			    "debug type flags");
-	m_opt_list.insert(o);
-
-	o = new ArgOpt<string>(out_dir, "-o", "--out-dir",
-			       "out_dir");
-	m_opt_list.insert(o);
-
-	o = new ArgOpt<Jungfrau::ImgSrc>(jungfrau_img_src, "-i",
-					 "--jungfrau-img-src",
-					 "Jungfrau image source");
-	m_opt_list.insert(o);
-}
-
-void TestApp::Pars::parseArgs(Args& args)
-{
-	DEB_MEMBER_FUNCT();
-
-	string prog_name = args.pop_front();
-
-	while (args && (*args[0] == '-')) {
-		OptList::iterator it, end = m_opt_list.end();
-		bool ok = false;
-		for (it = m_opt_list.begin(); (it != end) && !ok; ++it)
-			ok = ((*it)->check(args));
-		if (!ok) {
-			cerr << "Unknown option: " << args[0] << endl;
-			exit(1);
-		}
-	}
-
-	if (config_fname.empty()) {
-		cerr << "Missing config file" << endl;
-		exit(1);
-	}
-}
-
-TestApp::FrameCallback::FrameCallback(TestApp *app)
-	: m_app(app)
-{
-	DEB_CONSTRUCTOR();
-}
-
-bool TestApp::FrameCallback::newFrameReady(const HwFrameInfoType& frame_info)
-{
-	DEB_MEMBER_FUNCT();
-	return m_app->newFrameReady(frame_info);
-}
-
-const double TestApp::WAIT_SLEEP_TIME = 0.2;
-
-TestApp::TestApp(int argc, char *argv[])
-	: m_cb(this)
-{
-	DEB_CONSTRUCTOR();
-
-	Args args(argc, argv);
-	m_pars.parseArgs(args);
-
-	DebParams::enableTypeFlags(m_pars.debug_type_flags);
-
-	m_cam = new Camera(m_pars.config_fname);
-	m_buffer_ctrl_obj = new BufferCtrlObj();
-	m_buffer_ctrl_obj->registerFrameCallback(m_cb);
-	m_cam->getBuffer()->setLimaBufferCtrlObj(m_buffer_ctrl_obj);
+	m_cam = new Camera(m_pars->config_fname);
+	m_interface = new Interface(*m_cam);
 
 	Type det_type = m_cam->getType();
 	if (det_type == EigerDet) {
-		m_model = new Eiger(m_cam);
+		m_eiger = new Eiger(m_cam);
 	} else if (det_type == JungfrauDet) {
-		Jungfrau *jungfrau = new Jungfrau(m_cam);
-		DEB_ALWAYS() << "Junfrau: ImgSrc=" << m_pars.jungfrau_img_src;
-		jungfrau->setImgSrc(m_pars.jungfrau_img_src);
-		m_model = jungfrau;
+		m_jungfrau = new Jungfrau(m_cam);
 	} else
 		THROW_HW_ERROR(Error) << "Unknown detector: " << det_type;
 
-}
+	m_cam->setRawMode(m_pars->raw_mode);
 
-void TestApp::run()
-{
-	DEB_MEMBER_FUNCT();
-
-	try {
-		m_cam->setNbFrames(m_pars.nb_frames);
-		m_cam->setExpTime(m_pars.exp_time);
-		m_cam->setFramePeriod(m_pars.frame_period);
-		m_cam->setRawMode(m_pars.raw_mode);
-
-		FrameDim frame_dim;
-		m_cam->getFrameDim(frame_dim, m_pars.raw_mode);
-		m_buffer_ctrl_obj->setFrameDim(frame_dim);
-		int max_buffers;
-		m_buffer_ctrl_obj->getMaxNbBuffers(max_buffers);
-		int nb_buffers = min(m_pars.nb_frames, max_buffers);
-		m_buffer_ctrl_obj->setNbBuffers(nb_buffers);
-
-		m_cam->prepareAcq();
-		m_last_msg_timestamp = Timestamp::now();
-
-		m_state.set(lima::AcqState::Acquiring);
-		m_cam->startAcq();
-		m_state.waitNot(lima::AcqState::Acquiring);
-
-		int first = max(0, m_pars.nb_frames - nb_buffers);
-		int save_frames = min(m_pars.nb_frames, nb_buffers);
-		if (m_pars.raw_mode) {
-			save_raw_data(first, save_frames);
-		} else {
-			save_edf_data(first, save_frames);
-		}
-	} catch (string s) {
-		cerr << "Exception: " << s << endl;
-		exit(1);
-	} catch (...) {
-		cerr << "Exception" << endl;
-		exit(1);
-	}
-}
-
-bool TestApp::newFrameReady(const HwFrameInfoType& frame_info)
-{
-	DEB_MEMBER_FUNCT();
-
-	if (frame_info.acq_frame_nb == m_pars.nb_frames - 1)
-		m_state.set(lima::AcqState::Finished);
-
-	Timestamp timestamp = Timestamp::now();
-	if (timestamp - m_last_msg_timestamp > WAIT_SLEEP_TIME) {
-		int frames_caught = m_cam->getFramesCaught();
-		FrameMap *frame_map = m_cam->getFrameMap();
-		int finished_frames = frame_map->getLastFinishedFrame() + 1;
-		DEB_ALWAYS() << DEB_VAR3(frame_info.acq_frame_nb, 
-					 frames_caught, finished_frames);
-		DEB_PARAM() << DEB_VAR1(*frame_map);
-		m_last_msg_timestamp = timestamp;
+	if (m_jungfrau) {
+		Jungfrau::ImgSrc img_src = m_pars->jungfrau_img_src;
+		DEB_ALWAYS() << "Junfrau: ImgSrc=" << img_src;
+		m_jungfrau->setImgSrc(img_src);
 	}
 
-	return true;
+	return m_interface;
 }
 
-void TestApp::save_raw_data(int start_frame, int nb_frames)
+int main(int argc, char *argv[])
 {
-	DEB_MEMBER_FUNCT();
-	FrameDim frame_dim;
-	m_buffer_ctrl_obj->getFrameDim(frame_dim);
-
-	for (int i = 0; i < nb_frames; ++i) {
-		ostringstream os;
-		os << m_pars.out_dir << "/slsdetector.bin." << i;
-		DEB_TRACE() << "Saving raw to " << os.str();
-		ofstream of(os.str().c_str());
-		void *buffer = m_buffer_ctrl_obj->getFramePtr(start_frame + i);
-		of.write(static_cast<char *>(buffer), frame_dim.getMemSize());
-	}
-}
-
-void TestApp::save_edf_data(int start_frame, int nb_frames)
-{
-	DEB_MEMBER_FUNCT();
-	ostringstream os;
-	os << m_pars.out_dir << "/slsdetector.edf";
-	DEB_TRACE() << "Saving EDF to " << os.str();
-	ofstream of(os.str().c_str());
-	for (int i = 0; i < nb_frames; ++i)
-		save_edf_frame(of, start_frame + i, i);
-}
-
-void TestApp::save_edf_frame(ofstream& of, int acq_idx, int edf_idx)
-{
-	DEB_MEMBER_FUNCT();
-	FrameDim frame_dim;
-	m_buffer_ctrl_obj->getFrameDim(frame_dim);
-	Size frame_size = frame_dim.getSize();
-	int image_bytes = frame_dim.getMemSize();
-	
-	ostringstream os;
-	os << "{" << endl;
-	os << EdfHeaderKey("HeaderID") << setiosflags(ios::right) 
-	   << "EH:" << setfill('0') << setw(6) << (edf_idx + 1) 
-	   << ":" << setfill('0') << setw(6) << 0 
-	   << ":" << setfill('0') << setw(6) << 0 << "; " << endl;
-	os << EdfHeaderKey("ByteOrder") << "LowByteFirst" << "; " << endl;
-	os << EdfHeaderKey("DataType") << "UnsignedShort" << "; " << endl;
-	os << EdfHeaderKey("Size") << image_bytes << "; " << endl;
-	os << EdfHeaderKey("Dim_1") << frame_size.getWidth() << "; " << endl;
-	os << EdfHeaderKey("Dim_2") << frame_size.getHeight() << "; " << endl;
-	os << EdfHeaderKey("Image") << edf_idx << "; " << endl;
-	os << EdfHeaderKey("acq_frame_nb") << edf_idx << "; " << endl;
-
-	const int HEADER_BLOCK = 1024;
-	int rem = (HEADER_BLOCK - 2) - os.str().size() % HEADER_BLOCK;
-	if (rem < 0)
-		rem += HEADER_BLOCK;
-	os << string(rem, '\n') << "}" << endl;
-	of << os.str();
-
-	void *buffer = m_buffer_ctrl_obj->getFramePtr(acq_idx);
-	of.write(static_cast<char *>(buffer), image_bytes);
-}
+	DEB_GLOBAL_FUNCT();
+        try {
+		TestApp app(argc, argv);
+		app.run();
+        } catch (Exception& e) {
+	        DEB_ERROR() << "LIMA Exception:" << e.getErrMsg();
+        }
+	return 0;
+};
 

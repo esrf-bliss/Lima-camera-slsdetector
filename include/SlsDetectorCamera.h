@@ -23,7 +23,6 @@
 #ifndef __SLS_DETECTOR_CAMERA_H
 #define __SLS_DETECTOR_CAMERA_H
 
-#include "SlsDetectorArgs.h"
 #include "SlsDetectorReceiver.h"
 #include "SlsDetectorCPUAffinity.h"
 #include "SlsDetectorModel.h"

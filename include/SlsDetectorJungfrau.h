@@ -550,7 +550,10 @@ class Jungfrau : public Model
 	RecvList m_recv_list;
 };
 
-std::ostream& operator <<(std::ostream& os, Jungfrau::GainPed::MapType map_type);
+std::ostream& operator <<(std::ostream& os,
+			  Jungfrau::GainPed::MapType map_type);
+std::istream& operator >>(std::istream& is,
+			  Jungfrau::GainPed::MapType& map_type);
 std::ostream& operator <<(std::ostream& os, Jungfrau::ImgSrc src);
 std::istream& operator >>(std::istream& is, Jungfrau::ImgSrc& src);
 
