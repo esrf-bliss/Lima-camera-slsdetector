@@ -43,22 +43,20 @@ void BufferMgr::setLimaBufferCtrlObj(BufferCtrlObj *buffer_ctrl_obj)
 				buffer_ctrl_obj->getBufferSync(m_cond) : NULL;
 }
 
-void BufferMgr::waitLimaFrame(FrameType frame_nb, AutoMutex& l)
+bool BufferMgr::waitLimaFrame(FrameType frame_nb, AutoMutex& l)
 {
 	DEB_MEMBER_FUNCT();
 	if (!m_lima_buffer_ctrl_obj)
 		THROW_HW_ERROR(Error) << "No Lima BufferCbMgr defined";
-	while (true) {
-		BufferSync::Status status = m_lima_buffer_sync->wait(frame_nb);
-		switch (status) {
-		case BufferSync::AVAILABLE:
-			return;
-		case BufferSync::INTERRUPTED:
-			continue;
-		default:
-			THROW_HW_ERROR(Error) << "Lima buffer sync wait error: "
-					      << status;
-		}
+	BufferSync::Status status = m_lima_buffer_sync->wait(frame_nb);
+	switch (status) {
+	case BufferSync::AVAILABLE:
+		return true;
+	case BufferSync::INTERRUPTED:
+		return false;
+	default:
+		THROW_HW_ERROR(Error) << "Lima buffer sync wait error: "
+				      << status;
 	}
 }
 

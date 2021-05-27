@@ -206,7 +206,11 @@ void Camera::AcqThread::threadFunction()
 		}
 		if ((frame == -1) || (m_state == StopReq))
 			break;
-		m_cam->m_buffer.waitLimaFrame(frame, l);
+		while (m_state != StopReq)
+			if (m_cam->m_buffer.waitLimaFrame(frame, l))
+				break;
+		if (m_state == StopReq)
+			break;
 		{
 			AutoMutexUnlock u(l);
 			Status status = newFrameReady(frame);

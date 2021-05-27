@@ -78,7 +78,7 @@ public:
 
 	void setAcqBufferCPUAffinity(CPUAffinity buffer_affinity);
 
-	void waitLimaFrame(FrameType frame_nb, AutoMutex& l);
+	bool waitLimaFrame(FrameType frame_nb, AutoMutex& l);
 	char *getAcqFrameBufferPtr(FrameType frame_nb);
 
 	BufferCtrlObj *getBufferCtrlObj()
