@@ -1485,11 +1485,6 @@ RecvCPUAffinity& RecvCPUAffinity::operator =(CPUAffinity a)
 	return *this;
 }
 
-GlobalCPUAffinity::GlobalCPUAffinity()
-	: model_threads(1)
-{
-}
-
 CPUAffinity GlobalCPUAffinity::all() const
 {
 	return (RecvCPUAffinityList_all(recv) |
@@ -1672,7 +1667,7 @@ void GlobalCPUAffinityMgr::applyAndSet(const GlobalCPUAffinity& o)
 
 	setLimaAffinity(o.lima);
 	setRecvAffinity(o.recv);
-	setModelAffinity(o.model_threads);
+	setAcqAffinity(o.acq);
 
 	if (!m_system_mgr)
 		m_system_mgr = new SystemCPUAffinityMgr();
@@ -1720,16 +1715,16 @@ void GlobalCPUAffinityMgr::setRecvAffinity(
 	m_curr.recv = recv_affinity_list;
 }
 
-void GlobalCPUAffinityMgr::setModelAffinity(
-				const CPUAffinityList& model_affinity_list)
+void GlobalCPUAffinityMgr::setAcqAffinity(CPUAffinity acq_affinity)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(model_affinity_list);
+	DEB_PARAM() << DEB_VAR1(acq_affinity);
 
-	if (model_affinity_list == m_curr.model_threads)
+	if (acq_affinity == m_curr.acq)
 		return;
 
-	m_curr.model_threads = model_affinity_list;
+	m_cam->m_acq_thread_cpu_affinity = acq_affinity;
+	m_curr.acq = acq_affinity;
 }
 
 void GlobalCPUAffinityMgr::updateRecvRestart()
@@ -1834,7 +1829,7 @@ void GlobalCPUAffinityMgr::limaFinished()
 			     << m_set.lima;
 		setLimaAffinity(m_set.lima);
 		setRecvAffinity(m_set.recv);
-		setModelAffinity(m_set.model_threads);
+		setAcqAffinity(m_set.acq);
 	}
 
 	m_state = Ready;

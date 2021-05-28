@@ -127,6 +127,13 @@ void Camera::AcqThread::start(AutoMutex& l)
 
 	while (m_state == Starting)
 		m_cond.wait();
+
+	const CPUAffinity& acq_affinity = m_cam->m_acq_thread_cpu_affinity;
+	if (!acq_affinity.isDefault()) {
+		DEB_ALWAYS() << "Setting CPUAffinity for AcqThread to "
+			     << acq_affinity;
+		acq_affinity.applyToTask(getThreadID(), false, false);
+	}
 }
 
 void Camera::AcqThread::stop(AutoMutex& l, bool wait)

@@ -314,6 +314,7 @@ private:
 	TimeRangesChangedCallback *m_time_ranges_cb;
 	PixelDepthCPUAffinityMap m_cpu_affinity_map;
 	GlobalCPUAffinityMgr m_global_cpu_affinity_mgr;
+	CPUAffinity m_acq_thread_cpu_affinity;
 	AutoPtr<AcqThread> m_acq_thread;
 };
 

@@ -575,12 +575,11 @@ inline CPUAffinity RecvCPUAffinityList_all(const RecvCPUAffinityList& l,
 					       
 struct GlobalCPUAffinity {
 	RecvCPUAffinityList recv;
-	CPUAffinityList model_threads;
+	CPUAffinity acq;
 	CPUAffinity lima;
 	CPUAffinity other;
 	NetDevGroupCPUAffinityList netdev;
 
-	GlobalCPUAffinity();
 	CPUAffinity all() const;
 	void updateRecvAffinity(CPUAffinity a);
 };
@@ -667,7 +666,7 @@ class GlobalCPUAffinityMgr
 
 	void setLimaAffinity(CPUAffinity lima_affinity);
 	void setRecvAffinity(const RecvCPUAffinityList& recv_affinity_list);
-	void setModelAffinity(const CPUAffinityList& model_affinity_list);
+	void setAcqAffinity(CPUAffinity acq_affinity);
 
 	AutoMutex lock()
 	{ return AutoMutex(m_cond.mutex()); }
