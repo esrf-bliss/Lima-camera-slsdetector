@@ -207,7 +207,7 @@ void Camera::AcqThread::threadFunction()
 		if ((frame == -1) || (m_state == StopReq))
 			break;
 		while (m_state != StopReq)
-			if (m_cam->m_buffer.waitLimaFrame(frame, l))
+			if (m_cam->m_buffer.waitFrame(frame, l))
 				break;
 		if (m_state == StopReq)
 			break;
@@ -800,19 +800,21 @@ void Camera::setPixelDepth(PixelDepth pixel_depth)
 		THROW_HW_FATAL(Error) << "Camera is not idle";
 
 	waitAcqState(Idle);
+	ImageType image_type;
 	switch (pixel_depth) {
 	case PixelDepth4:
 	case PixelDepth8:
-		m_image_type = Bpp8;	break;
+		image_type = Bpp8;	break;
 	case PixelDepth16:
-		m_image_type = Bpp16;	break;
+		image_type = Bpp16;	break;
 	case PixelDepth32:
-		m_image_type = Bpp32;	break;
+		image_type = Bpp32;	break;
 	default:
 		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(pixel_depth);
 	}
 	EXC_CHECK(m_det->setDynamicRange(pixel_depth));
 	m_pixel_depth = pixel_depth;
+	m_image_type = image_type;
 
 	if (m_model) {
 		updateImageSize();

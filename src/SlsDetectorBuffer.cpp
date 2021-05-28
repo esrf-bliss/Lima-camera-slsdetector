@@ -28,50 +28,39 @@ using namespace lima::SlsDetector;
 
 
 BufferMgr::BufferMgr(Camera *cam)
-	: m_cam(cam), m_cond(m_cam->m_cond), m_lima_buffer_ctrl_obj(NULL),
+	: m_cam(cam), m_cond(m_cam->m_cond), m_buffer_ctrl_obj(NULL),
 	  m_max_memory(70)
 {
 	DEB_CONSTRUCTOR();
 }
 
-void BufferMgr::setLimaBufferCtrlObj(BufferCtrlObj *buffer_ctrl_obj)
+void BufferMgr::setBufferCtrlObj(BufferCtrlObj *buffer_ctrl_obj)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(m_lima_buffer_ctrl_obj, buffer_ctrl_obj);
-	m_lima_buffer_ctrl_obj = buffer_ctrl_obj;
-	m_lima_buffer_sync = buffer_ctrl_obj ?
+	DEB_PARAM() << DEB_VAR2(m_buffer_ctrl_obj, buffer_ctrl_obj);
+	m_buffer_ctrl_obj = buffer_ctrl_obj;
+	m_buffer_sync = buffer_ctrl_obj ?
 				buffer_ctrl_obj->getBufferSync(m_cond) : NULL;
 }
 
-bool BufferMgr::waitLimaFrame(FrameType frame_nb, AutoMutex& l)
+bool BufferMgr::waitFrame(FrameType frame_nb, AutoMutex& l)
 {
 	DEB_MEMBER_FUNCT();
-	if (!m_lima_buffer_ctrl_obj)
-		THROW_HW_ERROR(Error) << "No Lima BufferCbMgr defined";
-	BufferSync::Status status = m_lima_buffer_sync->wait(frame_nb);
+	if (!m_buffer_ctrl_obj)
+		THROW_HW_ERROR(Error) << "No BufferCbMgr defined";
+	BufferSync::Status status = m_buffer_sync->wait(frame_nb);
 	switch (status) {
 	case BufferSync::AVAILABLE:
 		return true;
 	case BufferSync::INTERRUPTED:
 		return false;
 	default:
-		THROW_HW_ERROR(Error) << "Lima buffer sync wait error: "
+		THROW_HW_ERROR(Error) << "Buffer sync wait error: "
 				      << status;
 	}
 }
 
-char *BufferMgr::getAcqFrameBufferPtr(FrameType frame_nb)
-{
-	DEB_MEMBER_FUNCT();
-
-	StdBufferCbMgr *cb_mgr = getBufferCbMgr();
-	if (!cb_mgr)
-		THROW_HW_ERROR(InvalidValue) << "No BufferCbMgr defined";
-	void *ptr = cb_mgr->getFrameBufferPtr(frame_nb);
-	return static_cast<char *>(ptr);
-}
-
-void BufferMgr::setAcqBufferCPUAffinity(CPUAffinity buffer_affinity)
+void BufferMgr::setBufferCPUAffinity(CPUAffinity buffer_affinity)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_ALWAYS() << DEB_VAR1(buffer_affinity);
@@ -133,8 +122,8 @@ void BufferMgr::releaseBuffers()
 	bool prev_release_unused;
 //	BufferCtrlObj::getBufferMgrResizePolicy(prev_release_unused);
 //	BufferCtrlObj::setBufferMgrResizePolicy(true);
-	if (m_lima_buffer_ctrl_obj)
-		m_lima_buffer_ctrl_obj->releaseBuffers();
+	if (m_buffer_ctrl_obj)
+		m_buffer_ctrl_obj->releaseBuffers();
 //	BufferCtrlObj::setBufferMgrResizePolicy(prev_release_unused);
 }
 

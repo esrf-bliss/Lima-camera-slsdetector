@@ -74,15 +74,14 @@ class BufferMgr
 	DEB_CLASS_NAMESPC(DebModCamera, "BufferMgr", "SlsDetector");
 
 public:
-	void setLimaBufferCtrlObj(BufferCtrlObj *buffer_ctrl_obj);
+	void setBufferCtrlObj(BufferCtrlObj *buffer_ctrl_obj);
 
-	void setAcqBufferCPUAffinity(CPUAffinity buffer_affinity);
+	void setBufferCPUAffinity(CPUAffinity buffer_affinity);
 
-	bool waitLimaFrame(FrameType frame_nb, AutoMutex& l);
-	char *getAcqFrameBufferPtr(FrameType frame_nb);
+	bool waitFrame(FrameType frame_nb, AutoMutex& l);
 
 	BufferCtrlObj *getBufferCtrlObj()
-	{ return m_lima_buffer_ctrl_obj; }
+	{ return m_buffer_ctrl_obj; }
 
 	StdBufferCbMgr *getBufferCbMgr()
 	{
@@ -109,8 +108,8 @@ private:
 	Camera *m_cam;
 	Cond& m_cond;
 	CPUAffinity m_buffer_affinity;
-	BufferCtrlObj *m_lima_buffer_ctrl_obj;
-	BufferSync *m_lima_buffer_sync;
+	BufferCtrlObj *m_buffer_ctrl_obj;
+	BufferSync *m_buffer_sync;
 	int m_max_memory;
 };
 

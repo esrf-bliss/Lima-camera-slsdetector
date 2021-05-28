@@ -1702,6 +1702,9 @@ void GlobalCPUAffinityMgr::setLimaAffinity(CPUAffinity lima_affinity)
 		lima_affinity.applyToTask(pid, true);
 		m_curr.updateRecvAffinity(lima_affinity);
 	}
+
+	m_cam->m_buffer.setBufferCPUAffinity(lima_affinity);
+
 	m_curr.lima = lima_affinity;
 }
 
@@ -1725,9 +1728,6 @@ void GlobalCPUAffinityMgr::setModelAffinity(
 
 	if (model_affinity_list == m_curr.model_threads)
 		return;
-
-	CPUAffinity buffer_affinity = CPUAffinityList_all(model_affinity_list);
-	m_cam->m_buffer.setAcqBufferCPUAffinity(buffer_affinity);
 
 	m_curr.model_threads = model_affinity_list;
 }
