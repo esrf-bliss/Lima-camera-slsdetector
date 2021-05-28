@@ -57,9 +57,6 @@ class BufferCtrlObj : public NumaSoftBufferCtrlObj {
  public:
 	void releaseBuffers() { getBuffer().releaseBuffers(); }
 
-	virtual void getMaxNbBuffers(int& max_nb_buffers)
-	{ max_nb_buffers = 1024; }
-
 	Data getFrameData(FrameType frame)
 	{
 		StdBufferCbMgr& buffer = getBuffer();

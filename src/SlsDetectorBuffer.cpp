@@ -96,6 +96,10 @@ void BufferMgr::getMaxNbBuffers(long& nb_buffers)
 	model->getAcqFrameDim(frame_dim, raw_mode);
 	int max_nb_buffers = GetDefMaxNbBuffers(frame_dim);
 	nb_buffers = int(max_nb_buffers * m_max_memory / 100.0);
+	PixelDepth pixel_depth;
+	m_cam->getPixelDepth(pixel_depth);
+	if (pixel_depth == PixelDepth4)
+		nb_buffers *= 2;
 	DEB_TRACE() << DEB_VAR2(max_nb_buffers, nb_buffers);
 	DEB_RETURN() << DEB_VAR1(nb_buffers);
 }
