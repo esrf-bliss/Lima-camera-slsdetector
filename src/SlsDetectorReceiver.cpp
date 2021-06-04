@@ -105,10 +105,21 @@ void Receiver::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
 
 	CPUAffinity aff = recv_affinity.all();
 	int max_node;
-	vector<unsigned long> mlist;
+	typedef vector<unsigned long> NumaNodeList;
+	NumaNodeList mlist;
 	aff.getNUMANodeMask(mlist, max_node);
-	if (mlist.size() != 1)
-		THROW_HW_ERROR(Error) << DEB_VAR1(mlist.size());
+	if (mlist.size() > 1) {
+		bool ok = true;
+		NumaNodeList::iterator it, end = mlist.end();
+		for (it = mlist.begin() + 1; ok && (it != end); ++it)
+			ok = (*it == 0);
+		if (!ok) {
+			PrettyList<NumaNodeList> pretty_list(mlist);
+			THROW_HW_ERROR(Error) << "Recv " << m_idx << " "
+					      << "uses more than one node:"
+					      << pretty_list;
+		}
+	}
 	unsigned long& fifo_node_mask = mlist[0];
 	int c = bitset<64>(fifo_node_mask).count();
 	if (c != 1)

@@ -67,9 +67,9 @@ class Jungfrau : public Model
 		struct Map16Data {
 			static constexpr MapType Type = Map16;
 			static constexpr double DefaultCoeffs[3][2] = {
-				{ 0.011555,   965.5},
-				{-0.302124,  5519.0},
-				{-4.254403, 64882.8},
+				{ 8.654262e+1, -83556.9},
+				{-3.309899e+0,  18267.3},
+				{-2.350506e-1,  15250.7},
 			};
 			static constexpr Data::TYPE DataType = Data::UINT16;
 			using Pixel = unsigned short;
@@ -78,9 +78,9 @@ class Jungfrau : public Model
 		struct Map32Data {
 			static constexpr MapType Type = Map32;
 			static constexpr double DefaultCoeffs[3][2] = {
-				{   0.999952,       0.4}, // effectively {1, 0}
-				{ -26.144935,  394047.3}, // G0 x26
-				{-368.163215, 5531211.9}, // G1 x14
+				{ 1.000048e+0,    -0.4}, // effectively {1, 0}
+				{-3.824832e-2, 15071.6}, // G0 x26
+				{-2.716186e-3, 15023.8}, // G1 x14
 			};
 			static constexpr Data::TYPE DataType = Data::UINT32;
 			using Pixel = unsigned int;
@@ -424,7 +424,7 @@ class Jungfrau : public Model
 
 		virtual void updateImageSize(Size size, bool raw);
 		virtual void clear();
-		virtual bool consumesRawData() { return false; }
+		virtual bool consumesRawData() { return true; }
 		virtual void processFrame(Data& data);
 
 		void readAveMap(Data& ave_map, FrameType& nb_frames,

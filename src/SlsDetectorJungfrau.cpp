@@ -128,7 +128,7 @@ void Jungfrau::GainPed::Impl<M>::processFrame(Data& data, Data& proc)
 				*dst = std::numeric_limits<P>::max() - 0x10;
 				continue;
 			}
-			*dst = coeffs[gain][0][i] * adc + coeffs[gain][1][i];
+			*dst = (adc - coeffs[gain][1][i]) / coeffs[gain][0][i];
 			DEB_TRACE() << DEB_VAR1(*dst);
 		}
 	}
@@ -499,7 +499,7 @@ void Jungfrau::AveImgProc::processFrameFunct(Data& data)
 	unsigned int *acc = (unsigned int *) m_acc.data();
 	double *ave = (double *) m.ave_map.data();
 	for (int i = 0; i < m_pixels; ++i, ++src, ++acc, ++ave) {
-		*acc += *src;
+		*acc += *src & 0x3fff;
 		*ave = *acc / m_nb_frames;
 	}
 	m.ave_map.frameNumber = frame;
@@ -510,13 +510,8 @@ void Jungfrau::AveImgProc::processFrameFunct(Data& data)
 void Jungfrau::AveImgProc::processFrame(Data& data)
 {
 	DEB_MEMBER_FUNCT();
-	GainPed& gain_ped = m_jungfrau->m_gain_ped_img_proc->m_gain_ped;
-	GainPed::MapType map_type;
-	gain_ped.getMapType(map_type);
-	if (map_type == GainPed::Map16)
-		processFrameFunct<GainPed::Map16Data>(data);
-	else
-		processFrameFunct<GainPed::Map32Data>(data);
+	Data raw = m_jungfrau->getRawData(data);
+	processFrameFunct<GainPed::Map16Data>(raw);
 }
 
 void Jungfrau::AveImgProc::readAveMap(Data& ave_map, FrameType& nb_frames,
@@ -1050,13 +1045,8 @@ void Jungfrau::doSetImgProcConfig(std::string config, bool force)
 		img_proc_list.push_back(m_gain_adc_map_img_proc);
 	}
 	if (checkConfigAndDelete("ave")) {
-		if (do_gain_ped_corr) {
-			DEB_TRACE() << "Adding ave";
-			img_proc_list.push_back(m_ave_img_proc);
-		} else {
-			DEB_TRACE() << "Ignoring ave";
-			m_ave_img_proc->clear();
-		}
+		DEB_TRACE() << "Adding ave";
+		img_proc_list.push_back(m_ave_img_proc);
 	}
 	if (!config_list.empty())
 		THROW_HW_ERROR(InvalidValue) << "Invalid " << DEB_VAR1(config);

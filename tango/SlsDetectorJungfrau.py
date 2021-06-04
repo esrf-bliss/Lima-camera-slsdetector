@@ -435,15 +435,15 @@ class SlsDetectorJungfrauClass(SlsDetectorClass):
         'gain_0_calib_map':
         [[PyTango.DevDouble,
           PyTango.IMAGE,
-          PyTango.READ, 8192, 8192]],
+          PyTango.READ_WRITE, 8192, 8192]],
         'gain_1_calib_map':
         [[PyTango.DevDouble,
           PyTango.IMAGE,
-          PyTango.READ, 8192, 8192]],
+          PyTango.READ_WRITE, 8192, 8192]],
         'gain_2_calib_map':
         [[PyTango.DevDouble,
           PyTango.IMAGE,
-          PyTango.READ, 8192, 8192]],
+          PyTango.READ_WRITE, 8192, 8192]],
         'ped_0_calib_map':
         [[PyTango.DevDouble,
           PyTango.IMAGE,
