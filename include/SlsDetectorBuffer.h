@@ -37,9 +37,12 @@ inline Data GetMappedData(void *buffer, const FrameDim& frame_dim)
 {
 	Data d;
 	switch (frame_dim.getImageType()) {
-	case Bpp8:  d.type = Data::UINT8;  break;
-	case Bpp16: d.type = Data::UINT16; break;
-	case Bpp32: d.type = Data::UINT32; break;
+	case Bpp8:   d.type = Data::UINT8;  break;
+	case Bpp8S:  d.type = Data::INT8;   break;
+	case Bpp16:  d.type = Data::UINT16; break;
+	case Bpp16S: d.type = Data::INT16;  break;
+	case Bpp32:  d.type = Data::UINT32; break;
+	case Bpp32S: d.type = Data::INT32;  break;
 	default: throw LIMA_HW_EXC(Error, "Invalid image type");
 	}
 	const Size& size = frame_dim.getSize();

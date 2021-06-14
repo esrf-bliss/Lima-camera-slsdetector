@@ -71,8 +71,8 @@ class Jungfrau : public Model
 				{-3.309899e+0,  18267.3},
 				{-2.350506e-1,  15250.7},
 			};
-			static constexpr Data::TYPE DataType = Data::UINT16;
-			using Pixel = unsigned short;
+			static constexpr Data::TYPE DataType = Data::INT16;
+			using Pixel = short;
 		};
 
 		struct Map32Data {
@@ -82,8 +82,8 @@ class Jungfrau : public Model
 				{-3.824832e-2, 15071.6}, // G0 x26
 				{-2.716186e-3, 15023.8}, // G1 x14
 			};
-			static constexpr Data::TYPE DataType = Data::UINT32;
-			using Pixel = unsigned int;
+			static constexpr Data::TYPE DataType = Data::INT32;
+			using Pixel = int;
 		};
 
 		GainPed(Jungfrau *jungfrau);
@@ -400,7 +400,7 @@ class Jungfrau : public Model
 		struct MapData {
 			Data proc_map;
 
-			MapData() { proc_map.type = Data::UINT16; }
+			MapData() { proc_map.type = Data::INT32; }
 
 			void updateSize(Size size) {
 				updateDataSize(proc_map, size);

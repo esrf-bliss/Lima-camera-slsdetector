@@ -128,7 +128,8 @@ void Jungfrau::GainPed::Impl<M>::processFrame(Data& data, Data& proc)
 				*dst = std::numeric_limits<P>::max() - 0x10;
 				continue;
 			}
-			*dst = (adc - coeffs[gain][1][i]) / coeffs[gain][0][i];
+			*dst = ((adc - coeffs[gain][1][i]) / coeffs[gain][0][i]
+				+ 0.5);
 			DEB_TRACE() << DEB_VAR1(*dst);
 		}
 	}
@@ -140,10 +141,11 @@ void Jungfrau::GainPed::Impl<M>::processFrame(Data& data, Data& proc)
  */
 
 Jungfrau::GainPed::GainPed(Jungfrau *jungfrau)
-	: m_jungfrau(jungfrau), m_impl(std::in_place_index_t<1>(), jungfrau)
+	: m_jungfrau(jungfrau),
+	  m_impl(std::in_place_index_t<0>(), jungfrau) // Instantiate Map16
 {
 	DEB_MEMBER_FUNCT();
-	setMapType(Map16);
+	setMapType(Map32); // Switch Map16 -> Map32 forces initialization
 }
 
 void Jungfrau::GainPed::setMapType(MapType map_type)
@@ -634,8 +636,8 @@ void Jungfrau::getFrameDim(FrameDim& frame_dim, bool raw)
 	if (m_img_src == GainPedCorr) {
 		GainPed::MapType map_type;
 		m_gain_ped_img_proc->m_gain_ped.getMapType(map_type);
-		if (map_type == GainPed::Map32)
-			frame_dim.setImageType(Bpp32);
+		bool is_map32 = (map_type == GainPed::Map32);
+		frame_dim.setImageType(is_map32 ? Bpp32S : Bpp16S);
 	}
 	DEB_RETURN() << DEB_VAR1(frame_dim);
 }
