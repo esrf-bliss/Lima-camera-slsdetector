@@ -656,58 +656,6 @@ void Jungfrau::getAcqFrameDim(FrameDim& frame_dim, bool raw)
 	DEB_RETURN() << DEB_VAR1(frame_dim);
 }
 
-template <class DG>
-Defs::xy Jungfrau::getModulePosition(const DG& det_geom, int idx)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(idx);
-	Defs::xy mod_pos;
-	auto det_mods = det_geom.det_mods;
-	// module ID is column-wise
-	mod_pos.x = idx / det_mods.y;
-	mod_pos.y = idx % det_mods.y;
-	DEB_RETURN() << DEB_VAR2(mod_pos.x, mod_pos.y);
-	return mod_pos;
-}
-
-FrameDim Jungfrau::getModuleFrameDim(int idx, bool raw)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(idx, raw);
-	Size size;
-	auto f = [&](auto const &det_geom) {
-		auto mod_geom = det_geom.getModGeom({0, 0});
-		bool last_x = true;  // only raw mode supported
-		bool last_y = (idx == getNbJungfrauModules() - 1);
-		size = Size(!last_x ? det_geom.mod_step.x : mod_geom.size.x,
-			    !last_y ? det_geom.mod_step.y : mod_geom.size.y);
-		DEB_TRACE() << DEB_VAR1(size);
-	};
-	applyDetGeom(this, f, raw);
-	FrameDim frame_dim(size, Bpp16);
-	DEB_RETURN() << DEB_VAR1(frame_dim);
-	return frame_dim;
-}
-
-int Jungfrau::getModuleDataOffset(int idx, bool raw)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(idx, raw);
-	int data_offset;
-	auto f = [&](auto const &det_geom) {
-		auto mod_pos = getModulePosition(det_geom, idx);
-		auto mod_view = det_geom.getModView({mod_pos.x,
-					mod_pos.y});
-		auto origin = mod_view.calcViewOrigin();
-		int pixel_offset = mod_view.calcMapPixelIndex(origin);
-		data_offset = pixel_offset * sls::Pixel16::depth();
-		DEB_TRACE() << DEB_VAR1(data_offset);
-	};
-	applyDetGeom(this, f, raw);
-	DEB_RETURN() << DEB_VAR1(data_offset);
-	return data_offset;
-}
-
 void Jungfrau::getDetMap(Data& det_map)
 {
 	DEB_MEMBER_FUNCT();
@@ -850,19 +798,6 @@ void Jungfrau::getTimeRanges(TimeRanges& time_ranges)
 	time_ranges.max_lat_time = 1e3;
 	time_ranges.min_frame_period = min_period * 1e-6;
 	time_ranges.max_frame_period = 1e3;
-}
-
-int Jungfrau::getNbFrameMapItems()
-{
-	DEB_MEMBER_FUNCT();
-	int nb_items = 1;
-	DEB_RETURN() << DEB_VAR1(nb_items);
-	return nb_items;
-}
-
-void Jungfrau::updateFrameMapItems(FrameMap *map)
-{
-	DEB_MEMBER_FUNCT();
 }
 
 void Jungfrau::updateImageSize()

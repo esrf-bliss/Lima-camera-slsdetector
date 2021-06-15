@@ -96,9 +96,6 @@ class Eiger : public SlsDetector::Model
 	virtual Reconstruction *getReconstruction();
 
  protected:
-	virtual int getNbFrameMapItems();
-	virtual void updateFrameMapItems(FrameMap *map);
-
 	virtual void updateImageSize();
 
 	virtual bool checkSettings(SlsDetector::Defs::Settings settings);

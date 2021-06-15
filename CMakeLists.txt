@@ -100,7 +100,6 @@ file(GLOB_RECURSE SLSDETECTOR_INCS "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h")
 
 add_library(slsdetector SHARED
   src/SlsDetectorDefs.cpp
-  src/SlsDetectorFrameMap.cpp
   src/SlsDetectorCPUAffinity.cpp
   src/SlsDetectorBebTools.cpp
   src/SlsDetectorModel.cpp

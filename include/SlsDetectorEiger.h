@@ -265,9 +265,6 @@ class Eiger : public Model
 	{ return m_reconstruction; }
 
  protected:
-	virtual int getNbFrameMapItems();
-	virtual void updateFrameMapItems(FrameMap *map);
-
 	virtual void updateImageSize();
 
 	virtual bool checkSettings(Settings settings);
@@ -313,27 +310,6 @@ class Eiger : public Model
 	};
 
 	typedef std::vector<CorrBase *> CorrList;
-
-	class BadRecvFrameCorr : public CorrBase
-	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::BadRecvFrameCorr", 
-				  "SlsDetector");
-	public:
-		BadRecvFrameCorr(Eiger *eiger);
-
-		virtual void prepareAcq();
-		virtual void correctFrame(FrameType frame, void *ptr);
-
-	protected:
-		struct BadFrameData {
-			int last_idx;
-			IntList bad_frame_list;
-			void reset();
-		};
-
-		Camera *m_cam;
-		BadFrameData m_bfd;
-	};
 
 	class InterModGapCorr : public CorrBase
 	{
@@ -481,7 +457,6 @@ class Eiger : public Model
 
 	int getNbRecvs();
 
-	CorrBase *createBadRecvFrameCorr();
 	CorrBase *createChipBorderCorr(ImageType image_type);
 	CorrBase *createInterModGapCorr();
 

@@ -327,18 +327,6 @@ class SlsDetector(PyTango.Device_4Impl):
         attr.set_value(max_frame_rate)
 
     @Core.DEB_MEMBER_FUNCT
-    def getNbBadFrames(self, recv_idx):
-        nb_bad_frames = self.cam.getNbBadFrames(recv_idx);
-        deb.Return("nb_bad_frames=%s" % nb_bad_frames)
-        return nb_bad_frames
-
-    @Core.DEB_MEMBER_FUNCT
-    def getBadFrameList(self, recv_idx):
-        bad_frame_list = self.cam.getBadFrameList(recv_idx);
-        deb.Return("bad_frame_list=%s" % bad_frame_list)
-        return bad_frame_list
-
-    @Core.DEB_MEMBER_FUNCT
     def getStats(self, recv_idx_stats_name):
         recv_idx_str, stats_name = recv_idx_stats_name.split(':')
         recv_idx = int(recv_idx_str)
@@ -562,12 +550,6 @@ class SlsDetectorClass(PyTango.DeviceClass):
         'getCmd':
         [[PyTango.DevString, "SlsDetector command"],
          [PyTango.DevString, "SlsDetector response"]],
-        'getNbBadFrames':
-        [[PyTango.DevLong, "recv_idx(-1=all)"],
-         [PyTango.DevLong, "Number of bad frames"]],
-        'getBadFrameList':
-        [[PyTango.DevLong, "recv_idx(-1=all)"],
-         [PyTango.DevVarLongArray, "Bad frame list"]],
         'getStats':
         [[PyTango.DevString, "recv_idx(-1=all):stats_name"],
          [PyTango.DevVarDoubleArray, "Statistics: min, max, ave, std, n"]],

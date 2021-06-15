@@ -96,9 +96,6 @@ public:
 	void getFrameDim(FrameDim& frame_dim, bool raw = false)
 	{ m_model->getFrameDim(frame_dim, raw); }
 
-	FrameMap *getFrameMap()
-	{ return &m_frame_map; }
-
 	void putCmd(const std::string& s, int idx = -1);
 	std::string getCmd(const std::string& s, int idx = -1);
 
@@ -136,11 +133,6 @@ public:
 
 	void setTolerateLostPackets(bool  tol_lost_packets);
 	void getTolerateLostPackets(bool& tol_lost_packets);
-
-	int getNbBadFrames(int item_idx);
-	void getBadFrameList(int item_idx, int first_idx, int last_idx,
-			     IntList& bad_frame_list);
-	void getBadFrameList(int item_idx, IntList& bad_frame_list);
 
 	void prepareAcq();
 	void startAcq();
@@ -251,15 +243,9 @@ private:
 	void assemblePackets(DetFrameImagePackets det_frame_packets);
 
 	bool checkLostPackets();
-	FrameType getLastReceivedFrame();
 
 	void waitLastSkippedFrame();
 	void processLastSkippedFrame(int recv_idx);
-
-	void getSortedBadFrameList(IntList first_idx, IntList last_idx,
-				   IntList& bad_frame_list );
-	void getSortedBadFrameList(IntList& bad_frame_list)
-	{ getSortedBadFrameList(IntList(), IntList(), bad_frame_list); }
 
 	std::string execCmd(const std::string& s, bool put, int idx = -1);
 
@@ -289,7 +275,6 @@ private:
 	Cond m_cond;
 	AutoPtr<AppInputData> m_input_data;
 	AutoPtr<sls::Detector> m_det;
-	FrameMap m_frame_map;
 	RecvList m_recv_list;
 	TrigMode m_trig_mode;
 	FrameType m_lima_nb_frames;

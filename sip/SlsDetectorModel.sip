@@ -62,9 +62,6 @@ public:
 	virtual void getTimeRanges(SlsDetector::TimeRanges& 
 		     		   time_ranges /Out/) = 0;
 
-	virtual int getNbFrameMapItems() = 0;
-	virtual void updateFrameMapItems(FrameMap *map) = 0;
-
 	virtual bool isXferActive() = 0;
 
 	virtual SlsDetector::Reconstruction *getReconstruction();

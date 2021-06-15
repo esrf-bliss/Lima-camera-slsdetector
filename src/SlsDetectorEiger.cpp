@@ -79,55 +79,6 @@ void Eiger::CorrBase::prepareAcq()
 	m_inter_lines[m_nb_eiger_modules - 1] = 0;
 }
 
-void Eiger::BadRecvFrameCorr::BadFrameData::reset()
-{
-	last_idx = 0;
-	bad_frame_list.clear();
-}
-
-Eiger::BadRecvFrameCorr::BadRecvFrameCorr(Eiger *eiger)
-	: CorrBase(eiger)
-{
-	DEB_CONSTRUCTOR();
-
-	m_cam = m_eiger->getCamera();
-}
-
-void Eiger::BadRecvFrameCorr::prepareAcq()
-{
-	DEB_MEMBER_FUNCT();
-
-	CorrBase::prepareAcq();
-	m_bfd.reset();
-}
-
-void Eiger::BadRecvFrameCorr::correctFrame(FrameType frame, void *ptr)
-{
-	DEB_MEMBER_FUNCT();
-
-	char *bptr = (char *) ptr;
-	IntList& bfl = m_bfd.bad_frame_list;
-	int& last_idx = m_bfd.last_idx;
-	if (bfl.empty()) {
-		int bad_frames = m_cam->getNbBadFrames(0);
-		if (bad_frames == last_idx)
-			return;
-		m_cam->getBadFrameList(0, last_idx, bad_frames, bfl);
-	}
-	IntList::iterator end = bfl.end();
-	if (find(bfl.begin(), end, frame) != end) {
-		Eiger::Geometry *geom = m_eiger->getGeometry();
-		for (int i = 0; i < geom->getNbRecvs(); ++i) {
-			Eiger::Geometry::Recv *recv = geom->getRecv(i);
-			recv->fillBadFrame(frame, bptr);
-		}
-	}
-	if (*(end - 1) > int(frame))
-		return;
-	last_idx += bfl.size();
-	bfl.clear();
-}
-
 Eiger::InterModGapCorr::InterModGapCorr(Eiger *eiger)
 	: CorrBase(eiger)
 {
@@ -875,26 +826,11 @@ void Eiger::measureReadoutTime(double& /*readout_time*/)
 	 */
 }
 
-int Eiger::getNbFrameMapItems()
-{
-	DEB_MEMBER_FUNCT();
-	int nb_items = 1;
-	DEB_RETURN() << DEB_VAR1(nb_items);
-	return nb_items;
-}
-
-void Eiger::updateFrameMapItems(FrameMap *map)
-{
-	DEB_MEMBER_FUNCT();
-}
-
 void Eiger::updateImageSize()
 {
 	DEB_MEMBER_FUNCT();
 
 	removeAllCorr();
-
-	createBadRecvFrameCorr();
 
 	Camera *cam = getCamera();
 
@@ -1154,15 +1090,6 @@ void Eiger::startAcq()
 void Eiger::stopAcq()
 {
 	DEB_MEMBER_FUNCT();
-}
-
-Eiger::CorrBase *Eiger::createBadRecvFrameCorr()
-{
-	DEB_MEMBER_FUNCT();
-	CorrBase *brf_corr = new BadRecvFrameCorr(this);
-	addCorr(brf_corr);
-	DEB_RETURN() << DEB_VAR1(brf_corr);
-	return brf_corr;
 }
 
 Eiger::CorrBase *Eiger::createChipBorderCorr(ImageType image_type)

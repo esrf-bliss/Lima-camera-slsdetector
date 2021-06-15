@@ -244,20 +244,9 @@ void Camera::AcqThread::threadFunction()
 		AutoMutexUnlock u(l);
 		stopAcq();
 
-		IntList bfl;
-		m_cam->getSortedBadFrameList(bfl);
-		DEB_ALWAYS() << "bad_frames=" << bfl.size() << ": "
-			     << PrettyIntList(bfl);
-
 		Stats stats;
 		m_cam->getStats(stats);
 		DEB_ALWAYS() << DEB_VAR1(stats);
-
-		FrameMap& m = m_cam->m_frame_map;
-		if (m.getNbItems() > 1) {
-			XYStat::LinRegress delay_stat = m.calcDelayStat();
-			DEB_ALWAYS() << DEB_VAR1(delay_stat);
-		}
 
 		if (had_frames) {
 			affinity_mgr.recvFinished();
@@ -390,7 +379,6 @@ void Camera::AcqThread::stopAcq()
 Camera::Camera(string config_fname, int det_id) 
 	: m_det_id(det_id),
 	  m_model(NULL),
-	  m_frame_map(this),
 	  m_lima_nb_frames(1),
 	  m_det_nb_frames(1),
 	  m_skip_frame_freq(0),
@@ -497,10 +485,6 @@ void Camera::setModel(Model *model)
 	DEB_ALWAYS() << "Using " << m_model->getName()
 		     << " with " << getNbDetModules() << "x" << nb_udp_ifaces
 		     << " UDP interfaces";
-
-	int nb_items = m_model->getNbFrameMapItems();
-	m_frame_map.setNbItems(nb_items);
-	m_model->updateFrameMapItems(&m_frame_map);
 
 	setPixelDepth(m_pixel_depth);
 }
@@ -922,8 +906,6 @@ void Camera::prepareAcq()
 
 	{
 		AutoMutex l = lock();
-		m_frame_map.setBufferSize(nb_buffers);
-		m_frame_map.clear();
 		m_prev_ifa.clear();
 		RecvList::iterator it, end = m_recv_list.end();
 		for (it = m_recv_list.begin(); it != end; ++it)
@@ -1035,14 +1017,6 @@ void Camera::assemblePackets(DetFrameImagePackets det_frame_packets)
 		if (!ok)
 			m_recv_list[i]->fillBadFrame(bptr);
 	}
-}
-
-FrameType Camera::getLastReceivedFrame()
-{
-	DEB_MEMBER_FUNCT();
-	FrameType last_frame = m_frame_map.getLastItemFrame();
-	DEB_RETURN() << DEB_VAR1(last_frame);
-	return last_frame;
 }
 
 void Camera::waitLastSkippedFrame()
@@ -1208,73 +1182,6 @@ void Camera::getTolerateLostPackets(bool& tol_lost_packets)
 	DEB_MEMBER_FUNCT();
 	tol_lost_packets = m_tol_lost_packets;
 	DEB_RETURN() << DEB_VAR1(tol_lost_packets);
-}
-
-int Camera::getNbBadFrames(int item_idx)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(item_idx);
-	if ((item_idx < -1) || (item_idx >= m_model->getNbFrameMapItems()))
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(item_idx);
-	int nb_bad_frames;
-	if (item_idx == -1) {
-		IntList bfl;
-		getBadFrameList(item_idx, bfl);
-		nb_bad_frames = bfl.size();
-	} else {
-		FrameMap::Item *item = m_frame_map.getItem(item_idx);
-		nb_bad_frames = item->getNbBadFrames();
-	}
-	DEB_RETURN() << DEB_VAR1(nb_bad_frames);
-	return nb_bad_frames;
-}
-
-void Camera::getSortedBadFrameList(IntList first_idx, IntList last_idx,
-				   IntList& bad_frame_list)
-{
-	bool all = first_idx.empty();
-	IntList bfl;
-	int nb_items = m_frame_map.getNbItems();
-	for (int i = 0; i < nb_items; ++i) {
-		FrameMap::Item *item = m_frame_map.getItem(i);
-		int first = all ? 0 : first_idx[i];
-		int last = all ? item->getNbBadFrames() : last_idx[i];
-		IntList l;
-		item->getBadFrameList(first, last, l);
-		bfl.insert(bfl.end(), l.begin(), l.end());
-	}
-	IntList::iterator first = bfl.begin();
-	IntList::iterator last = bfl.end();
-	sort(first, last);
-	bad_frame_list.resize(last - first);
-	IntList::iterator bfl_end, bfl_begin = bad_frame_list.begin();
-	bfl_end = unique_copy(first, last, bfl_begin);
-	bad_frame_list.resize(bfl_end - bfl_begin);
-}
-
-void Camera::getBadFrameList(int item_idx, int first_idx, int last_idx, 
-			     IntList& bad_frame_list)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR3(item_idx, first_idx, last_idx);
-	if ((item_idx < 0) || (item_idx >= m_model->getNbFrameMapItems()))
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(item_idx);
-
-	FrameMap::Item *item = m_frame_map.getItem(item_idx);
-	item->getBadFrameList(first_idx, last_idx, bad_frame_list);
-
-	DEB_RETURN() << DEB_VAR1(PrettyIntList(bad_frame_list));
-}
-
-void Camera::getBadFrameList(int item_idx, IntList& bad_frame_list)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(item_idx);
-	if (item_idx == -1)
-		getSortedBadFrameList(bad_frame_list);
-	else
-		getBadFrameList(item_idx, 0, getNbBadFrames(item_idx), 
-				bad_frame_list);
 }
 
 void Camera::registerTimeRangesChangedCallback(TimeRangesChangedCallback& cb)

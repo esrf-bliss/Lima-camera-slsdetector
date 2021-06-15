@@ -196,9 +196,6 @@ class Jungfrau : public Model
 	{ return m_reconstruction; }
 
  protected:
-	virtual int getNbFrameMapItems();
-	virtual void updateFrameMapItems(FrameMap *map);
-
 	virtual void updateImageSize();
 
 	virtual bool checkSettings(Settings settings);
@@ -531,12 +528,6 @@ class Jungfrau : public Model
 
 	int getNbJungfrauModules()
 	{ return getNbDetModules(); }
-
-	template <class DG>
-	Defs::xy getModulePosition(const DG& det_geom, int idx);
-
-	FrameDim getModuleFrameDim(int idx, bool raw);
-	int getModuleDataOffset(int idx, bool raw);
 
 	int getNbRecvs();
 

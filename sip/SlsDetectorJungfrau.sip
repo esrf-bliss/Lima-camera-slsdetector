@@ -194,9 +194,6 @@ class Jungfrau : public SlsDetector::Model
 	virtual SlsDetector::Reconstruction *getReconstruction();
 
  protected:
-	virtual int getNbFrameMapItems();
-	virtual void updateFrameMapItems(FrameMap *map);
-
 	virtual void updateImageSize();
 
 	virtual bool checkSettings(SlsDetector::Defs::Settings settings);

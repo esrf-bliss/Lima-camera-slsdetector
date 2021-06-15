@@ -78,9 +78,6 @@ class Model
 
 	virtual void getTimeRanges(TimeRanges& time_ranges) = 0;
 
-	virtual int getNbFrameMapItems() = 0;
-	virtual void updateFrameMapItems(FrameMap *map) = 0;
-
 	virtual bool isAcqActive();
 	virtual bool isXferActive() = 0;
 
