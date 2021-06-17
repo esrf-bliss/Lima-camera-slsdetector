@@ -421,15 +421,15 @@ class SlsDetectorJungfrauClass(SlsDetectorClass):
           PyTango.SCALAR,
           PyTango.READ_WRITE]],
         'gain_ped_proc_map16':
-        [[PyTango.DevUShort,
+        [[PyTango.DevShort,
           PyTango.IMAGE,
           PyTango.READ, 8192, 8192]],
         'gain_ped_proc_map32':
-        [[PyTango.DevULong,
+        [[PyTango.DevLong,
           PyTango.IMAGE,
           PyTango.READ, 8192, 8192]],
         'ave_map':
-        [[PyTango.DevULong,
+        [[PyTango.DevDouble,
           PyTango.IMAGE,
           PyTango.READ, 8192, 8192]],
         'gain_0_calib_map':
