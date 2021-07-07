@@ -475,6 +475,76 @@ double SimpleStat::std() const
 	return xn ? sqrt(xacc2 / xn - pow(ave(), 2)) : 0; 
 }
 
+XYStat::XYStat(double f)
+	: factor(f)
+{
+	reset();
+}
+
+void XYStat::reset()
+{
+	AutoMutex l(lock);
+	xacc = xacc2 = yacc = xyacc = 0;
+	xn = 0;
+}
+
+void XYStat::add(double x, double y) {
+	AutoMutex l(lock);
+	y *= factor;
+	xacc += x;
+	xacc2 += pow(x, 2);
+	yacc += y;
+	xyacc += x * y;
+	++xn;
+}
+
+XYStat& XYStat::operator =(const XYStat& o)
+{
+	if (&o == this)
+		return *this;
+
+	AutoMutex l(o.lock);
+	xacc = o.xacc;
+	xacc2 = o.xacc2;
+	yacc = o.yacc;
+	xyacc = o.xyacc;
+	xn = o.xn;
+	factor = o.factor;
+	return *this;
+}
+
+XYStat& XYStat::operator +=(const XYStat& o)
+{
+	if (o.factor != factor)
+		throw LIMA_HW_EXC(Error, "Cannot add different XYStats");
+
+	AutoMutex l(o.lock);
+	xacc += o.xacc;
+	xacc2 += o.xacc2;
+	yacc += o.yacc;
+	xyacc += o.xyacc;
+	xn += o.xn;
+	return *this;
+}
+
+int XYStat::n() const
+{ 
+	AutoMutex l(lock);
+	return xn;
+}
+
+XYStat::LinRegress XYStat::calcLinRegress() const
+{ 
+	AutoMutex l(lock);
+	LinRegress r;
+	if (!xn)
+		return r;
+	r.n = xn;
+	r.slope = (xn * xyacc - xacc * yacc) / (xn * xacc2 - xacc * xacc);
+	r.offset = (yacc - r.slope * xacc) / xn;
+	return r;
+}
+
 FrameType lima::SlsDetector::getLatestFrame(const FrameArray& l)
 {
 	DEB_STATIC_FUNCT();
@@ -566,6 +636,16 @@ ostream& lima::SlsDetector::operator <<(ostream& os, const SimpleStat& s)
 	os << "min=" << int(s.min()) << ", max=" << int(s.max()) << ", "
 	   << "ave=" << int(s.ave()) << ", std=" << int(s.std()) << ", "
 	   << "n=" << s.n() << ", hist=" << s.hist;
+	return os << ">";
+}
+
+ostream& lima::SlsDetector::operator <<(ostream& os,
+					const XYStat::LinRegress& r)
+{
+	os << "<";
+	os << "slope=" << r.slope << ", "
+	   << "offset=" << r.offset << ", "
+	   << "n=" << r.n;
 	return os << ">";
 }
 

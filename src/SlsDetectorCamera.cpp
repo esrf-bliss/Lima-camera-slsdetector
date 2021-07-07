@@ -210,6 +210,10 @@ void Camera::AcqThread::threadFunction()
 		m_cam->getStats(stats);
 		DEB_ALWAYS() << DEB_VAR1(stats);
 
+		FrameMap& m = m_cam->m_frame_map;
+		XYStat::LinRegress delay_stat = m.calcDelayStat();
+		DEB_ALWAYS() << DEB_VAR1(delay_stat);
+
 		if (had_frames) {
 			affinity_mgr.recvFinished();
 			affinity_mgr.waitLimaFinished();
