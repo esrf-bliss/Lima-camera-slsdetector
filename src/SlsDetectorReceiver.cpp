@@ -230,8 +230,8 @@ bool Receiver::asmImagePackets(ImagePackets *image_data, char *buffer)
 	DEB_MEMBER_FUNCT();
 	sls::FrameAssembler::Result res;
 	MPFrameAssemblerPtr::pointer a = m_asm_impl->m_asm.get();
-	res = a->assembleFrame(std::move(RecvImagePacketBlocks(image_data)),
-			       buffer);
+	AnyPacketBlockList blks = std::move(RecvImagePacketBlocks(image_data));
+	res = a->assembleFrame(blks, buffer);
 	image_data->numberOfPorts = res.nb_ports;
 	image_data->validPortData = res.valid_data;
 	bool got_data = image_data->validPortData.any();
