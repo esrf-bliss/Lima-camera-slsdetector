@@ -64,6 +64,9 @@ void BufferMgr::setBufferCPUAffinity(CPUAffinity buffer_affinity)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_ALWAYS() << DEB_VAR1(buffer_affinity);
+	DEB_ALWAYS() << "node_mask="
+		     << NumaNodeMask::fromCPUMask(buffer_affinity.getMask());
+	
 	BufferCtrlObj *buffer = getBufferCtrlObj();
 	if (buffer)
 		buffer->setCPUAffinityMask(buffer_affinity.getMask());

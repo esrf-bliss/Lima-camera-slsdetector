@@ -452,45 +452,6 @@ void CPUAffinity::applyWithSetAffinity(pid_t task, bool incl_threads) const
 	}
 }
 
-void CPUAffinity::getNUMANodeMask(vector<unsigned long>& node_mask,
-				  int& max_node)
-{
-	DEB_MEMBER_FUNCT();
-
-	typedef vector<unsigned long> Array;
-
-	int nb_nodes = numa_max_node() + 1;
-	const int item_bits = sizeof(Array::reference) * 8;
-	int nb_items = nb_nodes / item_bits;
-	if (nb_nodes % item_bits != 0)
-		++nb_items;
-
-	DEB_PARAM() << DEB_VAR2(*this, nb_items);
-	max_node = nb_nodes + 1;
-
-	node_mask.assign(nb_items, 0);
-
-	Mask mask = getMask();
-	for (unsigned int i = 0; i < MaxNbCPUs; ++i) {
-		if (mask.test(i)) {
-			unsigned int n = numa_node_of_cpu(i);
-			Array::reference v = node_mask[n / item_bits];
-			v |= 1L << (n % item_bits);
-		}
-	}
-
-	if (DEB_CHECK_ANY(DebTypeReturn)) {
-		ostringstream os;
-		os << hex << "0x" << setw(nb_nodes / 4) << setfill('0');
-		bool first = true;
-		Array::reverse_iterator it, end = node_mask.rend();
-		for (it = node_mask.rbegin(); it != end; ++it, first = false)
-			os << (!first ? "," : "") << *it;
-		DEB_RETURN() << "node_mask=" << os.str() << ", "
-			     << DEB_VAR1(max_node);
-	}
-}
-
 void CPUAffinity::maskToULongArray(const Mask& mask, ULongArray& array)
 {
 	constexpr Mask ULongMask(std::numeric_limits<unsigned long>::max());

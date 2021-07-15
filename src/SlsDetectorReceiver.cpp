@@ -88,45 +88,14 @@ void Receiver::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
 {
 	DEB_MEMBER_FUNCT();
 
+	using namespace sls::CPUAffinity;
 	const CPUAffinityList& aff_list = recv_affinity.listeners;
-	slsDetectorDefs::CPUMaskList cpu_masks(aff_list.size());
-	slsDetectorDefs::CPUMaskList::iterator mit = cpu_masks.begin();
+	FixedCPUSetAffinityList cpu_masks(aff_list.size());
+	FixedCPUSetAffinityList::iterator mit = cpu_masks.begin();
 	CPUAffinityList::const_iterator it, end = aff_list.end();
 	for (it = aff_list.begin(); it != end; ++it, ++mit)
-		it->initCPUSet(*mit);
-	m_recv->setThreadCPUAffinity(cpu_masks);
-
-	string deb_head;
-	if (DEB_CHECK_ANY(DebTypeTrace) || DEB_CHECK_ANY(DebTypeWarning)) {
-		ostringstream os;
-		os << "setting recv " << m_idx << " ";
-		deb_head = os.str();
-	}
-
-	CPUAffinity aff = recv_affinity.all();
-	int max_node;
-	typedef vector<unsigned long> NumaNodeList;
-	NumaNodeList mlist;
-	aff.getNUMANodeMask(mlist, max_node);
-	if (mlist.size() > 1) {
-		bool ok = true;
-		NumaNodeList::iterator it, end = mlist.end();
-		for (it = mlist.begin() + 1; ok && (it != end); ++it)
-			ok = (*it == 0);
-		if (!ok) {
-			PrettyList<NumaNodeList> pretty_list(mlist);
-			THROW_HW_ERROR(Error) << "Recv " << m_idx << " "
-					      << "uses more than one node:"
-					      << pretty_list;
-		}
-	}
-	unsigned long& fifo_node_mask = mlist[0];
-	int c = bitset<64>(fifo_node_mask).count();
-	if (c != 1)
-		DEB_WARNING() << deb_head << "Fifo NUMA node mask has "
-			      << c << " nodes";
-	DEB_ALWAYS() << deb_head << DEB_VAR2(DEB_HEX(fifo_node_mask), max_node);
-	m_recv->setBufferNodeAffinity(fifo_node_mask, max_node);
+		it->initCPUSet(mit->cpu_mask().cpu_set());
+	m_recv->setListenersCPUAffinity(cpu_masks);
 }
 
 AutoPtr<Receiver::ImagePackets> Receiver::readSkippableImagePackets()

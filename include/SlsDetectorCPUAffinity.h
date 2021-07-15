@@ -176,9 +176,6 @@ class CPUAffinity
 	bool isDefault() const
 	{ return m_mask.none() || (m_mask == allCPUs()); }
 
-	void getNUMANodeMask(std::vector<unsigned long>& node_mask,
-			     int& max_node);
-
 	static std::string getProcDir(bool local_threads);
 	static std::string getTaskProcDir(pid_t task, bool is_thread);
 

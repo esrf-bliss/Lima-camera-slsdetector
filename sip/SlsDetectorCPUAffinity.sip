@@ -292,9 +292,6 @@ public:
 
 	bool isDefault() const;
 
-	void getNUMANodeMask(std::vector<unsigned long>& node_mask /Out/,
-			     int& max_node /Out/);
-
 	static std::string getProcDir(bool local_threads);
 	static std::string getTaskProcDir(int task, bool is_thread);
 };
