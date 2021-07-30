@@ -468,15 +468,14 @@ class SlsDetectorJungfrauClass(SlsDetectorClass):
 #----------------------------------------------------------------------------
 _SlsDetectorJungfrau = None
 
-def get_control(config_fname, **keys) :
+def get_control(config_fname, detector_id=0, **keys) :
     global _SlsDetectorJungfrau
 
     _Cam, _HwInter, _Control = get_slsdetector_objs()
     if _Control is not None:
         return _Control 
 
-    det_id = 0
-    _Cam = SlsDetectorHw.Camera(config_fname, det_id)
+    _Cam = SlsDetectorHw.Camera(config_fname, int(detector_id))
     det_type = _Cam.getType()
 
     _HwInter = SlsDetectorHw.Interface(_Cam)

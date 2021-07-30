@@ -200,7 +200,7 @@ class SlsDetectorEigerClass(SlsDetectorClass):
 _SlsDetectorEiger = None
 
 def get_control(config_fname, full_config_fname=None, apply_corrections=None,
-                **keys) :
+                detector_id=0, **keys) :
     global _SlsDetectorEiger
 
     _Cam, _HwInter, _Control = get_slsdetector_objs()
@@ -208,8 +208,7 @@ def get_control(config_fname, full_config_fname=None, apply_corrections=None,
         return _Control 
         check_partial_config(config_name, full_config_name)
 
-    det_id = 0
-    _Cam = SlsDetectorHw.Camera(config_fname, det_id)
+    _Cam = SlsDetectorHw.Camera(config_fname, int(detector_id))
     det_type = _Cam.getType()
     if det_type == SlsDetectorHw.EigerDet:
         for i, n in enumerate(_Cam.getHostnameList()):

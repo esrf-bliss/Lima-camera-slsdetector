@@ -515,6 +515,9 @@ class SlsDetectorClass(PyTango.DeviceClass):
         'full_config_fname':
         [PyTango.DevString,
          "In case of partial configuration, path to the full config file",[]],
+        'detector_id':
+        [PyTango.DevUShort,
+         "Detector ID in multi-detector environment", 0],
         'initial_acq_params':
         [PyTango.DevString,
          "Initial acquisition parameters: "

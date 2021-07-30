@@ -529,7 +529,7 @@ string Camera::execCmd(const string& s, bool put, int idx)
 
 	string prog_name = string("sls_detector_") + (put ? "put" : "get");
 	ostringstream os;
-	os << prog_name << " ";
+	os << prog_name << " " << m_det_id << '-';
 	if (idx >= 0)
 		os << idx << ':';
 	os << s;
