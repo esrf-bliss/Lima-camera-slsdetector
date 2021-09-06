@@ -104,7 +104,7 @@ Camera::AcqThread::ExceptionCleanUp::~ExceptionCleanUp()
 
 Camera::AcqThread::AcqThread(Camera *cam)
 	: m_cam(cam), m_cond(m_cam->m_cond), m_state(m_cam->m_state),
-	  m_acq_stopped(false)
+	  m_stop_state(NoStop)
 {
 	DEB_CONSTRUCTOR();
 }
@@ -352,9 +352,12 @@ void Camera::AcqThread::stopAcq()
 
 	{
 		AutoMutex l(m_cam->lock());
-		if (m_acq_stopped)
+		if (m_stop_state != NoStop) {
+			while (m_stop_state != StopFinished)
+				m_cond.wait();
 			return;
-		m_acq_stopped = true;
+		}
+		m_stop_state = StopRunning;
 	}
 
 	sls::Detector *det = m_cam->m_det;
@@ -374,6 +377,12 @@ void Camera::AcqThread::stopAcq()
 	det->stopReceiver();
 	DEB_TRACE() << "calling Model::stopAcq";
 	m_cam->m_model->stopAcq();
+
+	{
+		AutoMutex l(m_cam->lock());
+		m_stop_state = StopFinished;
+		m_cond.broadcast();
+	}
 }
 
 Camera::Camera(string config_fname, int det_id) 

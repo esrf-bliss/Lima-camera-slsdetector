@@ -186,6 +186,10 @@ private:
 	private:
 		typedef std::pair<bool, bool> Status;
 
+		enum StopState {
+			NoStop, StopRunning, StopFinished
+		};
+
 		class ExceptionCleanUp : Thread::ExceptionCleanUp
 		{
 			DEB_CLASS_NAMESPC(DebModCamera, 
@@ -208,7 +212,7 @@ private:
 		Cond& m_cond;
 		AcqState& m_state;
 		FramePacketMap m_frame_packet_map;
-		bool m_acq_stopped;
+		StopState m_stop_state;
 	};
 
 	friend class BufferMgr;
