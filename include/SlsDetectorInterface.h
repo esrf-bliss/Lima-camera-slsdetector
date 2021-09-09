@@ -136,6 +136,7 @@ class SyncCtrlObj : public HwSyncCtrlObj
 	};
 
 	Camera& m_cam;
+	TrigMode m_trig_mode;
 	TimeRangesChangedCallback m_time_ranges_cb;
 };
 

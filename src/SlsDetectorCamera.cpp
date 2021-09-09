@@ -590,7 +590,8 @@ void Camera::setTrigMode(TrigMode trig_mode)
 	DEB_PARAM() << DEB_VAR1(trig_mode);
 	waitAcqState(Idle);
 	TrigMode cam_trig_mode = trig_mode;
-	if (trig_mode == Defs::SoftTriggerExposure)
+	if ((trig_mode == Defs::SoftTriggerExposure) ||
+	    ((trig_mode == Defs::BurstTrigger) && (getType() != EigerDet)))
 		cam_trig_mode = Defs::TriggerExposure;
 	typedef slsDetectorDefs::timingMode TimingMode;
 	TimingMode mode = static_cast<TimingMode>(cam_trig_mode);
@@ -621,7 +622,8 @@ void Camera::setNbFrames(FrameType nb_frames)
 	FrameType det_nb_frames = nb_frames;
 	if (m_skip_frame_freq)
 		det_nb_frames += nb_frames / m_skip_frame_freq;
-	bool trig_exp = (m_trig_mode == Defs::TriggerExposure);
+	bool trig_exp = ((m_trig_mode == Defs::TriggerExposure) ||
+			 (m_trig_mode == Defs::SoftTriggerExposure));
 	int cam_frames = trig_exp ? 1 : det_nb_frames;
 	int cam_triggers = trig_exp ? det_nb_frames : 1;
 	EXC_CHECK(m_det->setNumberOfFrames(cam_frames));

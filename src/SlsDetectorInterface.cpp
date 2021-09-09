@@ -205,6 +205,18 @@ SyncCtrlObj::SyncCtrlObj(Camera& cam)
 	: m_cam(cam), m_time_ranges_cb(this)
 {
 	DEB_CONSTRUCTOR();
+
+	Defs::TrigMode cam_mode;
+	m_cam.getTrigMode(cam_mode);
+	typedef TrigModeMap::const_iterator MapConstIt;
+	MapConstIt it = FindMapValue(Lima2CamTrigModeMap, cam_mode);
+	if (it == Lima2CamTrigModeMap.end())
+		THROW_HW_ERROR(NotSupported) << "Non-supported Camera TrigMode "
+					     << DEB_VAR2(cam_mode,
+							 int(cam_mode));
+	m_trig_mode = it->first;
+	DEB_TRACE() << DEB_VAR1(m_trig_mode);
+
 	m_cam.registerTimeRangesChangedCallback(m_time_ranges_cb);
 }
 
@@ -233,21 +245,14 @@ void SyncCtrlObj::setTrigMode(TrigMode trig_mode)
 					     << DEB_VAR1(trig_mode);
 	Defs::TrigMode cam_mode = Lima2CamTrigModeMap[trig_mode];
 	m_cam.setTrigMode(cam_mode);
+	m_trig_mode = trig_mode;
 }
 
 void SyncCtrlObj::getTrigMode(TrigMode& trig_mode)
 {
 	DEB_MEMBER_FUNCT();
-	Defs::TrigMode cam_mode;
-	m_cam.getTrigMode(cam_mode);
-	typedef TrigModeMap::const_iterator MapConstIt;
-	MapConstIt it = FindMapValue(Lima2CamTrigModeMap, cam_mode);
-	if (it == Lima2CamTrigModeMap.end())
-		THROW_HW_ERROR(NotSupported) << "Non-supported Camera TrigMode "
-					     << DEB_VAR2(cam_mode,
-							 int(cam_mode));
-	trig_mode = it->first;
-	DEB_PARAM() << DEB_VAR1(trig_mode);
+	trig_mode = m_trig_mode;
+	DEB_RETURN() << DEB_VAR1(trig_mode);
 }
 
 void SyncCtrlObj::setExpTime(double exp_time)
