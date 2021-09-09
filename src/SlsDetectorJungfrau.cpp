@@ -930,6 +930,7 @@ void Jungfrau::removeAllImgProc()
 {
 	DEB_MEMBER_FUNCT();
 	m_img_proc_list.clear();
+	m_img_proc_config.clear();
 }
 
 void Jungfrau::setImgProcConfig(std::string config)
