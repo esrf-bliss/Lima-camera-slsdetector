@@ -24,7 +24,6 @@
 #define __SLS_DETECTOR_RECEIVER_H
 
 #include "SlsDetectorCPUAffinity.h"
-#include "SlsDetectorArgs.h"
 
 #include "sls/sls_detector_defs.h"
 
