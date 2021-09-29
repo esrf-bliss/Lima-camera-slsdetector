@@ -1891,7 +1891,7 @@ The configuration of static *MAC -> port* mapping table is performed in the
    
    switch-5d071c [standalone: unknown] (config) # mac-address-table static E4:1D:2D:7C:18:72 vlan 1 interface ethernet 1/2
    
-   switch-5d071c [standalone: unknown] (config) # write memory
+   switch-5d071c [standalone: unknown] (config) # configuration write
 
 and can be verified with the *show mac-address-table* command:
 
@@ -1909,6 +1909,30 @@ and can be verified with the *show mac-address-table* command:
    1       E4:1D:2D:7C:18:72   Static       Eth1/2                                
    Number of unicast:    4                                                        
    Number of multicast:    0                                                      
+
+The *no* form of the *mac-address-table* allow deleting an static entry in the table:
+
+::
+
+   switch-e4de34 [standalone: master] (config) # no mac-address-table static B8:59:9F:D4:AD:E2 vlan 1 interface ethernet 1/7
+   
+The Ethernet ports must be configured to use *Flow Control for Rx/Tx* and *Jumbo frames*:
+
+::
+   
+   switch-e4de34 [standalone: master] (config) # interface ethernet 1/7 mtu 9000 force
+   switch-e4de34 [standalone: master] (config) # interface ethernet 1/7 flowcontrol receive on force
+   switch-e4de34 [standalone: master] (config) # interface ethernet 1/7 flowcontrol send on force
+
+In case of a 40 Gbit MPO QSFP transceiver carrying 4x 10 Gbit individual links,
+the corresponding port must be configured in *split* mode:
+
+::
+   switch-e4de34 [standalone: master] (config) # interface ethernet 1/9 module-type qsfp-split-4 force
+   the following interfaces are being unmapped: 1/9
+
+Again, the *no module-type* form allows returning to the *qsfp* no-split mode.
+
 
 eXtreme Networks Switch
 ~~~~~~~~~~~~~~~~~~~~~~~
