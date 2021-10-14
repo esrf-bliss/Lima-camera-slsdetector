@@ -58,11 +58,8 @@ ostream& lima::SlsDetector::Defs::operator <<(ostream& os, Settings settings)
 	case LowGain:		name = "LowGain";		break;
 	case MediumGain:	name = "MediumGain";		break;
 	case VeryHighGain:	name = "VeryHighGain";		break;
-	case DynamicHG0:	name = "DynamicHG0";		break;
 	case FixGain1:		name = "FixGain1";		break;
 	case FixGain2:		name = "FixGain2";		break;
-	case ForceSwitchG1:	name = "ForceSwitchG1";		break;
-	case ForceSwitchG2:	name = "ForceSwitchG2";		break;
 	case VeryLowGain:	name = "VeryLowGain";		break;
 	case Undefined:		name = "Undefined";		break;
 	case Unitialized:	name = "Unitialized";		break;

@@ -936,7 +936,7 @@ void Eiger::setClockDiv(ClockDiv clock_div)
 		THROW_HW_ERROR(InvalidValue) << "32-bit works only on "
 					     << "QuarterSpeed";
 	typedef slsDetectorDefs::speedLevel Speed;
-	EXC_CHECK(m_det->setSpeed(Speed(clock_div)));
+	EXC_CHECK(m_det->setReadoutSpeed(Speed(clock_div)));
 	m_clock_div = clock_div;
 	updateCameraTimeRanges();
 }
@@ -945,7 +945,10 @@ void Eiger::getClockDiv(ClockDiv& clock_div)
 {
 	DEB_MEMBER_FUNCT();
 	const char *err_msg = "Speed is different";
-	EXC_CHECK(clock_div = ClockDiv(m_det->getSpeed().tsquash(err_msg)));
+	typedef slsDetectorDefs::speedLevel Speed;
+	sls::Result<Speed> res;
+	EXC_CHECK(res = m_det->getReadoutSpeed());
+	EXC_CHECK(clock_div = ClockDiv(res.tsquash(err_msg)));
 	DEB_RETURN() << DEB_VAR1(clock_div);
 }
 
