@@ -92,9 +92,6 @@ class SlsDetectorJungfrau(SlsDetector):
     def init_device(self):
         SlsDetector.init_device(self)
 
-        self.gain_ped_bckgnd = None
-        self.gain_ped_seq = None
-
     def init_list_attr(self):
         SlsDetector.init_list_attr(self)
 
@@ -136,21 +133,7 @@ class SlsDetectorJungfrau(SlsDetector):
         return res
 
     @Core.DEB_MEMBER_FUNCT
-    def readMapCheckGainPedSeq(self, attr):
-        if not self.gain_ped_seq:
-            return True
-        deb.Trace('Pedestal sequence active. Skipping!')
-        if attr:
-            width, height = self.getFrameSize()
-            dtype = self.Tango2NpType[attr.get_data_type()]
-            d = np.zeros((height, width), dtype)
-            attr.set_value(d)
-        return False
-    
-    @Core.DEB_MEMBER_FUNCT
     def read_gain_map(self, attr):
-        if not self.readMapCheckGainPedSeq(attr):
-            return
         jungfrau = _SlsDetectorJungfrau
         gain_data, adc_data, frame = jungfrau.readGainADCMaps(-1)
         deb.Return("frame=%s, gain_data=%s" % (frame, gain_data))
@@ -158,8 +141,6 @@ class SlsDetectorJungfrau(SlsDetector):
 
     @Core.DEB_MEMBER_FUNCT
     def read_adc_map(self, attr):
-        if not self.readMapCheckGainPedSeq(attr):
-            return
         jungfrau = _SlsDetectorJungfrau
         gain_data, adc_data, frame = jungfrau.readGainADCMaps(-1)
         deb.Return("frame=%s, adc_data=%s" % (frame, adc_data))
@@ -175,33 +156,18 @@ class SlsDetectorJungfrau(SlsDetector):
 
     @Core.DEB_MEMBER_FUNCT
     def read_gain_ped_proc_map(self, attr, map_type):
-        if not self.readMapCheckGainPedSeq(attr):
-            return
         proc_data, frame = self.getGainPedProcMap(map_type)
         data = proc_data.buffer
-        if self.gain_ped_bckgnd is not None:
-            data = data - self.gain_ped_bckgnd
         deb.Return("frame=%s, data=%s" % (frame, data))
         attr.set_value(data)
 
     @Core.DEB_MEMBER_FUNCT
     def read_ave_map(self, attr):
-        if not self.readMapCheckGainPedSeq(attr):
-            return
         jungfrau = _SlsDetectorJungfrau
         ave_data, nb_frames, frame = jungfrau.readAveMap(-1)
         deb.Return("frame=%s, nb_frames=%s, ave_data=%s" % (frame, nb_frames,
                                                             ave_data))
         attr.set_value(ave_data.buffer)
-
-    @Core.DEB_MEMBER_FUNCT
-    def setGainPedBackground(self, level=0):
-        proc_data, frame = self.getGainPedProcMap('32')
-        self.gain_ped_bckgnd = proc_data.buffer.copy() - level
-
-    @Core.DEB_MEMBER_FUNCT
-    def clearGainPedBackground(self):
-        self.gain_ped_bckgnd = None
 
     @Core.DEB_MEMBER_FUNCT
     def write_gain_ped_calib_map(self, attr, map_select, gain):
@@ -236,130 +202,6 @@ class SlsDetectorJungfrau(SlsDetector):
         deb.Return('settings=%s' % settings)
         return settings
 
-    @Core.DEB_MEMBER_FUNCT
-    def acqNbFrames(self, nb_frames):
-        @contextlib.contextmanager
-        def setFrames():
-            from .SlsDetector import _SlsDetectorControl as control
-            acq = control.acquisition()
-            prev_nb_frames = acq.getAcqNbFrames()
-            deb.Trace('Changing nb_frames=%s' % nb_frames)
-            acq.setAcqNbFrames(nb_frames)
-            try:
-                yield True
-            finally:
-                if nb_frames != prev_nb_frames:
-                    deb.Trace('Restoring nb_frames=%s' % prev_nb_frames)
-                    acq.setAcqNbFrames(prev_nb_frames)
-        return setFrames()
-
-    @Core.DEB_MEMBER_FUNCT
-    def detSafeSettings(self):
-        @contextlib.contextmanager
-        def safeSettings():
-            prev_settings = self.getSettings()
-            try:
-                yield True
-            finally:
-                if self.getSettings() != prev_settings:
-                    deb.Trace('Restoring settings=%s' % prev_settings)
-                    self.setSettings(prev_settings)
-        return safeSettings()
-
-    @Core.DEB_MEMBER_FUNCT
-    def detSettings(self, settings):
-        @contextlib.contextmanager
-        def setSettings():
-            with self.detSafeSettings():
-                deb.Trace('Changing settings=%s' % settings)
-                self.setSettings(settings)
-                yield True
-        return setSettings()
-
-    @Core.DEB_MEMBER_FUNCT
-    def jungfrauImgProcConfig(self, config):
-        @contextlib.contextmanager
-        def setImgProcConfig():
-            jungfrau = _SlsDetectorJungfrau
-            prev_config = jungfrau.getImgProcConfig()
-            deb.Trace('Setting img_proc_config=%s' % config)
-            jungfrau.setImgProcConfig(config)
-            try:
-                yield True
-            finally:
-                if config != prev_config:
-                    deb.Trace('Restoring img_proc_config=%s' % prev_config)
-                    jungfrau.setImgProcConfig(prev_config)
-        return setImgProcConfig()
-
-    @Core.DEB_MEMBER_FUNCT
-    def measurePedestal(self, nb_frames):
-        with self.acqNbFrames(nb_frames):
-            with self.jungfrauImgProcConfig('gain_adc_map,ave'):
-                from .SlsDetector import _SlsDetectorControl as control
-                jungfrau = _SlsDetectorJungfrau
-                deb.Trace('Starting pedestal acq')
-                control.prepareAcq()
-                control.startAcq()
-                def running():
-                    acq_status = control.getStatus().AcquisitionStatus
-                    return acq_status not in [Core.AcqReady, Core.AcqFault]
-                while running():
-                    time.sleep(0.01)
-                deb.Trace('Finished pedestal acq')
-                pedestal, nb_frames, frame = jungfrau.readAveMap(-1)
-                return pedestal, nb_frames, frame
-
-    @Core.DEB_MEMBER_FUNCT
-    def measureGainPedestal(self, gain, nb_frames):
-        gain_settings = {0: 'dynamicgain',
-                         1: 'forceswitchg1',
-                         2: 'forceswitchg2'}
-        with self.detSettings(gain_settings[gain]):
-            pedestal_data = self.measurePedestal(nb_frames)
-            return pedestal_data
-
-    @Core.DEB_MEMBER_FUNCT
-    def startGainPedestalSeq(self, gain_nb_frames):
-        gain, nb_frames = map(int, gain_nb_frames.split(','))
-        deb.Param("gain=%d, nb_frames=%d" % (gain, nb_frames))
-        if self.cam.getExpTime() > 0.1:
-            raise ValueError('Jungfrau exposure time too high')
-        elif self.gain_ped_seq:
-            raise RuntimeError('Another sequence is active')
-
-        self.gain_ped_seq = {'task': None, 'res': None}
-        def task(gain, nb_frames):
-            pedestal_data = self.measureGainPedestal(gain, nb_frames)
-            data, acq_nb_frames, frame = pedestal_data
-            print(f'nb_frames={nb_frames}, acq_nb_frames={acq_nb_frames}, '
-                  f'frame={frame}')
-            self.gain_ped_seq['res'] = data.buffer.copy(), frame
-        t = Thread(target=task, args=(gain, nb_frames))
-        self.gain_ped_seq['task'] = t
-        t.start()
-        res = '%d,%d' % self.getFrameSize()
-        deb.Return("res=%s" % res)
-        return res
-
-    @Core.DEB_MEMBER_FUNCT
-    def getGainPedestalSeqStatus(self):
-        if not self.gain_ped_seq:
-            raise RuntimeError('No sequence active')
-        is_alive = self.gain_ped_seq['task'].is_alive()
-        deb.Return("is_alive=%s" % is_alive)
-        return is_alive
-
-    @Core.DEB_MEMBER_FUNCT
-    def getGainPedestalSeqResult(self):
-        if self.getGainPedestalSeqStatus():
-            raise RuntimeError('Sequence still running')
-        self.gain_ped_seq['task'].join()
-        res = self.gain_ped_seq['res']
-        self.gain_ped_seq = None
-        deb.Return('res=%s' % (res,))
-        return res[0].flatten()
-
 
 #------------------------------------------------------------------
 #    SlsDetectorJungfrau class
@@ -375,23 +217,6 @@ class SlsDetectorJungfrauClass(SlsDetectorClass):
     device_property_list.update(SlsDetectorClass.device_property_list)
 
     cmd_list = {
-        'setGainPedBackground':
-        [[PyTango.DevULong, "level"],
-         [PyTango.DevVoid, ""]],
-        'clearGainPedBackground':
-        [[PyTango.DevVoid, ""],
-         [PyTango.DevVoid, ""]],
-        'startGainPedestalSeq':
-        [[PyTango.DevString,
-          "2-value comma-separated tuple: gain,nb-of-frames"],
-         [PyTango.DevString,
-          "result: 2-value comma-separated tuple: width,height"]],
-        'getGainPedestalSeqStatus':
-        [[PyTango.DevVoid, ""],
-         [PyTango.DevBoolean, "Sequence is running"]],
-        'getGainPedestalSeqResult':
-        [[PyTango.DevVoid, ""],
-         [PyTango.DevVarDoubleArray, "Pedestal seq result"]],
         }
     cmd_list.update(SlsDetectorClass.cmd_list)
 
