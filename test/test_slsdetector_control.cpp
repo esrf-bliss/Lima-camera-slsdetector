@@ -40,6 +40,7 @@ class TestApp : public CtTestApp
 	{
 		DEB_CLASS_NAMESPC(DebModTest, "TestApp::Pars", "SlsDetector");
 	public:
+		int cam_det_id{0};
 		std::string cam_config_fname;
 		bool cam_raw_mode{false};
 		Jungfrau::GainPed::MapType jungfrau_gain_ped_map_type
@@ -76,6 +77,8 @@ TestApp::Pars::Pars()
 #define AddOpt(var, opt, par)	\
 	m_opt_list.insert(MakeOpt(var, "", opt, par))
 
+	AddOpt(cam_det_id, "--cam-det-id", "multi-detector ID");
+
 	AddOpt(cam_config_fname, "--cam-config-fname", "detector config file");
 
 	AddOpt(cam_raw_mode, "--cam-raw-mode", "raw mode");
@@ -99,7 +102,7 @@ CtControl *TestApp::getCtControl()
 	if (m_pars->cam_config_fname.empty())
 		THROW_HW_ERROR(Error) << "Missing config file";
 
-	m_cam = new Camera(m_pars->cam_config_fname);
+	m_cam = new Camera(m_pars->cam_config_fname, m_pars->cam_det_id);
 	m_interface = new Interface(*m_cam);
 
 	Type det_type = m_cam->getType();

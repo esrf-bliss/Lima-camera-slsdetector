@@ -40,6 +40,7 @@ class TestApp : public HwTestApp
 	{
 		DEB_CLASS_NAMESPC(DebModTest, "TestApp::Pars", "SlsDetector");
 	public:
+		int det_id{0};
 		std::string config_fname;
 		bool raw_mode{false};
 		Jungfrau::ImgSrc jungfrau_img_src{Jungfrau::Raw};
@@ -74,6 +75,8 @@ TestApp::Pars::Pars()
 #define AddOpt(var, sopt, lopt, par)	\
 	m_opt_list.insert(MakeOpt(var, sopt, lopt, par))
 
+	AddOpt(det_id, "-d", "--det-id", "multi-detector ID");
+
 	AddOpt(config_fname, "-c", "--config-fname", "detector config file");
 
 	AddOpt(raw_mode, "-r", "--raw-mode", "raw mode");
@@ -95,7 +98,7 @@ HwInterface *TestApp::getHwInterface()
 	if (m_pars->config_fname.empty())
 		THROW_HW_ERROR(Error) << "Missing config file";
 
-	m_cam = new Camera(m_pars->config_fname);
+	m_cam = new Camera(m_pars->config_fname, m_pars->det_id);
 	m_interface = new Interface(*m_cam);
 
 	Type det_type = m_cam->getType();
