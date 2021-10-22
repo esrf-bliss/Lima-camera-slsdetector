@@ -313,13 +313,16 @@ as well as the kernel image:
     EOF
     )
 
+        kernel_opt=""
+        kernel_image="${fw_dir}/simpleImage.virtex440-eiger-beb-hwid1_local"
+        [ -f ${kernel_image} ] && kernel_opt="-k ${kernel_image}"
+    
         this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
         mkdir -p ${this_dir}
         eiger_flash -c ${flash_config} \
                     -m ${fw_dir}/beb_fiber.bit \
                     -l ${fw_dir}/feb_l_${fpga_type}.bit \
-                    -r ${fw_dir}/feb_r_${fpga_type}.bit \
-                    -k ${fw_dir}/simpleImage.virtex440-eiger-beb-hwid1_local \
+                    -r ${fw_dir}/feb_r_${fpga_type}.bit ${kernel_opt} \
                     -o ${this_dir}/eiger_flash.log ${EIGER_MODULES}
     )
     Eiger flash - Fri Sep 11 16:17:11 2020
