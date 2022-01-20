@@ -10,11 +10,12 @@ embedded server and firmwares (FWs):
 * The detector names are expected to be in registered in the *hosts* name service (*/etc/hosts*, DNS),
   and reachable through the IPv4 layer. 
 
-* The *${EIGER_HOME}/eiger_setup.sh* is installed and sourced in *opid00* account, defining *EIGER_CONFIG*, *EIGER_MODULES*
+* The *GitLab Hardware/sls_detectors* project is expected to be installed in *${SLS_DETECTORS_DIR}*
+  (defaults to *~blissadm/local/sls_detectors*). The different Git submodules are recursiverly cloned,
+  so *slsDetectorFirmware* and *Lima/camera/slsdetector/slsDetectorPackage* are available.
 
-* The *GitLab Hardware/sls_detectors* project is expected to be installed in *${EIGER_HOME}/esrf/sls_detectors*.
-  The different Git submodules are recursiverly cloned, so *Lima/camera/slsdetector/slsDetectorPackage* 
-  is available.
+* The *${SLS_DETECTORS_DIR}/eiger/scripts/det_env_setup.sh* is available and sourced, defining
+  *LIMA_DIR*, *EIGER_DETECTOR*, *EIGER_CONFIG*, *EIGER_MODULES* and *EIGER_LOG*
 
 Please refer to :doc:`installation` in order to fulfill these requirements.
 
@@ -29,11 +30,11 @@ is included:
 ::
 
     lisgeiger1:~ % \
-        [ -n "${EIGER_MODULES}" ] || . ${EIGER_HOME}/eiger_setup.sh
+        [ -n "${EIGER_MODULES}" ] || . ${SLS_DETECTORS_DIR}/eiger/scripts/det_env_setup.sh
         EIGER_MODULE_TOP=$(echo ${EIGER_MODULES} | cut -f1 -d" ")
-        cat ~/.ssh/id_dsa.pub
+        cat ${SLS_DETECTORS_DIR}/eiger/ssh/id_dsa.pub
         echo
-        base_dir="${HOME}/eiger/log/${EIGER_DETECTOR}"
+        base_dir="${EIGER_LOG}/${EIGER_DETECTOR}"
         this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
         mkdir -p ${this_dir} && cd ${this_dir}
         for m in ${EIGER_MODULES}; do
@@ -296,14 +297,14 @@ as well as the kernel image:
 ::
 
     lisgeiger1:~ % (
-        [ -n "${EIGER_MODULES}" ] || . ${EIGER_HOME}/eiger_setup.sh
-        base_dir="${HOME}/eiger/log/${EIGER_DETECTOR}"
+        [ -n "${EIGER_MODULES}" ] || . ${SLS_DETECTORS_DIR}/eiger/scripts/det_env_setup.sh;
+        base_dir="${EIGER_LOG}/${EIGER_DETECTOR}";
 
-        cd ${SLS_DETECTORS}/config/eiger
-        detector_dir="detector/${EIGER_DETECTOR}/setup/${EIGER_DETECTOR_SETUP}/detector"
-        fw_ver=$(cat ${detector_dir}/fw)
-        fw_dir="fw/${fw_ver}"
-        flash_config="${detector_dir}/flash.config"
+        cd ${SLS_DETECTORS_DIR}/config/eiger;
+        detector_dir="detector/${EIGER_DETECTOR}/setup/${SLS_DETECTORS_BACKEND_SETUP}/detector";
+        fw_ver=$(cat ${detector_dir}/fw);
+        fw_dir="fw/${fw_ver}";
+        flash_config="${detector_dir}/flash.config";
 
         fpga_type=$(python <<EOF
     from configparser import ConfigParser
@@ -311,19 +312,19 @@ as well as the kernel image:
     c.read("${flash_config}")
     print(f'{c["Feb"]["FpgaType"].lower()}')
     EOF
-    )
+    );
 
-        kernel_opt=""
-        kernel_image="${fw_dir}/simpleImage.virtex440-eiger-beb-hwid1_local"
-        [ -f ${kernel_image} ] && kernel_opt="-k ${kernel_image}"
+        kernel_opt="";
+        kernel_image="${fw_dir}/simpleImage.virtex440-eiger-beb-hwid1_local";
+        [ -f ${kernel_image} ] && kernel_opt="-k ${kernel_image}";
     
-        this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
-        mkdir -p ${this_dir}
+        this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)";
+        mkdir -p ${this_dir};
         eiger_flash -c ${flash_config} \
                     -m ${fw_dir}/beb_fiber.bit \
                     -l ${fw_dir}/feb_l_${fpga_type}.bit \
                     -r ${fw_dir}/feb_r_${fpga_type}.bit ${kernel_opt} \
-                    -o ${this_dir}/eiger_flash.log ${EIGER_MODULES}
+                    -o ${this_dir}/eiger_flash.log ${EIGER_MODULES};
     )
     Eiger flash - Fri Sep 11 16:17:11 2020
     9ad0445fc4958ff780cc85998b5bf968  fw/v24/beb_fiber.bit
