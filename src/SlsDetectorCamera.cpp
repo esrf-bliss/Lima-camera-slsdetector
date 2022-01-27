@@ -274,13 +274,16 @@ DetFrameImagePackets Camera::AcqThread::readRecvPackets(FrameType frame)
 	}
 
 	auto stopped = [&]() { return (m_cam->getAcqState() == StopReq); };
+	auto needs_reading_recv_packets = [&](int i) {
+		return ((det_packets.find(i) == det_packets.end()) &&
+			!stopped());
+	};
 
 	const int age_margin = 10;
 
 	int nb_recvs = m_cam->getNbRecvs();
 	for (int i = 0; i < nb_recvs; ++i) {
-		while ((det_packets.find(i) == det_packets.end()) &&
-		       !stopped()) {
+		while (needs_reading_recv_packets(i)) {
 			AutoPtr<Receiver::ImagePackets> image_packets;
 			Receiver *recv = m_cam->m_recv_list[i];
 			image_packets = recv->readImagePackets();
@@ -299,6 +302,10 @@ DetFrameImagePackets Camera::AcqThread::readRecvPackets(FrameType frame)
 					break;
 			}
 		}
+		bool missing_frame = needs_reading_recv_packets(i);
+		if (missing_frame && !m_cam->m_tol_lost_packets)
+			THROW_HW_ERROR(Error) << "Recv. " << i << ": "
+					      << "missing frame: " << frame;
 	}
 
 	return det_frame_packets;
@@ -400,7 +407,7 @@ Camera::Camera(string config_fname, int det_id)
 	  m_state(Idle),
 	  m_new_frame_timeout(0.5),
 	  m_abort_sleep_time(0.1),
-	  m_tol_lost_packets(true),
+	  m_tol_lost_packets(false),
 	  m_time_ranges_cb(NULL),
 	  m_global_cpu_affinity_mgr(this)
 {
@@ -422,8 +429,6 @@ Camera::Camera(string config_fname, int det_id)
 	EXC_CHECK(m_det->loadConfig(fname));
 
 	EXC_CHECK(m_det->setRxSilentMode(1));
-	EXC_CHECK(m_det->setRxFrameDiscardPolicy(
-				  slsDetectorDefs::DISCARD_PARTIAL_FRAMES));
 
 	sls::Result<int> dr_res;
 	EXC_CHECK(dr_res = m_det->getDynamicRange());
@@ -433,6 +438,7 @@ Camera::Camera(string config_fname, int det_id)
 	setNbFrames(1);
 	setExpTime(0.99);
 	setFramePeriod(1.0);
+	setTolerateLostPackets(true);
 }
 
 Camera::~Camera()
@@ -1195,6 +1201,10 @@ void Camera::setTolerateLostPackets(bool tol_lost_packets)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(tol_lost_packets);
+	slsDetectorDefs::frameDiscardPolicy fdp;
+	fdp = tol_lost_packets ? slsDetectorDefs::DISCARD_EMPTY_FRAMES :
+				 slsDetectorDefs::DISCARD_PARTIAL_FRAMES;
+	EXC_CHECK(m_det->setRxFrameDiscardPolicy(fdp));
 	m_tol_lost_packets = tol_lost_packets;
 }
 

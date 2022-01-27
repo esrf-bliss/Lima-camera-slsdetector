@@ -107,6 +107,7 @@ AutoPtr<Receiver::ImagePackets> Receiver::readSkippableImagePackets()
 	header.frameNumber = -1;
 	blocks = std::move(m_recv->GetFramePacketBlocks());
 	image_data->numberOfPorts = blocks.size();
+	bool incomplete_data = (image_data->numberOfPorts == 0);
 	for (int i = 0; i < image_data->numberOfPorts; ++i) {
 		std::visit([&](auto &block) {
 			bool valid = block;
@@ -114,8 +115,12 @@ AutoPtr<Receiver::ImagePackets> Receiver::readSkippableImagePackets()
 			if (valid && (header.frameNumber == uint64_t(-1)) &&
 			    block->getNetworkHeader())
 				header = *block->getNetworkHeader();
+			incomplete_data |= !(valid && block->hasFullFrame());
 		    }, blocks[i]);
 	}
+	if (incomplete_data && !m_cam->m_tol_lost_packets)
+		THROW_HW_ERROR(Error) << "Recv. " << m_idx << ": "
+				      << "got incomplete data";
 	if (image_data->validPortData.none())
 		return NULL;
 	DEB_TRACE() << DEB_VAR5(m_idx, header.frameNumber, header.modId,
