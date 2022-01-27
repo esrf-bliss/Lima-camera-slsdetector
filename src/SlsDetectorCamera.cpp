@@ -1086,12 +1086,22 @@ int Camera::getFramesCaught()
 Camera::DetStatus Camera::getDetStatus()
 {
 	DEB_MEMBER_FUNCT();
-	slsDetectorDefs::runStatus det_status;
-	const char *err_msg = "Detector status are different";
-	EXC_CHECK(det_status = m_det->getDetectorStatus().tsquash(err_msg));
-	DetStatus status = DetStatus(det_status);
-	DEB_RETURN() << DEB_VAR1(status);
-	return status;
+	typedef slsDetectorDefs::runStatus RunStatus;
+	sls::Result<RunStatus> det_status;
+	const int nb_retries = 5;
+	for (int i = 0; i < nb_retries; ++i) {
+		det_status = m_det->getDetectorStatus();
+		if (!det_status.equal()) {
+			DEB_ALWAYS() << "Status are different, retrying ...";
+			continue;
+		}
+		DetStatus status = DetStatus(det_status.squash());
+		DEB_RETURN() << DEB_VAR1(status);
+		return status;
+	}
+	static string err_msg = ("Detector status are different after " +
+				 to_string(nb_retries) + "retries");
+	EXC_CHECK(det_status.tsquash(err_msg));
 }
 
 void Camera::setDAC(int mod_idx, DACIndex dac_idx, int val, bool milli_volt)
