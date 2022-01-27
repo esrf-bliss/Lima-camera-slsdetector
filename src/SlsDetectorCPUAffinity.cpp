@@ -1323,6 +1323,12 @@ void SystemCPUAffinityMgr::WatchDog::setNetDevCPUAffinity(
 SystemCPUAffinityMgr::SystemCPUAffinityMgr()
 {
 	DEB_CONSTRUCTOR();
+
+	const char *setter_pid = getenv("SET_CPU_AFFINITY_PID");
+	bool setter_found = (setter_pid && *setter_pid);
+	m_active = !setter_found;
+	DEB_ALWAYS() << "set_cpu_affinity: "
+		     << DEB_VAR2(setter_found, m_active);
 }
 
 SystemCPUAffinityMgr::~SystemCPUAffinityMgr()
@@ -1409,6 +1415,9 @@ void SystemCPUAffinityMgr::setOtherCPUAffinity(CPUAffinity cpu_affinity)
 {
 	DEB_MEMBER_FUNCT();
 
+	if (!m_active)
+		return;
+
 	checkWatchDogStart();
 	m_watchdog->setOtherCPUAffinity(cpu_affinity);
 	m_other = cpu_affinity;
@@ -1419,6 +1428,9 @@ void SystemCPUAffinityMgr::setNetDevCPUAffinity(
 			const NetDevGroupCPUAffinityList& netdev_list)
 {
 	DEB_MEMBER_FUNCT();
+
+	if (!m_active)
+		return;
 
 	checkWatchDogStart();
 

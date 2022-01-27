@@ -510,6 +510,7 @@ class SystemCPUAffinityMgr
 	void checkWatchDogStart();
 	void checkWatchDogStop();
 
+	bool m_active;
 	AutoPtr<WatchDog> m_watchdog;
 	CPUAffinity m_other;
 	NetDevGroupCPUAffinityList m_netdev;
