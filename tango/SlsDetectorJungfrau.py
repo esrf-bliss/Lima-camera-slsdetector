@@ -58,7 +58,8 @@ class SlsDetectorJungfrau(SlsDetector):
 #    Device constructor
 #------------------------------------------------------------------
 
-    ModelAttrs = ['img_proc_config',
+    ModelAttrs = ['gain_mode',
+                  'img_proc_config',
                   'img_src',
                   'gain_ped_map_type',
     ]
@@ -94,6 +95,10 @@ class SlsDetectorJungfrau(SlsDetector):
 
     def init_list_attr(self):
         SlsDetector.init_list_attr(self)
+
+        nl = ['Dynamic', 'ForceSwitchG1', 'ForceSwitchG2',
+              'FixG1', 'FixG2', 'FixG0']
+        self.__GainMode = ConstListAttr(nl)
 
         nl = ['Map16', 'Map32']
         klass = SlsDetectorHw.Jungfrau.GainPed
@@ -221,6 +226,10 @@ class SlsDetectorJungfrauClass(SlsDetectorClass):
     cmd_list.update(SlsDetectorClass.cmd_list)
 
     attr_list = {
+        'gain_mode':
+        [[PyTango.DevString,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
         'img_proc_config':
         [[PyTango.DevString,
           PyTango.SCALAR,

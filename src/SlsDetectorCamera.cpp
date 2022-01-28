@@ -1183,7 +1183,7 @@ void Camera::setSettings(Settings settings)
 	if (m_model) {
 		if (!m_model->checkSettings(settings))
 			THROW_HW_ERROR(InvalidValue) << DEB_VAR1(settings);
-		typedef slsDetectorDefs::detectorSettings  DetSettings;
+		typedef slsDetectorDefs::detectorSettings DetSettings;
 		DetSettings cam_settings = DetSettings(settings);
 		EXC_CHECK(m_det->setSettings(cam_settings));
 	}

@@ -166,8 +166,8 @@ class Jungfrau : public SlsDetector::Model
 	void setHighVoltage(int  hvolt);
 	void getHighVoltage(int& hvolt /Out/);
 
-	void setThresholdEnergy(int  thres);
-	void getThresholdEnergy(int& thres /Out/);
+	void setGainMode(SlsDetector::Defs::GainMode  gain_mode);
+	void getGainMode(SlsDetector::Defs::GainMode& gain_mode /Out/);
 
 	void setImgProcConfig(std::string  config);
 	void getImgProcConfig(std::string &config /Out/);
