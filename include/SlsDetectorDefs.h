@@ -64,6 +64,15 @@ enum Settings {
 	Unitialized   = slsDetectorDefs::UNINITIALIZED,
 };
 
+enum GainMode {
+	Dynamic       = slsDetectorDefs::DYNAMIC,
+        ForceSwitchG1 = slsDetectorDefs::FORCE_SWITCH_G1,
+        ForceSwitchG2 = slsDetectorDefs::FORCE_SWITCH_G2,
+        FixG1         = slsDetectorDefs::FIX_G1,
+        FixG2         = slsDetectorDefs::FIX_G2,
+        FixG0         = slsDetectorDefs::FIX_G0,
+};
+
 #define SlsDetectorBadIndexErr	(-9999)
 
 enum DACIndex {

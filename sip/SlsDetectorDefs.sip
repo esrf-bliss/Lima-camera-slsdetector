@@ -187,6 +187,15 @@ enum Settings {
 	Unitialized   = UNINITIALIZED,
 };
 
+enum GainMode {
+	Dynamic       = DYNAMIC,
+        ForceSwitchG1 = FORCE_SWITCH_G1,
+        ForceSwitchG2 = FORCE_SWITCH_G2,
+        FixG1         = FIX_G1,
+        FixG2         = FIX_G2,
+        FixG0         = FIX_G0,
+};
+
 enum DACIndex {
 	EigerVcmpLL = VCMP_LL,
 	EigerVcmpLR = VCMP_LR,

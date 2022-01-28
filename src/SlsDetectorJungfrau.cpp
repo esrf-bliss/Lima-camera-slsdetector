@@ -848,18 +848,24 @@ void Jungfrau::getHighVoltage(int& hvolt)
 	DEB_RETURN() << DEB_VAR1(hvolt);
 }
 
-void Jungfrau::setThresholdEnergy(int thres)
+void Jungfrau::setGainMode(GainMode gain_mode)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(thres);
-	EXC_CHECK(m_det->setThresholdEnergy(thres));
+	DEB_PARAM() << DEB_VAR1(gain_mode);
+	typedef slsDetectorDefs::gainMode SlsMode;
+	SlsMode sls_mode = SlsMode(gain_mode);
+	EXC_CHECK(m_det->setGainMode(sls_mode));
 }
 
-void Jungfrau::getThresholdEnergy(int& thres)
+void Jungfrau::getGainMode(GainMode& gain_mode)
 {
 	DEB_MEMBER_FUNCT();
-	EXC_CHECK(thres = m_det->getThresholdEnergy().squash(-1));
-	DEB_RETURN() << DEB_VAR1(thres);
+	typedef slsDetectorDefs::gainMode SlsMode;
+	SlsMode sls_mode;
+	const char *err_msg = "Detector gain modes are different";
+	EXC_CHECK(sls_mode = m_det->getGainMode().tsquash(err_msg));
+	gain_mode = GainMode(sls_mode);
+	DEB_RETURN() << DEB_VAR1(gain_mode);
 }
 
 int Jungfrau::getNbRecvs()

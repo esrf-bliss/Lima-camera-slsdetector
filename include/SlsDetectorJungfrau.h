@@ -48,6 +48,8 @@ class Jungfrau : public Model
 	typedef unsigned short Word;
 	typedef unsigned int Long;
 
+	typedef Defs::GainMode GainMode;
+
 	class GainPed
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::GainPed",
@@ -168,8 +170,8 @@ class Jungfrau : public Model
 	void setHighVoltage(int  hvolt);
 	void getHighVoltage(int& hvolt);
 
-	void setThresholdEnergy(int  thres);
-	void getThresholdEnergy(int& thres);
+	void setGainMode(GainMode  gain_mode);
+	void getGainMode(GainMode& gain_mode);
 
 	void setImgProcConfig(std::string  config);
 	void getImgProcConfig(std::string &config);
