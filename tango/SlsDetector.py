@@ -153,6 +153,9 @@ class SlsDetector(PyTango.Device_4Impl):
             self.buffer.setMaxMemory(int(self.buffer_max_memory))
 
     def init_list_attr(self):
+        nl = ['GenericDet', 'EigerDet', 'JungfrauDet']
+        self.__Type = ConstListAttr(nl, namespc=SlsDetectorHw)
+
         nl = ['PixelDepth4', 'PixelDepth8', 'PixelDepth16', 'PixelDepth32']
         bdl = map(lambda x: getattr(SlsDetectorHw, x), nl)
         self.__PixelDepth = OrderedDict([(str(bd), int(bd)) for bd in bdl])
@@ -225,7 +228,7 @@ class SlsDetector(PyTango.Device_4Impl):
         m = self.AttrNameRe.match(name)
         if m and (m.group('klass') != 'SlsDetector'):
             member = m.group('member')
-            if member in ['PixelDepth']:
+            if member in ['Type', 'PixelDepth']:
                 return getattr(self, '_SlsDetector__' + member)
         obj = obj or self.cam
         return get_attr_4u(self, name, obj)
@@ -576,6 +579,10 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevString,
           PyTango.SPECTRUM,
           PyTango.READ, 64]],
+        'type':
+        [[PyTango.DevString,
+          PyTango.SCALAR,
+          PyTango.READ]],
         'dac_name_list':
         [[PyTango.DevString,
           PyTango.SPECTRUM,
