@@ -77,12 +77,34 @@ void Camera::AppInputData::parseConfigFile()
 				istringstream is(full_match[2]);
 				is >> id;
 				if (id < 0)
-					THROW_HW_FATAL(InvalidValue) << 
+					THROW_HW_FATAL(InvalidValue) <<
 						"Invalid detector id: " << id;
 			}
 			int rx_tcpport;
 			config_file >> rx_tcpport;
 			recv_port_map[id] = rx_tcpport;
+			continue;
+		}
+
+		re = "(([0-9]+):)?rx_hostname";
+		if (re.match(s, full_match)) {
+			int id = 0;
+			if (full_match[2].found()) {
+				istringstream is(full_match[2]);
+				is >> id;
+				if (id < 0)
+					THROW_HW_FATAL(InvalidValue) <<
+						"Invalid detector id: " << id;
+			}
+			string host_port;
+			config_file >> host_port;
+			re = "([^:]+):([0-9]+)\\+?";
+			if (re.match(host_port, full_match)) {
+				istringstream is(full_match[2]);
+				int rx_tcpport;
+				is >> rx_tcpport;
+				recv_port_map[id] = rx_tcpport;
+			}
 			continue;
 		}
 	}
