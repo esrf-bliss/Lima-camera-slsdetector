@@ -62,6 +62,8 @@ public:
 	virtual void getTimeRanges(SlsDetector::TimeRanges& 
 		     		   time_ranges /Out/) = 0;
 
+	virtual bool checkTrigMode(SlsDetector::Defs::TrigMode trig_mode) = 0;
+
 	virtual bool isXferActive() = 0;
 
 	virtual SlsDetector::Reconstruction *getReconstruction();

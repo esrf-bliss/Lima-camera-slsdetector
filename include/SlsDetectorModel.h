@@ -46,6 +46,7 @@ class Model
 	DEB_CLASS_NAMESPC(DebModCamera, "Model", "SlsDetector");
  public:
 	typedef Defs::Settings Settings;
+	typedef Defs::TrigMode TrigMode;
 
 	Model(Camera *cam, Type type);
 	virtual ~Model();
@@ -77,6 +78,8 @@ class Model
 				FloatList& min_val_list) = 0;
 
 	virtual void getTimeRanges(TimeRanges& time_ranges) = 0;
+
+	virtual bool checkTrigMode(TrigMode trig_mode) = 0;
 
 	virtual bool isAcqActive();
 	virtual bool isXferActive() = 0;

@@ -163,6 +163,8 @@ class Jungfrau : public SlsDetector::Model
 
 	virtual void getTimeRanges(SlsDetector::TimeRanges& time_ranges /Out/);
 
+	virtual bool checkTrigMode(SlsDetector::Defs::TrigMode trig_mode);
+
 	void setHighVoltage(int  hvolt);
 	void getHighVoltage(int& hvolt /Out/);
 

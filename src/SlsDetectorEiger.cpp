@@ -826,6 +826,15 @@ void Eiger::measureReadoutTime(double& /*readout_time*/)
 	 */
 }
 
+bool Eiger::checkTrigMode(TrigMode trig_mode)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(trig_mode);
+	bool valid_mode = true;
+	DEB_RETURN() << DEB_VAR1(valid_mode);
+	return valid_mode;
+}
+
 void Eiger::updateImageSize()
 {
 	DEB_MEMBER_FUNCT();

@@ -63,6 +63,8 @@ class Eiger : public SlsDetector::Model
 				   SlsDetector::Eiger::ParallelMode parallel_mode,
 				   SlsDetector::TimeRanges& time_ranges /Out/);
 
+	virtual bool checkTrigMode(SlsDetector::Defs::TrigMode trig_mode);
+
 	void setParallelMode(SlsDetector::Eiger::ParallelMode  mode);
 	void getParallelMode(SlsDetector::Eiger::ParallelMode& mode);
 

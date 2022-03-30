@@ -232,6 +232,10 @@ bool SyncCtrlObj::checkTrigMode(TrigMode trig_mode)
 	DEB_PARAM() << DEB_VAR1(trig_mode);
 	TrigModeMap::iterator it = Lima2CamTrigModeMap.find(trig_mode);
 	bool valid_mode = (it != Lima2CamTrigModeMap.end());
+	Model *model = m_cam.getModel();
+	if (valid_mode && model)
+		valid_mode = model->checkTrigMode(it->second);
+	DEB_TRACE() << DEB_VAR3(trig_mode, bool(model), valid_mode);
 	DEB_RETURN() << DEB_VAR1(valid_mode);
 	return valid_mode;
 }
