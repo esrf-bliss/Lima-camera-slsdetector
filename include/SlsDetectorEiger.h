@@ -223,6 +223,8 @@ class Eiger : public Model
 				   ParallelMode parallel_mode, 
 				   TimeRanges& time_ranges);
 
+	virtual bool checkTrigMode(TrigMode trig_mode);
+
 	void setParallelMode(ParallelMode  mode);
 	void getParallelMode(ParallelMode& mode);
 

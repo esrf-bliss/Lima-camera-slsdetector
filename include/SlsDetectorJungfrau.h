@@ -164,6 +164,8 @@ class Jungfrau : public Model
 
 	virtual void getTimeRanges(TimeRanges& time_ranges);
 
+	virtual bool checkTrigMode(TrigMode trig_mode);
+
 	// the returned object must be deleted by the caller
 	ImgProcTask *createImgProcTask();
 

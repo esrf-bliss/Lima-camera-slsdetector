@@ -781,6 +781,15 @@ void Jungfrau::getADCInfo(NameList& name_list, IntList& idx_list,
 	}
 }
 
+bool Jungfrau::checkTrigMode(TrigMode trig_mode)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(trig_mode);
+	bool valid_mode = (trig_mode != Defs::SoftTriggerExposure);
+	DEB_RETURN() << DEB_VAR1(valid_mode);
+	return valid_mode;
+}
+
 void Jungfrau::getTimeRanges(TimeRanges& time_ranges)
 {
 	DEB_MEMBER_FUNCT();
