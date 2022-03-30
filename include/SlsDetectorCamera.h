@@ -241,7 +241,7 @@ private:
 
 	AcqState getEffectiveState();
 
-	void removeSharedMem();
+	void checkDetIdleStatus();
 	void createReceivers();
 
 	void assemblePackets(DetFrameImagePackets det_frame_packets);
