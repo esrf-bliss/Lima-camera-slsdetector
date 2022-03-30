@@ -434,18 +434,23 @@ Camera::Camera(string config_fname, int det_id)
 	  m_global_cpu_affinity_mgr(this)
 {
 	DEB_CONSTRUCTOR();
+	DEB_PARAM() << DEB_VAR1(m_det_id);
 
 	CPUAffinity::getNbSystemCPUs();
 
 	m_input_data = new AppInputData(config_fname);
 
-	bool remove_shmem = false;
-	if (remove_shmem)
-		removeSharedMem();
 	createReceivers();
 
 	DEB_TRACE() << "Creating the sls::Detector object";
 	m_det = new sls::Detector(m_det_id);
+	try {
+		// This should fail if the detector is not idle
+		m_det->setHostname(m_input_data->host_name_list);
+	} catch (...) {
+		checkDetIdleStatus();
+	}
+
 	DEB_TRACE() << "Reading configuration file";
 	const char *fname = m_input_data->config_file_name.c_str();
 	EXC_CHECK(m_det->loadConfig(fname));
@@ -521,20 +526,36 @@ void Camera::setModel(Model *model)
 	m_model->getNbUDPInterfaces(nb_udp_ifaces);
 	DEB_ALWAYS() << "Using " << m_model->getName()
 		     << " with " << getNbDetModules() << "x" << nb_udp_ifaces
-		     << " UDP interfaces";
+		     << " UDP interfaces (det_id=" << m_det_id << ")";
 
 	setPixelDepth(m_pixel_depth);
 }
 
-void Camera::removeSharedMem()
+void Camera::checkDetIdleStatus()
 {
 	DEB_MEMBER_FUNCT();
-	ostringstream cmd;
-	cmd << "sls_detector_get " << m_det_id << "-free";
-	string cmd_str = cmd.str();
-	int ret = system(cmd_str.c_str());
-	if (ret != 0)
-		THROW_HW_ERROR(Error) << "Error executing " << DEB_VAR1(cmd_str);
+
+	const NameList& config_host_list = m_input_data->host_name_list;
+	NameList shm_host_list;
+	if (m_det->size() > 0)
+		shm_host_list = m_det->getHostname();
+	DEB_TRACE() << DEB_VAR1(config_host_list);
+	DEB_TRACE() << DEB_VAR1(shm_host_list);
+	if (shm_host_list != config_host_list) {
+		DEB_WARNING() << "Cannot check detector status!";
+		return;
+	}
+
+	DEB_TRACE() << "Checking that the detector is Idle";
+	typedef slsDetectorDefs::runStatus RunStatus;
+	sls::Result<RunStatus> det_status = m_det->getDetectorStatus();
+	RunStatus mod0_status = det_status[0];
+	bool stopped = ((mod0_status == Defs::Idle) ||
+			(mod0_status == Defs::Stopped));
+	if (!det_status.equal() || !stopped) {
+		DEB_ALWAYS() << "Detector not (completely) idle: stopping";
+		m_det->stopDetector();
+	}
 }
 
 void Camera::createReceivers()
