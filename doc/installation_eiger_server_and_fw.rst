@@ -14,8 +14,9 @@ embedded server and firmwares (FWs):
   (defaults to *~blissadm/local/sls_detectors*). The different Git submodules are recursiverly cloned,
   so *slsDetectorFirmware* and *Lima/camera/slsdetector/slsDetectorPackage* are available.
 
-* The *${SLS_DETECTORS_DIR}/eiger/scripts/det_env_setup.sh* is available and sourced, defining
-  *LIMA_DIR*, *EIGER_DETECTOR*, *EIGER_CONFIG*, *EIGER_MODULES* and *EIGER_LOG*
+* The *${SLS_DETECTORS_DIR}/common/scripts/det_env_setup.sh* is available and sourced, defining
+  *LIMA_DIR*, *SLS_DETECTOR_NAME*, *SLS_DETECTOR_CONFIG*, *SLS_DETECTOR_MODULES*, *SLS_DETECTOR_LOG*
+  and *SLS_DETECTOR_BACKEND_SETUP*
 
 Please refer to :doc:`installation` in order to fulfill these requirements.
 
@@ -30,14 +31,14 @@ is included:
 ::
 
     lisgeiger1:~ % \
-        [ -n "${EIGER_MODULES}" ] || . ${SLS_DETECTORS_DIR}/eiger/scripts/det_env_setup.sh
-        EIGER_MODULE_TOP=$(echo ${EIGER_MODULES} | cut -f1 -d" ")
+        [ -n "${SLS_DETECTOR_MODULES}" ] || . ${SLS_DETECTORS_DIR}/common/scripts/det_env_setup.sh
+        EIGER_MODULE_TOP=$(echo ${SLS_DETECTOR_MODULES} | cut -f1 -d" ")
         cat ${SLS_DETECTORS_DIR}/eiger/ssh/id_dsa.pub
         echo
-        base_dir="${EIGER_LOG}/${EIGER_DETECTOR}"
+        base_dir="${SLS_DETECTOR_LOG}/${SLS_DETECTOR_NAME}"
         this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
         mkdir -p ${this_dir} && cd ${this_dir}
-        for m in ${EIGER_MODULES}; do
+        for m in ${SLS_DETECTOR_MODULES}; do
             ssh -x root@${m} cat .ssh/authorized_keys > ssh_authorized_keys_${m}
         done
         cat ssh_authorized_keys_${EIGER_MODULE_TOP} 
@@ -86,22 +87,28 @@ Check that all the keys are identical:
     1c183bdaa3a2f27029fca84b9cb3b857  ssh_authorized_keys_beb024
     1c183bdaa3a2f27029fca84b9cb3b857  ssh_authorized_keys_beb025
 
-In case the *opid00@lisgeiger1* public key is not included (not the case before), 
+In case the *opid00@lisgeiger1* public key is not included (not the case before),
 add them in order to open SSH sessions automatically on the detector modules:
 
 ::
 
     lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
-        for m in ${EIGER_MODULES}; do
-            ssh -x root@${m} sh -c '"cat >> .ssh/authorized_keys"' < ~/.ssh/id_dsa.pub
-        done
+        if grep -q 'opid00@lisgeiger1' ssh_authorized_keys_beb*; then
+            echo "SSH keys already installed in detector ${SLS_DETECTOR_NAME}"
+        else
+            echo "Installing SSH keys in detector ${SLS_DETECTOR_NAME}"
+            for m in ${SLS_DETECTOR_MODULES}; do
+                ssh -x root@${m} sh -c '"cat >> .ssh/authorized_keys"' \
+                    < ${SLS_DETECTORS_DIR}/eiger/ssh/id_dsa.pub
+            done
+        fi
 
 Also check that the SSH public host keys are identical (same Linux image):
 
 ::
 
     lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
-        for m in ${EIGER_MODULES}; do
+        for m in ${SLS_DETECTOR_MODULES}; do
             ssh-keygen -f ~/.ssh/known_hosts -F ${m} -l
         done
     # Host beb024 found: line 82 type RSA
@@ -123,13 +130,13 @@ the current versions stored on the modules:
         server="${server_dir}/${server_name}"
         server_str=$(echo ${server} | sed 's:/:_:g')
         full_server="/home/root/${server}"
-        for m in ${EIGER_MODULES}; do
+        for m in ${SLS_DETECTOR_MODULES}; do
             ssh -x root@${m} 'ls -l '${server}'*' \
                 > ls_${server_str}_${m}.out
         done
         cat ls_${server_str}_${EIGER_MODULE_TOP}.out
         echo
-        for m in ${EIGER_MODULES}; do 
+        for m in ${SLS_DETECTOR_MODULES}; do 
             ssh -x root@${m} 'md5sum '${server}'*' \
                 > md5sum_${server_str}_${m}.out
         done
@@ -154,10 +161,10 @@ Kill the running servers and disable the automatic startup:
 ::
 
     lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
-        for m in ${EIGER_MODULES}; do
+        for m in ${SLS_DETECTOR_MODULES}; do
             ssh -x root@${m} killall ${server_name}
         done
-        for m in ${EIGER_MODULES}; do
+        for m in ${SLS_DETECTOR_MODULES}; do
             ssh -x root@${m} sed -i '"s:^#\?\('${full_server}'\).*$:#\1 \&:"' \
                                  /etc/init.d/board_com.sh
         done
@@ -168,7 +175,7 @@ just before power-cycling:
 ::
 
     lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
-        for m in ${EIGER_MODULES}; do
+        for m in ${SLS_DETECTOR_MODULES}; do
             ssh -x root@${m} sync
         done
 
@@ -177,7 +184,7 @@ Power-cycle the detector and check that no *eigerDetectorServer* is running:
 ::
 
     lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
-        for m in ${EIGER_MODULES}; do \
+        for m in ${SLS_DETECTOR_MODULES}; do \
             ssh -x root@${m} 'ps -ef | grep '${server}' | grep -v grep'; \
         done
 
@@ -186,7 +193,7 @@ Backup the current version, and transfer the new version:
 ::
 
     lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
-        for m in ${EIGER_MODULES}; do
+        for m in ${SLS_DETECTOR_MODULES}; do
             ssh -x root@${m} 'mv '${server}' '${server}'_bkp'
         done
         SLS_DETECTOR_PACKAGE=${LIMA_DIR}/camera/slsdetector/slsDetectorPackage
@@ -194,10 +201,10 @@ Backup the current version, and transfer the new version:
         (cd ${SLS_DETECTOR_PACKAGE} && md5sum ${new_servers})
         echo
         new_server=${SLS_DETECTOR_PACKAGE}/$(echo "${new_servers}" | head -n 1)
-        for m in ${EIGER_MODULES}; do
+        for m in ${SLS_DETECTOR_MODULES}; do
             scp ${new_server} root@${m}:${server_dir}
         done
-        for m in ${EIGER_MODULES}; do
+        for m in ${SLS_DETECTOR_MODULES}; do
             ssh -x root@${m} "cp ${server_dir}/$(basename ${new_server}) ${server}"
         done
     50ef053f1ddd0b49314479a558c9c330  ./slsDetectorSoftware/eigerDetectorServer/bin/eigerDetectorServerv3.1.1.16.0
@@ -214,13 +221,13 @@ Check that all is as expected:
         cd
         this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
         mkdir -p ${this_dir} && cd ${this_dir}
-        for m in ${EIGER_MODULES}; do
+        for m in ${SLS_DETECTOR_MODULES}; do
             ssh -x root@${m} 'ls -l '${server}'*' \
                 > ls_${server_str}_${m}.out
         done
         cat ls_${server_str}_${EIGER_MODULE_TOP}.out
         echo
-        for m in ${EIGER_MODULES}; do
+        for m in ${SLS_DETECTOR_MODULES}; do
             ssh -x root@${m} 'md5sum '${server}'*' \
                 > md5sum_${server_str}_${m}.out
         done
@@ -248,7 +255,7 @@ Force a another filesystem *sync*:
 
     lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1927 % \
         cd
-        for m in ${EIGER_MODULES}; do
+        for m in ${SLS_DETECTOR_MODULES}; do
             ssh -x root@${m} sync
         done
 
@@ -260,12 +267,12 @@ And finally perform a *paranoid* check after power-cycling the detector:
         prev_dir=${this_dir}
         this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
         mkdir -p ${this_dir} && cd ${this_dir}
-        for m in ${EIGER_MODULES}; do
+        for m in ${SLS_DETECTOR_MODULES}; do
             ssh -x root@${m} 'md5sum '${server}'*' \
                 > md5sum_${server_str}_${m}.out
         done
         cd ..
-        for m in ${EIGER_MODULES}; do
+        for m in ${SLS_DETECTOR_MODULES}; do
             (diff ${prev_dir}/md5sum_${server_str}_${m}.out ${this_dir} &&
                 echo "${m} OK" || echo "${m} changed")
         done
@@ -297,13 +304,12 @@ as well as the kernel image:
 ::
 
     lisgeiger1:~ % (
-        [ -n "${EIGER_MODULES}" ] || . ${SLS_DETECTORS_DIR}/eiger/scripts/det_env_setup.sh;
-        base_dir="${EIGER_LOG}/${EIGER_DETECTOR}";
+        [ -n "${SLS_DETECTOR_MODULES}" ] || . ${SLS_DETECTORS_DIR}/common/scripts/det_env_setup.sh;
+        base_dir="${SLS_DETECTOR_LOG}/${SLS_DETECTOR_NAME}";
 
-        cd ${SLS_DETECTORS_DIR}/config/eiger;
-        detector_dir="detector/${EIGER_DETECTOR}/setup/${SLS_DETECTORS_BACKEND_SETUP}/detector";
+        detector_dir="${SLS_DETECTOR_CONFIG_DIR}/setup/${SLS_DETECTOR_BACKEND_SETUP}/detector";
         fw_ver=$(cat ${detector_dir}/fw);
-        fw_dir="fw/${fw_ver}";
+        fw_dir="${SLS_DETECTORS_DIR}/slsDetectorFirmware/binaries/eiger/${fw_ver}";
         flash_config="${detector_dir}/flash.config";
 
         fpga_type=$(python <<EOF
@@ -324,7 +330,7 @@ as well as the kernel image:
                     -m ${fw_dir}/beb_fiber.bit \
                     -l ${fw_dir}/feb_l_${fpga_type}.bit \
                     -r ${fw_dir}/feb_r_${fpga_type}.bit ${kernel_opt} \
-                    -o ${this_dir}/eiger_flash.log ${EIGER_MODULES};
+                    -o ${this_dir}/eiger_flash.log ${SLS_DETECTOR_MODULES};
     )
     Eiger flash - Fri Sep 11 16:17:11 2020
     9ad0445fc4958ff780cc85998b5bf968  fw/v24/beb_fiber.bit
@@ -480,7 +486,7 @@ Start the *eigerDetectorServer* and check that everything is OK:
 ::
 
     lisgeiger1:~ % \
-        for m in ${EIGER_MODULES}; do
+        for m in ${SLS_DETECTOR_MODULES}; do
             ssh -x root@${m} 'nohup '${server}' > /dev/null 2>&1 &'
         done
 
@@ -489,11 +495,11 @@ Once verified that the new server runs fine with the new firmware, restore autom
 ::
 
     lisgeiger1:~ % \
-        for m in ${EIGER_MODULES}; do
+        for m in ${SLS_DETECTOR_MODULES}; do
             ssh -x root@${m} sed -i '"s:^#\?\('${full_server}'\).*$:\1 \&:"' \
                                  /etc/init.d/board_com.sh
         done
-        for m in ${EIGER_MODULES}; do
+        for m in ${SLS_DETECTOR_MODULES}; do
             ssh -x root@${m} sync
         done
 
@@ -502,7 +508,7 @@ Power-cycle the detector and verify that the servers start automatically:
 ::
 
     lisgeiger1:~ % \
-        for m in ${EIGER_MODULES}; do \
+        for m in ${SLS_DETECTOR_MODULES}; do \
             ssh -x root@${m} 'ps -ef | grep '${server}' | grep -v grep'; \
         done
       961 root       0:00 /home/root/executables/eigerDetectorServer
