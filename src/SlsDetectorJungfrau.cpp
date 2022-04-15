@@ -128,8 +128,11 @@ void Jungfrau::GainPed::Impl<M>::processFrame(Data& data, Data& proc)
 				*dst = std::numeric_limits<P>::max() - 0x10;
 				continue;
 			}
-			*dst = ((adc - coeffs[gain][1][i]) / coeffs[gain][0][i]
-				+ 0.5);
+			if (coeffs[gain][0][i] != 0)
+				*dst = ((adc - coeffs[gain][1][i]) / coeffs[gain][0][i]
+					+ 0.5);
+			else
+				*dst = std::numeric_limits<P>::min() + 0x10;
 			DEB_TRACE() << DEB_VAR1(*dst);
 		}
 	}
