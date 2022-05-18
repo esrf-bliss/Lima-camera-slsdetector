@@ -1,3 +1,3 @@
 [submodule "slsDetectorPackage"]
 	path = slsDetectorPackage
-	url = git://github.com/esrf-bliss/slsDetectorPackage.git
+	url = https://github.com/esrf-bliss/slsDetectorPackage.git
