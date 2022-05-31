@@ -357,15 +357,44 @@ void Camera::AcqThread::stopAcq()
 {
 	DEB_MEMBER_FUNCT();
 
+	class Sync
 	{
-		AutoMutex l(m_cam->lock());
-		if (m_stop_state != NoStop) {
-			while (m_stop_state != StopFinished)
-				m_cond.wait();
-			return;
+	public:
+		Sync(Camera *cam, Cond& cond, StopState& stop_state)
+			: m_cam(cam), m_cond(cond), m_stop_state(stop_state),
+			  m_stop_done(false)
+		{
+			AutoMutex l(m_cam->lock());
+			if (m_stop_state != NoStop) {
+				while (m_stop_state != StopFinished)
+					m_cond.wait();
+				m_stop_done = true;
+				return;
+			}
+			m_stop_state = StopRunning;
 		}
-		m_stop_state = StopRunning;
-	}
+
+		~Sync()
+		{
+			if (m_stop_done)
+				return;
+			AutoMutex l(m_cam->lock());
+			m_stop_state = StopFinished;
+			m_cond.broadcast();
+		}
+
+		bool stopDone() { return m_stop_done; }
+
+	private:
+		Camera *m_cam;
+		Cond& m_cond;
+		StopState& m_stop_state;
+		bool m_stop_done;
+	};
+
+	Sync sync(m_cam, m_cond, m_stop_state);
+	if (sync.stopDone())
+		return;
 
 	sls::Detector *det = m_cam->m_det;
 	DetStatus det_status = m_cam->getDetStatus();
@@ -384,12 +413,6 @@ void Camera::AcqThread::stopAcq()
 	det->stopReceiver();
 	DEB_TRACE() << "calling Model::stopAcq";
 	m_cam->m_model->stopAcq();
-
-	{
-		AutoMutex l(m_cam->lock());
-		m_stop_state = StopFinished;
-		m_cond.broadcast();
-	}
 }
 
 Camera::Camera(string config_fname, int det_id) 
@@ -1098,6 +1121,7 @@ Camera::DetStatus Camera::getDetStatus()
 	for (int i = 0; i < nb_retries; ++i) {
 		det_status = m_det->getDetectorStatus();
 		if (!det_status.equal()) {
+			Sleep(0.1);
 			DEB_ALWAYS() << "Status are different, retrying ...";
 			continue;
 		}
@@ -1106,7 +1130,7 @@ Camera::DetStatus Camera::getDetStatus()
 		return status;
 	}
 	static string err_msg = ("Detector status are different after " +
-				 to_string(nb_retries) + "retries");
+				 to_string(nb_retries) + " retries");
 	EXC_CHECK(det_status.tsquash(err_msg));
 }
 
