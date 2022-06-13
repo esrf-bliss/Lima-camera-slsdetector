@@ -1860,6 +1860,34 @@ interfaces.
 .. note:: the 30 seconds timeout is necessary for large memory 
    allocations (long sequences)
 
+
+Bliss
+----
+
+Load EIGER noise pattern
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+In order to get useful images with no illumination, an *EIGER* noise pattern can
+be generated through the sensor trim bits. The *SlsDetectorEiger* Tango device
+exports the *getCmd* & *putCmd* methods, which directly interface with the SDK:
+
+::
+
+    EH2_EXP [129]: sls_detectors='/users/blissadm/local/sls_detectors'
+    EH2_EXP [130]: det_calib_dir=f'{sls_detectors}/config/eiger/detector/psi_eiger_500k_024_025/calib/2019_11_25'
+    EH2_EXP [131]: eiger_trim_settings=f'{det_calib_dir}/standard/eigernoise'
+    EH2_EXP [132]: eiger1._get_proxy('SlsDetectorEiger').putcmd(f'trimbits {eiger_trim_settings}')
+    EH2_EXP [133]: eiger1.camera.dac_threshold = [2500] * 2
+
+In order to de-activate the pattern and load the good calibration, just set the
+working photon *threshold_energy*:
+
+::
+
+    EH2_EXP [135]: eiger1.camera.threshold_energy = 8000                                                     
+
+
+
 Ethernet Switch
 ---------------
 
