@@ -43,8 +43,6 @@
 from .SlsDetector import *
 from threading import Thread
 
-import contextlib
-
 #------------------------------------------------------------------
 #    SlsDetectorJungfrau device class
 #------------------------------------------------------------------
@@ -63,6 +61,8 @@ class SlsDetectorJungfrau(SlsDetector):
                   'img_src',
                   'gain_ped_map_type',
     ]
+
+    NbGains = 3
 
     GainPedCalibAttrRe = re.compile('((?P<action>read|write)_)?'
                                     '(?P<select>gain|ped)_'
@@ -92,6 +92,35 @@ class SlsDetectorJungfrau(SlsDetector):
     @Core.DEB_MEMBER_FUNCT
     def init_device(self):
         SlsDetector.init_device(self)
+        calib_file = self.det_asm_calib_file
+        if calib_file and isinstance(calib_file, list):
+            calib_file = calib_file[0]
+        if calib_file:
+            try:
+                import numpy as np
+                import h5py as h5
+                deb.Always("Loading calibration file: '%s'" % calib_file)
+                with h5.File(calib_file, 'r') as f:
+                    d = f['/data']
+                    nb_gains, height, width = d.shape
+                    if nb_gains != self.NbGains:
+                        raise ValueError('Bad nb of calib gains: %s' % nb_gains)
+                    valid_pixels = (d[0] != 0) 
+                    deb.Always("size=(%dx%d), valid_pixels=%d" %
+                               (width, height, valid_pixels.sum()))
+                    g0_ave = d[0][valid_pixels].mean()
+                    deb.Always("OrigGain[0].ave=%.8f" % g0_ave)
+                    for i, gd in enumerate(d):
+                        gd[valid_pixels] /= g0_ave
+                        gd_ave = gd[valid_pixels].mean()
+                        factor = (f' [x{int(abs(prev_ave / gd_ave))}]'
+                                  if i > 0 else '')
+                        deb.Always("NormGain[%d].ave=%.8f%s" % (i, gd_ave,
+                                                                factor))
+                        self.setGainPedCalibMap('gain', i, gd)
+                        prev_ave = gd_ave
+            except Exception as e:
+                deb.Error("Error loading calibration: %s" % e)
 
     def init_list_attr(self):
         SlsDetector.init_list_attr(self)
@@ -177,6 +206,10 @@ class SlsDetectorJungfrau(SlsDetector):
     @Core.DEB_MEMBER_FUNCT
     def write_gain_ped_calib_map(self, attr, map_select, gain):
         d = attr.get_write_value()
+        self.setGainPedCalibMap(map_select, gain, d)
+
+    @Core.DEB_MEMBER_FUNCT
+    def setGainPedCalibMap(self, map_select, gain, d):
         attr_name = "%s_%d" % (map_select, gain)
         deb.Param("%s=%s" % (attr_name, d))
         jungfrau = _SlsDetectorJungfrau
@@ -190,11 +223,16 @@ class SlsDetectorJungfrau(SlsDetector):
 
     @Core.DEB_MEMBER_FUNCT
     def read_gain_ped_calib_map(self, attr, map_select, gain):
+        d = self.getGainPedCalibMap(map_select, gain)
+        attr.set_value(d.buffer)
+        
+    @Core.DEB_MEMBER_FUNCT
+    def getGainPedCalibMap(self, map_select, gain):
         jungfrau = _SlsDetectorJungfrau
         c = jungfrau.getGainPedCalib()
         d = c.gain_map[gain] if map_select == 'gain' else c.ped_map[gain]
         deb.Return("%s_%d=%s" % (map_select, gain, d))
-        attr.set_value(d.buffer)
+        return d
 
     @Core.DEB_MEMBER_FUNCT
     def setSettings(self, settings):
@@ -218,6 +256,9 @@ class SlsDetectorJungfrauClass(SlsDetectorClass):
     class_property_list.update(SlsDetectorClass.class_property_list)
 
     device_property_list = {
+        'det_asm_calib_file':
+        [PyTango.DevString,
+         "Detector assembled calibration HDF5 file with the 3 gains", ""],
         }
     device_property_list.update(SlsDetectorClass.device_property_list)
 
