@@ -213,10 +213,11 @@ bool Receiver::asmImagePackets(ImagePackets *image_data, char *buffer)
 	return got_data;
 }
 
-void Receiver::fillBadFrame(char *buf)
+void Receiver::fillBadFrame(FrameType frame, char *buf)
 {
 	DEB_MEMBER_FUNCT();
-	THROW_HW_ERROR(NotSupported) << "Not implemented yet";
+	THROW_HW_ERROR(NotSupported) << DEB_VAR2(m_idx, frame) << ": "
+				     << "Not implemented yet";
 }
 
 void Receiver::clearAllBuffers()

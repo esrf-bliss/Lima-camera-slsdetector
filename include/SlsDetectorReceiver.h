@@ -87,7 +87,7 @@ public:
 
 	AutoPtr<ImagePackets> readImagePackets();
 
-	void fillBadFrame(char *buf);
+	void fillBadFrame(FrameType frame, char *buf);
 
 	SlsDetector::Stats& getStats()
 	{ return m_stats.stats; }

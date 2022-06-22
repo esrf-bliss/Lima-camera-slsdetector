@@ -325,6 +325,15 @@ DetFrameImagePackets Camera::AcqThread::readRecvPackets(FrameType frame)
 			}
 		}
 		bool missing_frame = needs_reading_recv_packets(i);
+		FramePacketMap& ahead_packets = m_frame_packet_map;
+		if (missing_frame && !ahead_packets.empty()) {
+			DEB_ERROR() << "Recv. " << i << ": "
+				    << "missing frame: " << frame;
+			FrameType first = ahead_packets.begin()->first;
+			FrameType last = ahead_packets.rbegin()->first;
+			DEB_ERROR() << "  Avail. ahead packets from frames "
+				    << "[" << first << ".." << last << "]";
+		}
 		if (missing_frame && !m_cam->m_tol_lost_packets)
 			THROW_HW_ERROR(Error) << "Recv. " << i << ": "
 					      << "missing frame: " << frame;
@@ -1098,7 +1107,7 @@ void Camera::assemblePackets(DetFrameImagePackets det_frame_packets)
 		if (det_packets[i])
 			ok = det_packets[i]->assemble(bptr);
 		if (!ok)
-			m_recv_list[i]->fillBadFrame(bptr);
+			m_recv_list[i]->fillBadFrame(frame, bptr);
 	}
 }
 
