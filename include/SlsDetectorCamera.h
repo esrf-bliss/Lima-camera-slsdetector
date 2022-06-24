@@ -271,7 +271,8 @@ private:
 		return val;
 	}
 
-	void setReceiverFifoDepth(int fifo_depth);
+	void setReceiverFifoDepth(int  fifo_depth);
+	void getReceiverFifoDepth(int& fifo_depth);
 	void resetFramesCaught();
 
 	int m_det_id;

@@ -28,8 +28,8 @@ using namespace lima::SlsDetector;
 
 
 BufferMgr::BufferMgr(Camera *cam)
-	: m_cam(cam), m_cond(m_cam->m_cond), m_buffer_ctrl_obj(NULL),
-	  m_max_memory(70)
+	: m_cam(cam), m_cond(m_cam->m_cond), m_resize_policy(Auto),
+	  m_buffer_ctrl_obj(NULL), m_max_memory(70)
 {
 	DEB_CONSTRUCTOR();
 }
@@ -107,20 +107,61 @@ void BufferMgr::getMaxNbBuffers(long& nb_buffers)
 	DEB_RETURN() << DEB_VAR1(nb_buffers);
 }
 
+void BufferMgr::setResizePolicy(ResizePolicy resize_policy)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(resize_policy);
+	m_resize_policy = resize_policy;
+}
+
+void BufferMgr::getResizePolicy(ResizePolicy& resize_policy)
+{
+	DEB_MEMBER_FUNCT();
+	resize_policy = m_resize_policy;
+	DEB_RETURN() << DEB_VAR1(resize_policy);
+}
+
+void BufferMgr::setPacketFifoDepth(int fifo_depth)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(fifo_depth);
+	if (m_resize_policy == Auto)
+		THROW_HW_ERROR(Error) << "Cannot set PacketFifoDepth "
+				      << "with Auto ResizePolicy";
+	const int min_nb_buffers = 128;
+	long max_nb_buffers;
+	getMaxNbBuffers(max_nb_buffers);
+	if ((fifo_depth < min_nb_buffers) || (fifo_depth > max_nb_buffers))
+		THROW_HW_ERROR(Error) << "Invalid " << DEB_VAR1(fifo_depth)
+				      << ", must be within "
+				      << DEB_VAR2(min_nb_buffers,
+						  max_nb_buffers);
+	m_cam->setReceiverFifoDepth(fifo_depth);
+}
+
+void BufferMgr::getPacketFifoDepth(int& fifo_depth)
+{
+	DEB_MEMBER_FUNCT();
+	m_cam->getReceiverFifoDepth(fifo_depth);
+	DEB_RETURN() << DEB_VAR1(fifo_depth);
+}
+
 void BufferMgr::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
 
-	FrameType nb_frames;
-	m_cam->getNbFrames(nb_frames);
-	long max_nb_buffers;
-	getMaxNbBuffers(max_nb_buffers);
-	int nb_buffers = (nb_frames < max_nb_buffers) ? nb_frames :
-							max_nb_buffers;
-	const int min_nb_buffers = 128;
-	if (nb_buffers < min_nb_buffers)
-		nb_buffers = min_nb_buffers;
-	m_cam->setReceiverFifoDepth(nb_buffers);
+	if (m_resize_policy == Auto) {
+		FrameType nb_frames;
+		m_cam->getNbFrames(nb_frames);
+		long max_nb_buffers;
+		getMaxNbBuffers(max_nb_buffers);
+		int nb_buffers = (nb_frames < max_nb_buffers) ? nb_frames :
+								max_nb_buffers;
+		const int min_nb_buffers = 128;
+		if (nb_buffers < min_nb_buffers)
+			nb_buffers = min_nb_buffers;
+		m_cam->setReceiverFifoDepth(nb_buffers);
+	}
 }
 
 void BufferMgr::releaseBuffers()

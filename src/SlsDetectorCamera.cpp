@@ -1360,6 +1360,14 @@ void Camera::setReceiverFifoDepth(int fifo_depth)
 	EXC_CHECK(m_det->setRxFifoDepth(fifo_depth));
 }
 
+void Camera::getReceiverFifoDepth(int& fifo_depth)
+{
+	DEB_MEMBER_FUNCT();
+	const char *err_msg = "Rx fifo_depth are different";
+	EXC_CHECK(fifo_depth = m_det->getRxFifoDepth().tsquash(err_msg));
+	DEB_RETURN() << DEB_VAR1(fifo_depth);
+}
+
 void Camera::resetFramesCaught()
 {
 	DEB_MEMBER_FUNCT();

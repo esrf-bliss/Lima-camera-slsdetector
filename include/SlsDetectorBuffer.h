@@ -74,6 +74,10 @@ class BufferMgr
 	DEB_CLASS_NAMESPC(DebModCamera, "BufferMgr", "SlsDetector");
 
 public:
+	enum ResizePolicy {
+		Auto, Manual
+	};
+
 	void setBufferCtrlObj(BufferCtrlObj *buffer_ctrl_obj);
 
 	void setBufferCPUAffinity(CPUAffinity buffer_affinity);
@@ -94,6 +98,12 @@ public:
 
 	void getMaxNbBuffers(long& nb_buffers);
 
+	void setResizePolicy(ResizePolicy  resize_policy);
+	void getResizePolicy(ResizePolicy& resize_policy);
+
+	void setPacketFifoDepth(int  fifo_depth);
+	void getPacketFifoDepth(int& fifo_depth);
+
 	void prepareAcq();
 
 	void clearAllBuffers();
@@ -107,6 +117,7 @@ private:
 
 	Camera *m_cam;
 	Cond& m_cond;
+	ResizePolicy m_resize_policy;
 	CPUAffinity m_buffer_affinity;
 	BufferCtrlObj *m_buffer_ctrl_obj;
 	BufferSync *m_buffer_sync;

@@ -30,10 +30,22 @@ namespace SlsDetector
 class BufferMgr
 {
 public:
+	enum ResizePolicy {
+		Auto, Manual
+	};
+
 	void setMaxMemory(short  max_memory);
 	void getMaxMemory(short& max_memory /Out/);
 
 	void getMaxNbBuffers(long& nb_buffers /Out/);
+
+	void setResizePolicy(
+		SlsDetector::BufferMgr::ResizePolicy  resize_policy);
+	void getResizePolicy(
+		SlsDetector::BufferMgr::ResizePolicy& resize_policy /Out/);
+
+	void setPacketFifoDepth(int  fifo_depth);
+	void getPacketFifoDepth(int& fifo_depth);
 
 	void clearAllBuffers();
 	void releaseBuffers();

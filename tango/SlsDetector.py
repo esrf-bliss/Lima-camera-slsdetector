@@ -150,7 +150,15 @@ class SlsDetector(PyTango.Device_4Impl):
             self.cam.setPixelDepthCPUAffinityMap(aff_map)
 
         if self.buffer_max_memory:
+            deb.Always("Setting buffer_max_memory: %s" % self.buffer_max_memory)
             self.buffer.setMaxMemory(int(self.buffer_max_memory))
+        packet_fifo_depth = self.buffer_packet_fifo_depth
+        if packet_fifo_depth:
+            deb.Always("Setting Manual buffer_resize_policy")
+            self.buffer.setResizePolicy(self.buffer.Manual)
+            deb.Always("Setting buffer_packet_fifo_depth: %s" %
+                       packet_fifo_depth)
+            self.buffer.setPacketFifoDepth(int(packet_fifo_depth))
 
     def init_list_attr(self):
         nl = ['GenericDet', 'EigerDet', 'JungfrauDet']
@@ -159,6 +167,10 @@ class SlsDetector(PyTango.Device_4Impl):
         nl = ['PixelDepth4', 'PixelDepth8', 'PixelDepth16', 'PixelDepth32']
         bdl = map(lambda x: getattr(SlsDetectorHw, x), nl)
         self.__PixelDepth = OrderedDict([(str(bd), int(bd)) for bd in bdl])
+
+        nl = ['Auto', 'Manual']
+        BufferMgr = SlsDetectorHw.BufferMgr
+        self.__ResizePolicy = ConstListAttr(nl, namespc=BufferMgr)
 
     @Core.DEB_MEMBER_FUNCT
     def init_dac_adc_attr(self):
@@ -228,7 +240,7 @@ class SlsDetector(PyTango.Device_4Impl):
         m = self.AttrNameRe.match(name)
         if m and (m.group('klass') != 'SlsDetector'):
             member = m.group('member')
-            if member in ['Type', 'PixelDepth']:
+            if member in ['Type', 'PixelDepth', 'ResizePolicy']:
                 return getattr(self, '_SlsDetector__' + member)
         obj = obj or self.cam
         return get_attr_4u(self, name, obj)
@@ -544,6 +556,9 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [PyTango.DevString,
          "The maximum memory (percent) for image packet buffers (Fifo length), "
          "similar to LimaCCDs.BufferMaxMemory", []],
+        'buffer_packet_fifo_depth':
+        [PyTango.DevString,
+         "The initial packet Fifo length (implies Manual ResizePolicy)", []],
         }
 
     cmd_list = {
@@ -627,6 +642,14 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevLong,
           PyTango.SCALAR,
           PyTango.READ]],
+        'buffer_resize_policy':
+        [[PyTango.DevString,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'buffer_packet_fifo_depth':
+        [[PyTango.DevLong,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
         }
 
     def __init__(self,name) :
