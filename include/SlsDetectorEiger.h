@@ -52,149 +52,6 @@ class Eiger : public Model
 		NonParallel, Parallel,
 	};
 
-	class Geometry
-	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Geometry",
-				  "SlsDetector");
-	public:
-		typedef std::bitset<EigerNbRecvPorts> Mask;
-
-		class Recv
-		{
-			DEB_CLASS_NAMESPC(DebModCamera, "Eiger::Geometry::Recv",
-					  "SlsDetector");
-		public:
-			class Port;
-
-			struct FrameData {
-				char *src[EigerNbRecvPorts];
-				char *dst;
-				Mask valid;
-
-				FrameData();
-				FrameData(const Receiver::ImagePackets& image, char *d);
-			};
-
-			class Port
-			{
-				DEB_CLASS_NAMESPC(DebModCamera,
-						  "Eiger::Geometry::Recv::Port",
-						  "SlsDetector");
-			public:
-				Port(Recv *recv, int port);
-
-				void prepareAcq();
-
-				FrameDim getSrcFrameDim();
-
-				void copy(char *dst, char *src);
-
-			private:
-				friend class Recv;
-
-				struct LocationData {
-					int len;	// length
-					int cw;		// chip width
-					int lw;		// line width
-					int off;	// offset
-				};
-
-				Recv *m_recv;
-				int m_recv_idx;
-				int m_port;
-				bool m_top_half_recv;
-				bool m_raw;
-				int m_pchips;
-				LocationData m_src;
-				LocationData m_dst;
-				int m_port_blocks;
-			};
-			typedef std::vector<AutoPtr<Port> > PortList;
-
-			Recv(Geometry *eiger_geom, int idx);
-
-			int getNbPorts();
-			Port *getPort(int idx);
-
-			void prepareAcq();
-
-			void processFrame(const FrameData& data)
-			{
-				if (m_pixel_depth_4)
-					expandPixelDepth4(data);
-				else
-					copy(data);
-			}
-
-			void expandPixelDepth4(const FrameData& data);
-			void copy(const FrameData& data);
-
-			int getDstBufferOffset()
-			{
-				Port *port = m_port_list[0];
-				Port::LocationData& dst = port->m_dst;
-				return dst.off;
-			}
-
-		private:
-			friend class Port;
-			friend class Geometry;
-
-			Geometry *m_eiger_geom;
-			int m_idx;
-			PortList m_port_list;
-			bool m_pixel_depth_4;
-		};
-		typedef std::vector<AutoPtr<Recv> > RecvList;
-
-		Geometry();
-
-		void setNbRecvs(int nb_recv);
-		int getNbRecvs()
-		{ return m_recv_list.size(); }
-		Recv *getRecv(int idx)
-		{ return m_recv_list[idx]; }
-
-		int getNbEigerModules()
-		{ return getNbRecvs() / 2; }
-
-		void setRaw(bool  raw)
-		{ m_raw = raw; }
-		bool getRaw()
-		{ return m_raw; }
-
-		void setImageType(ImageType image_type)
-		{ m_image_type = image_type; }
-		ImageType getImageType()
-		{ return m_image_type; }
-
-		void setPixelDepth(PixelDepth pixel_depth)
-		{ m_pixel_depth = pixel_depth; }
-		PixelDepth getPixelDepth()
-		{ return m_pixel_depth; }
-		bool isPixelDepth4()
-		{ return (m_pixel_depth == PixelDepth4); }
-
-
-		FrameDim getFrameDim(bool raw);
-		FrameDim getRecvFrameDim(bool raw);
-
-		int getInterModuleGap(int det);
-
-		void prepareAcq();
-
-	private:
-		friend class Recv;
-		friend class Recv::Port;
-		friend class Eiger;
-
-		bool m_raw;
-		ImageType m_image_type;
-		PixelDepth m_pixel_depth;
-		FrameDim m_recv_frame_dim;
-		RecvList m_recv_list;
-	};
-
 	Eiger(Camera *cam);
 	~Eiger();
 
@@ -247,9 +104,6 @@ class Eiger : public Model
 
 	bool isTenGigabitEthernetEnabled();
 	void setFlowControl10G(bool enabled);
-
-	Geometry *getGeometry()
-	{ return &m_geom; }
 
 	void getFpgaFramePtrDiff(PtrDiffList& ptr_diff);
 
@@ -435,13 +289,15 @@ class Eiger : public Model
 	};
 
 	int getNbEigerModules()
-	{ return m_geom.getNbEigerModules(); }
+	{ return getNbRecvs() / 2; }
 
-	const FrameDim& getRecvFrameDim()
-	{ return m_geom.m_recv_frame_dim; }
+	FrameDim getModFrameDim();
+	int getInterModuleGap(int det);
 
 	int getNbRecvs()
 	{ return getCamera()->getNbRecvs(); }
+
+	ImageType getImageType();
 
 	CorrBase *createChipBorderCorr(ImageType image_type);
 
@@ -450,8 +306,6 @@ class Eiger : public Model
 	void removeAllCorr();
 
 	double getBorderCorrFactor(int det, int line);
-	int getInterModuleGap(int det)
-	{ return m_geom.getInterModuleGap(det); }
 
 	void measureReadoutTime(double& readout_time);
 
@@ -482,7 +336,6 @@ class Eiger : public Model
 
 	BebList m_beb_list;
 	bool m_signed_image_mode;
-	Geometry m_geom;
 	CorrList m_corr_list;
 	ModelReconstruction *m_reconstruction;
 	bool m_fixed_clock_div;

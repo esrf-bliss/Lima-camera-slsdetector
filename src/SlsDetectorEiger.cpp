@@ -23,6 +23,8 @@
 #include "SlsDetectorEiger.h"
 #include "lima/MiscUtils.h"
 
+#include "sls/detectors/eiger/Geometry.h"
+
 #include <emmintrin.h>
 #include <sched.h>
 
@@ -30,6 +32,18 @@ using namespace std;
 using namespace lima;
 using namespace lima::SlsDetector;
 using namespace lima::SlsDetector::Defs;
+
+#define applyDetGeom(e, f, raw)						\
+	using namespace sls::Eiger::Geom;				\
+	Defs::xy det_size = e->m_det->getDetectorSize();		\
+	auto any_geom = AnyDetGeomFromDetSize({det_size.x, det_size.y}); \
+	std::visit([&](auto const &geom) {				\
+	    if (raw)							\
+		f(geom.raw_geom);					\
+	    else							\
+		f(geom.asm_wg_geom);					\
+	}, any_geom);
+
 
 const int Eiger::ChipSize = 256;
 const int Eiger::ChipGap = 2;
@@ -68,8 +82,7 @@ void Eiger::CorrBase::prepareAcq()
 	if (!m_eiger)
 		THROW_HW_ERROR(InvalidValue) << "Correction already removed";
 
-	const FrameDim& recv_dim = m_eiger->getRecvFrameDim();
-	m_mod_frame_dim = recv_dim * Point(1, 2);
+	m_mod_frame_dim = m_eiger->getModFrameDim();
 	m_frame_size = m_mod_frame_dim.getSize() * Point(1, m_nb_eiger_modules);
 	m_inter_lines.resize(m_nb_eiger_modules);
 	for (int i = 0; i < m_nb_eiger_modules - 1; ++i) {
@@ -100,396 +113,6 @@ Data Eiger::ModelReconstruction::processModel(Data& data)
 	return ret;
 }
 
-Eiger::Geometry::Recv::FrameData::FrameData()
-{
-}
-
-Eiger::Geometry::Recv::FrameData::FrameData(const Receiver::ImagePackets& /*image*/,
-					    char *d)
-	: dst(d)
-{
-}
-
-Eiger::Geometry::Recv::Port::Port(Recv *recv, int port)
-	: m_recv(recv), m_recv_idx(m_recv->m_idx), m_port(port)
-{
-	DEB_CONSTRUCTOR();
-	DEB_PARAM() << DEB_VAR2(m_recv_idx, m_port);
-	m_top_half_recv = (m_recv_idx % 2 == 0);
-}
-
-void Eiger::Geometry::Recv::Port::prepareAcq()
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(m_recv_idx);
-
-	Geometry *geom = m_recv->m_eiger_geom;
-	m_raw = geom->m_raw;
-	const FrameDim& frame_dim = geom->m_recv_frame_dim;
-	const Size& size = frame_dim.getSize();
-	int depth = frame_dim.getDepth();
-	m_dst.lw = size.getWidth() * depth;
-	int recv_size = frame_dim.getMemSize();
-	int src_port_offset = 0;
-	int dst_port_offset = recv_size * m_recv_idx;
-
-	m_pchips = HalfModuleChips / NbRecvPorts;
-	m_src.cw = ChipSize * depth;
-	m_dst.cw = m_src.cw;
-	if (m_recv->m_pixel_depth_4)
-		m_src.cw /= 2;
-	m_src.lw = m_pchips * m_src.cw;
-
-	if (m_raw) {
-		// vert. port concat.
-		dst_port_offset += ChipSize * m_dst.lw * m_port;
-	} else {
-		// inter-chip horz. gap
-		m_dst.cw += ChipGap * depth;
-		// horz. port concat.
-		dst_port_offset += m_pchips * m_dst.cw * m_port;
-
-		int mod_idx = m_recv_idx / 2;
-		for (int i = 0; i < mod_idx; ++i)
-			dst_port_offset += (geom->getInterModuleGap(i) *
-					    m_dst.lw);
-		if (m_top_half_recv) {
-			// top-half module: vert-flipped data
-			src_port_offset += (ChipSize - 1) * m_src.lw;
-			m_src.lw *= -1;
-		} else {
-			// bottom-half module: inter-chip vert. gap
-			dst_port_offset += (ChipGap / 2) * m_dst.lw;
-		}
-	}
-
-	const int block_len = sizeof(__m128i);
-	const int chip_blocks = ChipSize / 2 / block_len;
-
-	const int port_lines = m_raw ? ChipSize : 1;
-	m_port_blocks = chip_blocks * m_pchips * port_lines;
-	DEB_TRACE() << DEB_VAR2(port_lines, m_port_blocks);
-	m_src.len = ChipSize * abs(m_src.lw);
-	m_src.off = src_port_offset;
-	m_dst.off = dst_port_offset;
-	DEB_TRACE() << DEB_VAR3(m_src.len, m_src.off, m_dst.off);
-}
-
-FrameDim Eiger::Geometry::Recv::Port::getSrcFrameDim()
-{
-	DEB_MEMBER_FUNCT();
-	FrameDim fdim(abs(m_src.lw), ChipSize, Bpp8);
-	DEB_RETURN() << DEB_VAR1(fdim);
-	return fdim;
-}
-
-void Eiger::Geometry::Recv::Port::copy(char *dst, char *src)
-{
-	DEB_MEMBER_FUNCT();
-
-	bool valid_data = (src != NULL);
-	src += m_src.off;
-	dst += m_dst.off;
-
-	const int& lines = ChipSize;
-	if (m_raw) {
-		int size = m_src.lw * lines;
-		if (valid_data)
-			memcpy(dst, src, size);
-		else
-			memset(dst, 0xff, size);
-		return;
-	}
-
-	for (int i = 0; i < lines; ++i, src += m_src.lw, dst += m_dst.lw) {
-		char *s = src;
-		char *d = dst;
-		for (int j = 0; j < m_pchips; ++j, s += m_src.cw, d += m_dst.cw)
-			if (valid_data)
-				memcpy(d, s, m_src.cw);
-			else
-				memset(d, 0xff, m_src.cw);
-	}
-}
-
-Eiger::Geometry::Recv::Recv(Geometry *eiger_geom, int idx)
-	: m_eiger_geom(eiger_geom), m_idx(idx)
-{
-	DEB_CONSTRUCTOR();
-	DEB_PARAM() << DEB_VAR1(m_idx);
-
-	for (int i = 0; i < NbRecvPorts; ++i) {
-		Port *p = new Port(this, i);
-		m_port_list.push_back(p);
-	}
-}
-
-int Eiger::Geometry::Recv::getNbPorts()
-{
-	DEB_MEMBER_FUNCT();
-	DEB_RETURN() << DEB_VAR1(NbRecvPorts);
-	return NbRecvPorts;
-}
-
-Eiger::Geometry::Recv::Port *Eiger::Geometry::Recv::getPort(int port_idx)
-{
-	DEB_MEMBER_FUNCT();
-	return m_port_list[port_idx];
-}
-
-void Eiger::Geometry::Recv::prepareAcq()
-{
-	DEB_MEMBER_FUNCT();
-
-	m_pixel_depth_4 = (m_eiger_geom->m_pixel_depth == PixelDepth4);
-
-	PortList::iterator it, end = m_port_list.end();
-	for (it = m_port_list.begin(); it != end; ++it)
-		(*it)->prepareAcq();
-}
-
-void Eiger::Geometry::Recv::copy(const FrameData& data)
-{
-	DEB_MEMBER_FUNCT();
-	for (int i = 0; i < getNbPorts(); ++i)
-		m_port_list[i]->copy(data.dst, data.src[i]);
-}
-
-void Eiger::Geometry::Recv::expandPixelDepth4(const FrameData& data)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR3(DEB_HEX((unsigned long) data.src[0]),
-				DEB_HEX((unsigned long) data.src[1]),
-				DEB_HEX((unsigned long) data.dst));
-
-	const int nb_ports = NbRecvPorts;
-	Port *port = m_port_list[0];
-	const bool raw = port->m_raw;
-	int pi;
-	char *src[EigerNbRecvPorts];
-	for (pi = 0; pi < nb_ports; ++pi) {
-		src[pi] = data.src[pi] + m_port_list[pi]->m_src.off;
-		unsigned long s = (unsigned long) src[pi];
-		if ((s & 15) != 0)
-			THROW_HW_ERROR(Error) << "Missaligned src: "
-					      << DEB_VAR1(DEB_HEX(s));
-	}
-	pi = 0;
-	char *dst = data.dst + port->m_dst.off;
-	unsigned long d = (unsigned long) dst;
-	int dest_misalign = (d & 15);
-	if (raw && dest_misalign)
-		THROW_HW_ERROR(Error) << "Missaligned dest: "
-				      << DEB_VAR1(DEB_HEX(d));
-
-	DEB_TRACE() << DEB_VAR1(dest_misalign);
-	DEB_TRACE() << DEB_VAR3(DEB_HEX((unsigned long) src[0]),
-				DEB_HEX((unsigned long) src[1]),
-				DEB_HEX((unsigned long) dst));
-	bool valid_data = data.valid.test(pi);
-	const int block_len = sizeof(__m128i);
-	int nb_blocks = port->m_src.len * nb_ports / block_len;
-	const int chip_blocks = ChipSize / 2 / block_len;
-	const int port_blocks = port->m_port_blocks;
-	const __m128i *src128 = (const __m128i *) src[pi];
-	__m128i *dst128 = (__m128i *) dst;
-	const __m128i m = _mm_set1_epi8(0xf);
-	const int block_bits = block_len * 8;
-	const int gap_bits = ChipGap * 8;
-	const __m128i block64_bits128 = _mm_set_epi64x(0, 64);
-	const __m128i gap_bits128 = _mm_set_epi64x(0, gap_bits);
-	int shift_l = 0;
-	__m128i shift_l128, shift_r128;
-	__m128i m64_0 = _mm_set_epi64x(0, -1);
-	__m128i m64_1 = _mm_set_epi64x(-1, 0);
- 	bool reverse = (port->m_src.lw < 0);
-	__m128i m0, prev;
-	int chip_count = 0;
-
-#define load_dst128()							\
-	do {								\
-		dest_misalign = ((unsigned long) dst & 15);		\
-		dst128 = (__m128i *) (dst - dest_misalign);		\
-		shift_l = dest_misalign * 8;				\
-		shift_l128 = _mm_set_epi64x(0, shift_l % 64);		\
-		shift_r128 = _mm_sub_epi64(block64_bits128, shift_l128); \
-		if (shift_l != 0) {					\
-			m0 = _mm_srl_epi64(_mm_set1_epi8(0xff), shift_r128); \
-			if (shift_l < 64)				\
-				m0 = _mm_and_si128(m0, m64_0);		\
-			prev = _mm_and_si128(_mm_load_si128(dst128), m0); \
-		} else {						\
-			prev = _mm_setzero_si128();			\
-		}							\
-	} while (0)
-
-#define pad_dst128()							\
-	do {								\
-		shift_l += gap_bits;					\
-		if (shift_l % 64 == 0)					\
-			shift_l128 = _mm_setzero_si128();		\
-		else							\
-			shift_l128 = _mm_add_epi64(shift_l128, gap_bits128); \
-		shift_r128 = _mm_sub_epi64(block64_bits128, shift_l128); \
-		if (shift_l == block_bits) {				\
-			_mm_store_si128(dst128++, prev);		\
-			prev = _mm_setzero_si128();			\
-			shift_l = 0;					\
-		}							\
-	} while (0)
-
-#define sync_dst128()							\
-	do {								\
-		if (shift_l != 0) {					\
-			m0 = _mm_sll_epi64(_mm_set1_epi8(0xff), shift_l128); \
-			if (shift_l >= 64)				\
-				m0 = _mm_and_si128(m0, m64_1);		\
-			__m128i a = _mm_and_si128(_mm_load_si128(dst128), m0); \
-			_mm_store_si128(dst128, _mm_or_si128(prev, a));	\
-		}							\
-	} while (0)
-
-	if (!raw)
-		load_dst128();
-	for (int i = 0; i < nb_blocks; ++i) {
-		if (i == 0)
-			DEB_TRACE() << DEB_VAR3(DEB_HEX((unsigned long) src128),
-						DEB_HEX((unsigned long) dst128),
-						nb_blocks);
-		if (!raw && i && (i % chip_blocks == 0) &&
-		    (++chip_count % HalfModuleChips > 0))
-			pad_dst128();
-		if (i && (i % port_blocks == 0)) {
-			if (reverse)
-				src128 -= 2 * port_blocks;
-			src[pi++] = (char *) src128;
-			pi %= nb_ports;
-			valid_data = data.valid.test(pi);
-			src128 = (const __m128i *) src[pi];
-		}
-		__m128i p4_raw;
-		if (valid_data)
-			p4_raw = _mm_load_si128(src128);
-		else
-			p4_raw = _mm_set1_epi8(0xff);
-		++src128;
-		__m128i p4_shr = _mm_srli_epi16(p4_raw, 4);
-		__m128i i8_0 = _mm_and_si128(p4_raw, m);
-		__m128i i8_1 = _mm_and_si128(p4_shr, m);
-		__m128i p8_0 = _mm_unpacklo_epi8(i8_0, i8_1);
-		__m128i p8_1 = _mm_unpackhi_epi8(i8_0, i8_1);
-		if (raw) {
-			_mm_store_si128(dst128++, p8_0);
-			_mm_store_si128(dst128++, p8_1);
-			continue;
-		}
-		__m128i p8_0l = _mm_sll_epi64(p8_0, shift_l128);
-		__m128i p8_0r = _mm_srl_epi64(p8_0, shift_r128);
-		__m128i p8_1l = _mm_sll_epi64(p8_1, shift_l128);
-		__m128i p8_1r = _mm_srl_epi64(p8_1, shift_r128);
-		__m128i d0, d1, d2, d3, d4;
-		if (shift_l < 64) {
-			d0 = p8_0l;
-			d1 = p8_0r;
-			d2 = p8_1l;
-			d3 = p8_1r;
-			d4 = _mm_setzero_si128();
-		} else {
-			d0 = _mm_setzero_si128();
-			d1 = p8_0l;
-			d2 = p8_0r;
-			d3 = p8_1l;
-			d4 = p8_1r;
-		}
-		__m128i d10 = _mm_slli_si128(d1, 8);
-		__m128i d11 = _mm_srli_si128(d1, 8);
-		__m128i d30 = _mm_slli_si128(d3, 8);
-		__m128i d31 = _mm_srli_si128(d3, 8);
-		prev = _mm_or_si128(prev, d0);
-		_mm_store_si128(dst128++, _mm_or_si128(prev, d10));
-		prev = _mm_or_si128(d11, d2);
-		_mm_store_si128(dst128++, _mm_or_si128(prev, d30));
-		prev = _mm_or_si128(d31, d4);
-	}
-	if (!raw)
-		sync_dst128();
-}
-
-Eiger::Geometry::Geometry()
-	: m_raw(false), m_image_type(Bpp16), m_pixel_depth(PixelDepth16)
-{
-	DEB_CONSTRUCTOR();
-}
-
-int Eiger::Geometry::getInterModuleGap(int det)
-{
-	DEB_MEMBER_FUNCT();
-	if (det >= getNbEigerModules() - 1)
-		THROW_HW_ERROR(InvalidValue) << "Invalid " << DEB_VAR1(det);
-	return 36;
-}
-
-void Eiger::Geometry::setNbRecvs(int nb_recv)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(nb_recv);
-
-	int curr_nb_recv = m_recv_list.size();
-	if (curr_nb_recv > nb_recv) {
-		m_recv_list.resize(nb_recv);
-		return;
-	}
-
-	for (int i = curr_nb_recv; i < nb_recv; ++i) {
-		Recv *r = new Recv(this, i);
-		m_recv_list.push_back(r);
-	}
-}
-
-void Eiger::Geometry::prepareAcq()
-{
-	DEB_MEMBER_FUNCT();
-
-	m_recv_frame_dim = getRecvFrameDim(m_raw);
-
-	RecvList::iterator rit, rend = m_recv_list.end();
-	for (rit = m_recv_list.begin(); rit != rend; ++rit)
-		(*rit)->prepareAcq();
-}
-
-FrameDim Eiger::Geometry::getFrameDim(bool raw)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(raw);
-	FrameDim frame_dim = getRecvFrameDim(raw);
-	Size size = frame_dim.getSize();
-	size *= Point(1, getNbRecvs());
-	if (!raw)
-		for (int i = 0; i < getNbEigerModules() - 1; ++i)
-			size += Point(0, getInterModuleGap(i));
-	frame_dim.setSize(size);
-	DEB_RETURN() << DEB_VAR1(frame_dim);
-	return frame_dim;
-}
-
-FrameDim Eiger::Geometry::getRecvFrameDim(bool raw)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(raw);
-	FrameDim frame_dim;
-	frame_dim.setImageType(m_image_type);
-	Size size(ChipSize * HalfModuleChips, ChipSize);
-	if (raw) {
-		size /= Point(NbRecvPorts, 1);
-		size *= Point(1, NbRecvPorts);
-	} else {
-		size += Point(ChipGap, ChipGap) * Point(3, 1) / Point(1, 2);
-	}
-	frame_dim.setSize(size);
-	DEB_RETURN() << DEB_VAR1(frame_dim);
-	return frame_dim;
-}
-
 Eiger::Beb::Beb(const std::string& host_name)
 	: shell(host_name), fpga_mem(shell)
 {
@@ -510,8 +133,6 @@ Eiger::Eiger(Camera *cam)
 		Beb *beb = new Beb(*it);
 		m_beb_list.push_back(beb);
 	}
-
-	m_geom.setNbRecvs(nb_det_modules);
 
 	if (isTenGigabitEthernetEnabled()) {
 		DEB_TRACE() << "Forcing 10G Ethernet flow control";
@@ -538,8 +159,67 @@ void Eiger::getFrameDim(FrameDim& frame_dim, bool raw)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(raw);
-	frame_dim = m_geom.getFrameDim(raw);
+
+	Size size;
+	auto f = [&](auto const &det_geom) {
+		size = Size(det_geom.size.x, det_geom.size.y);
+		DEB_TRACE() << DEB_VAR1(size);
+	};
+	applyDetGeom(this, f, raw);
+
+	frame_dim = FrameDim(size, getImageType());
 	DEB_RETURN() << DEB_VAR1(frame_dim);
+}
+
+FrameDim Eiger::getModFrameDim()
+{
+	DEB_MEMBER_FUNCT();
+
+	bool raw;
+	getCamera()->getRawMode(raw);
+
+	Size size;
+	auto f = [&](auto const &det_geom) {
+        	auto mod_size = det_geom.mod_geom_size;
+		size = Size(mod_size.x, mod_size.y);
+		DEB_TRACE() << DEB_VAR1(size);
+	};
+	applyDetGeom(this, f, raw);
+
+	FrameDim frame_dim(size, getImageType());
+	DEB_RETURN() << DEB_VAR1(frame_dim);
+	return frame_dim;
+}
+
+int Eiger::getInterModuleGap(int det)
+{
+	return sls::Eiger::Geom::ModGap.y;
+}
+
+ImageType Eiger::getImageType()
+{
+	DEB_MEMBER_FUNCT();
+
+	PixelDepth pixel_depth;
+	getCamera()->getPixelDepth(pixel_depth);
+	DEB_TRACE() << DEB_VAR1(pixel_depth);
+
+	bool signed_img = m_signed_image_mode;
+	ImageType image_type;
+	switch (pixel_depth) {
+	case PixelDepth4:
+	case PixelDepth8:
+		image_type = signed_img ? Bpp8S  : Bpp8;	break;
+	case PixelDepth16:
+		image_type = signed_img ? Bpp16S : Bpp16;	break;
+	case PixelDepth32:
+		image_type = signed_img ? Bpp32S : Bpp32;	break;
+	default:
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(pixel_depth);
+	}
+
+	DEB_RETURN() << DEB_VAR1(image_type);
+	return image_type;
 }
 
 void Eiger::getDetMap(Data& /*det_map*/)
@@ -790,38 +470,9 @@ void Eiger::updateImageSize()
 
 	removeAllCorr();
 
-	Camera *cam = getCamera();
-
-	bool raw;
-	cam->getRawMode(raw);
 	PixelDepth pixel_depth;
-	cam->getPixelDepth(pixel_depth);
-
-	bool signed_img = m_signed_image_mode;
-	ImageType image_type;
-	switch (pixel_depth) {
-	case PixelDepth4:
-	case PixelDepth8:
-		image_type = signed_img ? Bpp8S  : Bpp8;	break;
-	case PixelDepth16:
-		image_type = signed_img ? Bpp16S : Bpp16;	break;
-	case PixelDepth32:
-		image_type = signed_img ? Bpp32S : Bpp32;	break;
-	default:
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(pixel_depth);
-	}
-
-	DEB_TRACE() << DEB_VAR3(raw, image_type, pixel_depth);
-
-	m_geom.setRaw(raw);
-	m_geom.setPixelDepth(pixel_depth);
-	m_geom.setImageType(image_type);
-	m_geom.prepareAcq();
-
-	if (raw)
-		return;
-
-	createChipBorderCorr(image_type);
+	getCamera()->getPixelDepth(pixel_depth);
+	DEB_TRACE() << DEB_VAR1(pixel_depth);
 
 	if (pixel_depth == PixelDepth32) {
 		setClockDiv(QuarterSpeed);
@@ -842,6 +493,15 @@ void Eiger::updateImageSize()
 			}
 		}
 	}
+
+	bool raw;
+	getCamera()->getRawMode(raw);
+	DEB_TRACE() << DEB_VAR1(raw);
+
+	if (raw)
+		return;
+
+	createChipBorderCorr(getImageType());
 }
 
 bool Eiger::checkSettings(Settings settings)
@@ -1052,8 +712,6 @@ void Eiger::setFlowControl10G(bool enabled)
 void Eiger::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
-
-	m_geom.prepareAcq();
 
 	CorrList::iterator cit, cend = m_corr_list.end();
 	for (cit = m_corr_list.begin(); cit != cend; ++cit)
