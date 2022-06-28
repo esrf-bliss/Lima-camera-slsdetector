@@ -87,6 +87,7 @@ class SlsDetectorEiger(SlsDetector):
             self.model.setFixedClockDiv(self.fixed_clock_div)
         if self.threshold_energy > 0:
             self.model.setThresholdEnergy(self.threshold_energy)
+        sys.stderr.flush()
 
     def init_list_attr(self):
         SlsDetector.init_list_attr(self)

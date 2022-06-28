@@ -121,6 +121,7 @@ class SlsDetectorJungfrau(SlsDetector):
                         prev_ave = gd_ave
             except Exception as e:
                 deb.Error("Error loading calibration: %s" % e)
+        sys.stderr.flush()
 
     def init_list_attr(self):
         SlsDetector.init_list_attr(self)
