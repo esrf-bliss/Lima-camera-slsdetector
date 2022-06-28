@@ -248,6 +248,9 @@ class Eiger : public Model
 	void setTxFrameDelay(int  tx_frame_delay);
 	void getTxFrameDelay(int& tx_frame_delay);
 
+	void setSignedImageMode(bool  signed_image_mode);
+	void getSignedImageMode(bool& signed_image_mode);
+
 	bool isTenGigabitEthernetEnabled();
 	void setFlowControl10G(bool enabled);
 
@@ -498,6 +501,7 @@ class Eiger : public Model
 	static const unsigned long BebFpgaPtrRange;
 
 	BebList m_beb_list;
+	bool m_signed_image_mode;
 	Geometry m_geom;
 	CorrList m_corr_list;
 	RecvList m_recv_list;

@@ -56,6 +56,7 @@ class SlsDetectorEiger(SlsDetector):
 #------------------------------------------------------------------
 
     ModelAttrs = ['apply_corrections',
+                  'signed_image_mode',
                   'parallel_mode',
                   'high_voltage',
                   'clock_div',
@@ -149,6 +150,10 @@ class SlsDetectorEigerClass(SlsDetectorClass):
 
     attr_list = {
         'apply_corrections':
+        [[PyTango.DevBoolean,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'signed_image_mode':
         [[PyTango.DevBoolean,
           PyTango.SCALAR,
           PyTango.READ_WRITE]],

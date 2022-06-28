@@ -20,6 +20,7 @@
 // along with this program; if not, see <http://www.gnu.org/licenses/>.
 //###########################################################################
 #include "SlsDetectorInterface.h"
+#include "SlsDetectorEiger.h"
 #include "lima/MiscUtils.h"
 
 using namespace lima;
@@ -106,13 +107,22 @@ void DetInfoCtrlObj::setCurrImageType(ImageType curr_image_type)
 {
 	DEB_MEMBER_FUNCT();
 	PixelDepth pixel_depth;
+	bool signed_img;
 	switch (curr_image_type) {
-	case Bpp8:	pixel_depth = PixelDepth8;	break;
-	case Bpp16:	pixel_depth = PixelDepth16;	break;
-	case Bpp32:	pixel_depth = PixelDepth32;	break;
+	case Bpp8:   pixel_depth = PixelDepth8;  signed_img = false; break;
+	case Bpp8S:  pixel_depth = PixelDepth8;  signed_img = true;  break;
+	case Bpp16:  pixel_depth = PixelDepth16; signed_img = false; break;
+	case Bpp16S: pixel_depth = PixelDepth16; signed_img = true;  break;
+	case Bpp32:  pixel_depth = PixelDepth32; signed_img = false; break;
+	case Bpp32S: pixel_depth = PixelDepth32; signed_img = true; break;
 	default:
 		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(curr_image_type);
 	}
+	if (m_cam.getType() == EigerDet) {
+		Eiger *eiger = static_cast<Eiger *>(m_cam.getModel());
+		eiger->setSignedImageMode(signed_img);
+	} else if (signed_img)
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(curr_image_type);
 	m_cam.setPixelDepth(pixel_depth);
 }
 

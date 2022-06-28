@@ -456,7 +456,6 @@ Camera::Camera(string config_fname, int det_id)
 	  m_lat_time(0),
 	  m_buffer(this),
 	  m_pixel_depth(PixelDepth16), 
-	  m_image_type(Bpp16), 
 	  m_raw_mode(false),
 	  m_state(Idle),
 	  m_new_frame_timeout(0.5),
@@ -883,21 +882,9 @@ void Camera::setPixelDepth(PixelDepth pixel_depth)
 		THROW_HW_FATAL(Error) << "Camera is not idle";
 
 	waitAcqState(Idle);
-	ImageType image_type;
-	switch (pixel_depth) {
-	case PixelDepth4:
-	case PixelDepth8:
-		image_type = Bpp8;	break;
-	case PixelDepth16:
-		image_type = Bpp16;	break;
-	case PixelDepth32:
-		image_type = Bpp32;	break;
-	default:
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(pixel_depth);
-	}
+
 	EXC_CHECK(m_det->setDynamicRange(pixel_depth));
 	m_pixel_depth = pixel_depth;
-	m_image_type = image_type;
 
 	if (m_model) {
 		updateImageSize();

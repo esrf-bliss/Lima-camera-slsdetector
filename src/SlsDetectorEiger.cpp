@@ -545,7 +545,8 @@ Eiger::Beb::Beb(const std::string& host_name)
 }
 
 Eiger::Eiger(Camera *cam)
-	: Model(cam, EigerDet), m_fixed_clock_div(false)
+	: Model(cam, EigerDet), m_signed_image_mode(false),
+	  m_fixed_clock_div(false)
 {
 	DEB_CONSTRUCTOR();
 
@@ -845,9 +846,22 @@ void Eiger::updateImageSize()
 
 	bool raw;
 	cam->getRawMode(raw);
-	ImageType image_type = cam->getImageType();
 	PixelDepth pixel_depth;
 	cam->getPixelDepth(pixel_depth);
+
+	bool signed_img = m_signed_image_mode;
+	ImageType image_type;
+	switch (pixel_depth) {
+	case PixelDepth4:
+	case PixelDepth8:
+		image_type = signed_img ? Bpp8S  : Bpp8;	break;
+	case PixelDepth16:
+		image_type = signed_img ? Bpp16S : Bpp16;	break;
+	case PixelDepth32:
+		image_type = signed_img ? Bpp32S : Bpp32;	break;
+	default:
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(pixel_depth);
+	}
 
 	DEB_TRACE() << DEB_VAR3(raw, image_type, pixel_depth);
 
@@ -1058,6 +1072,21 @@ void Eiger::getTxFrameDelay(int& tx_frame_delay)
 	DEB_RETURN() << DEB_VAR1(tx_frame_delay);
 }
 
+void Eiger::setSignedImageMode(bool signed_image_mode)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(signed_image_mode);
+	m_signed_image_mode = signed_image_mode;
+	getCamera()->updateImageSize();
+}
+
+void Eiger::getSignedImageMode(bool& signed_image_mode)
+{
+	DEB_MEMBER_FUNCT();
+	signed_image_mode = m_signed_image_mode;
+	DEB_RETURN() << DEB_VAR1(signed_image_mode);
+}
+
 int Eiger::getNbRecvs()
 {
 	DEB_MEMBER_FUNCT();
@@ -1112,12 +1141,15 @@ Eiger::CorrBase *Eiger::createChipBorderCorr(ImageType image_type)
 	CorrBase *border_corr;
 	switch (image_type) {
 	case Bpp8:
+	case Bpp8S:
 		border_corr = new ChipBorderCorr<Byte>(this);
 		break;
 	case Bpp16:
+	case Bpp16S:
 		border_corr = new ChipBorderCorr<Word>(this);
 		break;
 	case Bpp32:
+	case Bpp32S:
 		border_corr = new ChipBorderCorr<Long>(this);
 		break;
 	default:

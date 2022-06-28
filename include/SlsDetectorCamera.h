@@ -90,9 +90,6 @@ public:
 	void waitAcqState(AcqState state);
 	AcqState waitNotAcqState(AcqState state);
 
-	ImageType getImageType() const
-	{ return m_image_type; }
-
 	void getFrameDim(FrameDim& frame_dim, bool raw = false)
 	{ m_model->getFrameDim(frame_dim, raw); }
 
@@ -293,7 +290,6 @@ private:
 	Settings m_settings;
 	BufferMgr m_buffer;
 	PixelDepth m_pixel_depth;
-	ImageType m_image_type;
 	bool m_raw_mode;
 	AcqState m_state;
 	Timestamp m_next_ready_ts;
