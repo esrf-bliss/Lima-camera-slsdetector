@@ -470,7 +470,8 @@ void Camera::AcqThread::stopAcq()
 	DetStatus det_status = m_cam->getDetStatus();
 	bool xfer_active = m_cam->m_model->isXferActive();
 	DEB_ALWAYS() << DEB_VAR2(det_status, xfer_active);
-	if ((det_status == Defs::Running) || xfer_active) {
+	if ((det_status == Defs::Running) || (det_status == Defs::Waiting) ||
+	    xfer_active) {
 		DEB_TRACE() << "calling stopDetector";
 		det->stopDetector();
 		Timestamp t0 = Timestamp::now();
