@@ -112,7 +112,7 @@ void Camera::AppInputData::parseConfigFile()
 
 Camera::AcqThread::ExceptionCleanUp::ExceptionCleanUp(AcqThread& thread,
 						      AutoMutex& l)
-	: Thread::ExceptionCleanUp(thread), m_lock(l)
+	: Thread::ExceptionCleanUp(thread), m_lock(l), m_finished(false)
 {
 	DEB_CONSTRUCTOR();
 }
@@ -120,8 +120,16 @@ Camera::AcqThread::ExceptionCleanUp::ExceptionCleanUp(AcqThread& thread,
 Camera::AcqThread::ExceptionCleanUp::~ExceptionCleanUp()
 {
 	DEB_DESTRUCTOR();
+	if (m_finished)
+		return;
 	AcqThread *thread = static_cast<AcqThread *>(&m_thread);
-	thread->cleanUp(m_lock);
+	thread->onError(m_lock);
+}
+
+void Camera::AcqThread::ExceptionCleanUp::threadFinished()
+{
+	DEB_MEMBER_FUNCT();
+	m_finished = true;
 }
 
 Camera::AcqThread::AcqThread(Camera *cam)
@@ -135,8 +143,7 @@ void Camera::AcqThread::start(AutoMutex& l)
 {
 	DEB_MEMBER_FUNCT();
 
-	if ((&l.mutex() != &m_cond.mutex()) || !l.locked())
-		THROW_HW_ERROR(Error) << "Invalid AutoMutex";
+	CheckLockedAutoMutex(m_cond, l, DEB_PTR());
 
 	m_state = Starting;
 	Thread::start();
@@ -161,8 +168,8 @@ void Camera::AcqThread::start(AutoMutex& l)
 void Camera::AcqThread::stop(AutoMutex& l, bool wait)
 {
 	DEB_MEMBER_FUNCT();
-	if ((&l.mutex() != &m_cond.mutex()) || !l.locked())
-		THROW_HW_ERROR(Error) << "Invalid AutoMutex";
+
+	CheckLockedAutoMutex(m_cond, l, DEB_PTR());
 
 	m_state = StopReq;
 	m_cond.broadcast();
@@ -199,23 +206,104 @@ void Camera::AcqThread::threadFunction()
 	// thread will be deleted in getEffectiveState without releasing lock
 	ExceptionCleanUp cleanup(*this, l);
 
-	GlobalCPUAffinityMgr& affinity_mgr = m_cam->m_global_cpu_affinity_mgr;
+	class Acq
 	{
-		AutoMutexUnlock u(l);
-		affinity_mgr.startAcq();
-		startAcq();
-	}
-	m_state = Running;
-	DEB_TRACE() << DEB_VAR1(m_state);
-	m_cond.broadcast();
+		DEB_CLASS_NAMESPC(DebModCamera, "Camera::AcqThread::Acq", 
+				  "SlsDetector");
+	public:
+		Acq(AcqThread& thread, AutoMutex& l)
+			: m_thread(thread), m_state(m_thread.m_state),
+			  m_cond(m_thread.m_cond), m_lock(l)
+		{
+			DEB_CONSTRUCTOR();
+			CheckLockedAutoMutex(m_cond, m_lock, DEB_PTR());
+			{
+				AutoMutexUnlock u(m_lock);
+				m_thread.startAcq();
+			}
+			m_state = Running;
+			DEB_TRACE() << DEB_VAR1(m_state);
+			m_cond.broadcast();
+		}
+
+		~Acq()
+		{
+			DEB_DESTRUCTOR();
+			DEB_TRACE() << DEB_VAR1(m_state);
+			m_state = Stopping;
+
+			typedef StateCleanUpHelper<AcqState> StateCleanUp;
+			StateCleanUp state_cleanup(m_state, Stopped, m_cond,
+						   m_lock, DEB_PTR());
+
+			AutoMutexUnlock u(m_lock);
+			m_thread.stopAcq();
+
+			Stats stats;
+			m_thread.m_cam->getStats(stats);
+			DEB_ALWAYS() << DEB_VAR1(stats);
+		}
+
+		bool stopReq() { return (m_state == StopReq); }
+
+	private:
+		AcqThread& m_thread;
+		AcqState& m_state;
+		Cond& m_cond;
+		AutoMutex& m_lock;
+	};
+
+	class AffinityMgrProxy
+	{
+	public:
+		AffinityMgrProxy(GlobalCPUAffinityMgr& mgr, AutoMutex& l)
+			: m_mgr(mgr), m_lock(l), m_recv_finished(false)
+		{
+			AutoMutexUnlock u(m_lock);
+			m_mgr.startAcq();
+		}
+
+		~AffinityMgrProxy()
+		{
+			AutoMutexUnlock u(m_lock);
+			if (m_recv_finished)
+				m_mgr.waitLimaFinished();
+			else
+				m_mgr.cleanUp();
+		}
+
+		bool needCheckRecv()
+		{
+			return !m_recv_finished;
+		}
+
+		void recvFinished()
+		{
+			AutoMutexUnlock u(m_lock);
+			m_mgr.recvFinished();
+			m_recv_finished = true;
+		}
+
+	private:
+		GlobalCPUAffinityMgr& m_mgr;
+		AutoMutex& m_lock;
+		bool m_recv_finished;
+	};
+
+	Acq acq(*this, l);
+
+	AffinityMgrProxy affinity_mgr(m_cam->m_global_cpu_affinity_mgr, l);
 
 	Reconstruction *reconstruct = m_cam->m_model->getReconstruction();
 
 	SeqFilter seq_filter;
-	bool had_frames = false;
 	bool cont_acq = true;
 	bool acq_end = false;
 	FrameType next_frame = 0;
+	FrameType acq_nb_frames = m_cam->m_lima_nb_frames;
+
+	const double check_recv_finished_time = 1.0;
+	Timestamp last_check_ts = Timestamp::now();
 
 	auto get_next_frame = [&]() {
 		DetFrameImagePackets packets = readRecvPackets(next_frame++);
@@ -224,59 +312,54 @@ void Camera::AcqThread::threadFunction()
 			frame = -1;
 		return frame;
 	};
-	
-	while ((m_state != StopReq) && cont_acq &&
-	       (next_frame < m_cam->m_lima_nb_frames)) {
+
+	auto need_check_recv = [&] { return affinity_mgr.needCheckRecv(); };
+	auto check_recv_finished = [&] {
+		int last_frame;
+		{
+			AutoMutexUnlock u(l);
+			last_frame = m_cam->getLastFrameCaught();
+		}
+		if (last_frame == acq_nb_frames - 1)
+			affinity_mgr.recvFinished();
+	};
+
+	while (!acq.stopReq() && cont_acq && (next_frame < acq_nb_frames)) {
 		FrameType frame;
 		{
 			AutoMutexUnlock u(l);
 			frame = get_next_frame();
 			DEB_TRACE() << DEB_VAR2(next_frame, frame);
 		}
-		if ((frame == -1) || (m_state == StopReq))
+		if ((frame == -1) || acq.stopReq())
 			break;
-		while (m_state != StopReq)
+		while (!acq.stopReq())
 			if (m_cam->m_buffer.waitFrame(frame, l))
 				break;
-		if (m_state == StopReq)
+		if (acq.stopReq())
 			break;
 		{
 			AutoMutexUnlock u(l);
 			Status status = newFrameReady(frame);
 			cont_acq = status.first;
 			acq_end = status.second;
-			had_frames = true;
+		}
+		Timestamp t = Timestamp::now();
+		if (need_check_recv() &&
+		    (t - last_check_ts > check_recv_finished_time)) {
+			check_recv_finished();
+			last_check_ts = Timestamp::now();
 		}
 	}
 
-	AcqState prev_state = m_state;
+	check_recv_finished();
 
 	if (acq_end && m_cam->m_skip_frame_freq) {
 		AutoMutexUnlock u(l);
 		m_cam->waitLastSkippedFrame();
 	}
-		
-	m_state = Stopping;
-	DEB_TRACE() << DEB_VAR2(prev_state, m_state);
-	{
-		AutoMutexUnlock u(l);
-		stopAcq();
 
-		Stats stats;
-		m_cam->getStats(stats);
-		DEB_ALWAYS() << DEB_VAR1(stats);
-
-		if (had_frames) {
-			affinity_mgr.recvFinished();
-			affinity_mgr.waitLimaFinished();
-		} else {
-			affinity_mgr.cleanUp();
-		}
-	}
-
-	m_state = Stopped;
-	DEB_TRACE() << DEB_VAR1(m_state);
-	m_cond.broadcast();
+	cleanup.threadFinished();
 }
 
 DetFrameImagePackets Camera::AcqThread::readRecvPackets(FrameType frame)
@@ -312,34 +395,25 @@ DetFrameImagePackets Camera::AcqThread::readRecvPackets(FrameType frame)
 	return det_frame_packets;
 }
 
-void Camera::AcqThread::cleanUp(AutoMutex& l)
+void Camera::AcqThread::onError(AutoMutex& l)
 {
 	DEB_MEMBER_FUNCT();
 
-	if ((m_state == Stopped) || (m_state == Idle))
-		return;
+	CheckLockedAutoMutex(m_cond, l, DEB_PTR());
 
-	AcqState prev_state = m_state;
-	if ((m_state == Running) || (m_state == StopReq)) {
-		m_state = Stopping;
-		AutoMutexUnlock u(l);
-		stopAcq();
+	if ((m_state != Stopped) && (m_state != Idle)) {
+		DEB_ERROR() << DEB_VAR1(m_state);
+		m_state = Stopped;
 	}
 
-	{
-		AutoMutexUnlock u(l);
-		ostringstream err_msg;
-		err_msg << "AcqThread: exception thrown: "
-			<< "m_state=" << prev_state;
-		Event::Code err_code = Event::CamFault;
-		Event *event = new Event(Hardware, Event::Error, Event::Camera, 
-					 err_code, err_msg.str());
-		DEB_EVENT(*event) << DEB_VAR1(*event);
-		m_cam->reportEvent(event);
-	}
-
-	m_state = Stopped;
-	m_cond.broadcast();
+	AutoMutexUnlock u(l);
+	ostringstream err_msg;
+	err_msg << "AcqThread: exception thrown!";
+	Event::Code err_code = Event::CamFault;
+	Event *event = new Event(Hardware, Event::Error, Event::Camera, 
+				 err_code, err_msg.str());
+	DEB_EVENT(*event) << DEB_VAR1(*event);
+	m_cam->reportEvent(event);
 }
 
 void Camera::AcqThread::startAcq()
@@ -361,39 +435,34 @@ void Camera::AcqThread::stopAcq()
 	class Sync
 	{
 	public:
-		Sync(Camera *cam, Cond& cond, StopState& stop_state)
-			: m_cam(cam), m_cond(cond), m_stop_state(stop_state),
-			  m_stop_done(false)
+		Sync(StopState& stop_state, Cond& cond, DebObj *deb_ptr)
+			: m_stop_state(stop_state), m_lock(cond.mutex()),
+			  m_was_not_stopped(m_stop_state == NoStop),
+			  m_cleanup(m_stop_state, StopFinished, cond, m_lock,
+				    deb_ptr)
 		{
-			AutoMutex l(m_cam->lock());
-			if (m_stop_state != NoStop) {
+			if (m_was_not_stopped) {
+				m_stop_state = StopRunning;
+			} else {
 				while (m_stop_state != StopFinished)
-					m_cond.wait();
-				m_stop_done = true;
-				return;
+					cond.wait();
 			}
-			m_stop_state = StopRunning;
+			m_unlock = new AutoMutexUnlock(m_lock);
 		}
 
-		~Sync()
-		{
-			if (m_stop_done)
-				return;
-			AutoMutex l(m_cam->lock());
-			m_stop_state = StopFinished;
-			m_cond.broadcast();
-		}
-
-		bool stopDone() { return m_stop_done; }
+		bool stopDone() { return !m_was_not_stopped; }
 
 	private:
-		Camera *m_cam;
-		Cond& m_cond;
+		typedef StateCleanUpHelper<StopState> StateCleanUp;
+
 		StopState& m_stop_state;
-		bool m_stop_done;
+		AutoMutex m_lock;
+		bool m_was_not_stopped;
+		StateCleanUp m_cleanup;
+		AutoPtr<AutoMutexUnlock> m_unlock;
 	};
 
-	Sync sync(m_cam, m_cond, m_stop_state);
+	Sync sync(m_stop_state, m_cond, DEB_PTR());
 	if (sync.stopDone())
 		return;
 
@@ -901,8 +970,8 @@ AcqState Camera::getAcqState()
 AcqState Camera::getEffectiveState(AutoMutex& l)
 {
 	DEB_MEMBER_FUNCT();
-	if ((&l.mutex() != &m_cond.mutex()) || !l.locked())
-		THROW_HW_ERROR(Error) << "Invalid AutoMutex";
+
+	CheckLockedAutoMutex(m_cond, l, DEB_PTR());
 
 	if (m_state == Stopped) {
 		m_acq_thread = NULL;
@@ -1113,7 +1182,6 @@ void Camera::processLastSkippedFrame(int recv_idx)
 int Camera::getFramesCaught()
 {
 	DEB_MEMBER_FUNCT();
-	// recv->getTotalFramesCaught()
 	sls::Result<int64_t> res;
 	EXC_CHECK(res = m_det->getFramesCaught());
 	int64_t frames_caught = 0;
@@ -1122,6 +1190,19 @@ int Camera::getFramesCaught()
 		frames_caught = max(frames_caught, *it);
 	DEB_RETURN() << DEB_VAR1(frames_caught);
 	return frames_caught;
+}
+
+int Camera::getLastFrameCaught()
+{
+	DEB_MEMBER_FUNCT();
+	sls::Result<uint64_t> res;
+	EXC_CHECK(res = m_det->getRxCurrentFrameIndex());
+	uint64_t last_frame_caught = ULONG_MAX;
+	sls::Result<uint64_t>::iterator it, end = res.end();
+	for (it = res.begin(); it != end; ++it)
+		last_frame_caught = min(last_frame_caught, *it);
+	DEB_RETURN() << DEB_VAR1(last_frame_caught);
+	return last_frame_caught - 1;
 }
 
 Camera::DetStatus Camera::getDetStatus()

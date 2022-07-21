@@ -606,7 +606,7 @@ class GlobalCPUAffinityMgr
 
 		class ImageStatusCallback : 
 		public CtControl::ImageStatusCallback
-			{
+		{
 			public:
 			ImageStatusCallback(
 				ProcessingFinishedEvent *proc_finished)
@@ -618,7 +618,7 @@ class GlobalCPUAffinityMgr
 				{ m_proc_finished->imageStatusChanged(status); }
 			private:
 				ProcessingFinishedEvent *m_proc_finished;
-			};
+		};
 
 		void prepareAcq();
 		void stopAcq();
@@ -632,6 +632,7 @@ class GlobalCPUAffinityMgr
 		GlobalCPUAffinityMgr *m_mgr;
 		ImageStatusCallback m_cb;
 		CtControl *m_ct;
+		Mutex m_mutex;
 		int m_nb_frames;
 		bool m_cnt_act;
 		bool m_saving_act;
@@ -662,7 +663,18 @@ class GlobalCPUAffinityMgr
 		Ready, Acquiring, Changing, Processing, Restoring,
 	};
 
-	void setLimaAffinity(CPUAffinity lima_affinity);
+	class StateCleanUp : StateCleanUpHelper<State>
+	{
+	public:
+		StateCleanUp(GlobalCPUAffinityMgr& mgr, State final_state,
+			     AutoMutex& l, DebObj *deb_ptr)
+			: StateCleanUpHelper(mgr.m_state, final_state,
+					     mgr.m_cond, l, deb_ptr)
+		{}
+	};
+
+	void setLimaThreadAffinity(CPUAffinity lima_affinity);
+	void setLimaBufferAffinity(CPUAffinity lima_affinity);
 	void setRecvAffinity(const RecvCPUAffinityList& recv_affinity_list);
 	void setAcqAffinity(CPUAffinity acq_affinity);
 

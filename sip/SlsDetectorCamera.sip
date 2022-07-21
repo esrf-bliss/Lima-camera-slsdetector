@@ -59,6 +59,7 @@ public:
 	std::string getCmd(const std::string& s, int idx = -1);
 
 	int getFramesCaught();
+	int getLastFrameCaught();
 	SlsDetector::Defs::DetStatus getDetStatus();
 	SlsDetector::Defs::DetStatus getDetTrigStatus();
 

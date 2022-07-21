@@ -97,6 +97,7 @@ public:
 	std::string getCmd(const std::string& s, int idx = -1);
 
 	int getFramesCaught();
+	int getLastFrameCaught();
 	DetStatus getDetStatus();
 	DetStatus getDetTrigStatus();
 
@@ -195,15 +196,17 @@ private:
 		public:
 			ExceptionCleanUp(AcqThread& thread, AutoMutex& l);
 			virtual ~ExceptionCleanUp();
+			void threadFinished();
 		private:
 			AutoMutex& m_lock;
+			bool m_finished;
 		};
 
 		DetFrameImagePackets readRecvPackets(FrameType frame);
 		Status newFrameReady(FrameType frame);
 		void startAcq();
 		void stopAcq();
-		void cleanUp(AutoMutex& l);
+		void onError(AutoMutex& l);
 
 		Camera *m_cam;
 		Cond& m_cond;

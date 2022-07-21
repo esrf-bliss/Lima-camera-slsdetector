@@ -26,6 +26,7 @@
 #include "sls/sls_detector_defs.h"
 
 #include "lima/Debug.h"
+#include "lima/Exceptions.h"
 #include "lima/RegExUtils.h"
 #include "lima/Timestamp.h"
 
@@ -456,6 +457,48 @@ class SeqFilter {
 	Range m_seq_range;
 	SortedIntList m_waiting;
 };
+
+
+inline void CheckLockedAutoMutex(Cond& cond, AutoMutex& l, DebObj *deb_ptr)
+{
+	DEB_FROM_PTR(deb_ptr);
+	if (&l.mutex() != &cond.mutex())
+		THROW_HW_ERROR(Error) << "Bad AutoMutex";
+	else if (!l.locked())
+		THROW_HW_ERROR(Error) << "Mutex not locked";
+}
+
+template <typename T>
+class StateCleanUpHelper
+{
+public:
+  StateCleanUpHelper(T& state, T final_state, Cond& cond, AutoMutex& l,
+		     DebObj *deb_ptr)
+	  : m_state(state), m_final_state(final_state), m_cond(cond), m_lock(l),
+	    m_deb_ptr(deb_ptr)
+	{
+		DEB_FROM_PTR(m_deb_ptr);
+		CheckLockedAutoMutex(m_cond, m_lock, DEB_PTR());
+		DEB_TRACE() << DEB_VAR1(m_state);
+	}
+
+	~StateCleanUpHelper()
+	{
+		DEB_FROM_PTR(m_deb_ptr);
+		DEB_TRACE() << DEB_VAR1(m_state);
+		m_state = m_final_state;
+		DEB_TRACE() << DEB_VAR1(m_state);
+		m_cond.broadcast();
+	}
+
+protected:
+	T& m_state;
+	T m_final_state;
+	Cond& m_cond;
+	AutoMutex& m_lock;
+	DebObj *m_deb_ptr;
+};
+
 
 struct Stats {
 	SimpleStat cb_period;

@@ -1481,7 +1481,7 @@ ProcessingFinishedEvent::ProcessingFinishedEvent(GlobalCPUAffinityMgr *mgr)
 	m_cnt_act = false;
 	m_saving_act = false;
 	m_stopped = false;
-	m_last_cb_ts = Timestamp::now();
+	updateLastCallbackTimestamp();
 }
 
 GlobalCPUAffinityMgr::
@@ -1539,12 +1539,14 @@ void GlobalCPUAffinityMgr::ProcessingFinishedEvent::prepareAcq()
 
 	DEB_TRACE() << DEB_VAR3(m_nb_frames, m_saving_act, m_cnt_act);
 
+	AutoMutex l(m_mutex);
 	m_stopped = false;
 }
 
 void GlobalCPUAffinityMgr::ProcessingFinishedEvent::stopAcq()
 {
 	DEB_MEMBER_FUNCT();
+	AutoMutex l(m_mutex);
 	m_stopped = true;
 }
 
@@ -1569,7 +1571,7 @@ ProcessingFinishedEvent::registerStatusCallback(CtControl *ct)
 void GlobalCPUAffinityMgr::
 ProcessingFinishedEvent::limitUpdateRate()
 {
-	Timestamp next_ts = m_last_cb_ts + Timestamp(1.0 / 10);
+	Timestamp next_ts = getLastCallbackTimestamp() + Timestamp(1.0 / 10);
 	double remaining = next_ts - Timestamp::now();
 	if (remaining > 0)
 		Sleep(remaining);
@@ -1578,12 +1580,14 @@ ProcessingFinishedEvent::limitUpdateRate()
 void GlobalCPUAffinityMgr::
 ProcessingFinishedEvent::updateLastCallbackTimestamp()
 {
+	AutoMutex l(m_mutex);
 	m_last_cb_ts = Timestamp::now();
 }
 
 Timestamp GlobalCPUAffinityMgr::
 ProcessingFinishedEvent::getLastCallbackTimestamp()
 {
+	AutoMutex l(m_mutex);
 	return m_last_cb_ts;
 }
 
@@ -1596,20 +1600,27 @@ ProcessingFinishedEvent::imageStatusChanged(
 	limitUpdateRate();
 	updateLastCallbackTimestamp();
 
+	bool stopped;
+	{
+		AutoMutex l(m_mutex);
+		stopped = m_stopped;
+	}
+
 	int max_frame = m_nb_frames - 1; 
 	int last_frame = status.LastImageAcquired;
-	bool finished = (m_stopped || (last_frame == max_frame));
+	bool finished = (stopped || (last_frame == max_frame));
 	finished &= (status.LastImageReady == last_frame);
 	finished &= (!m_cnt_act || (status.LastCounterReady == last_frame));
-	finished &= (m_stopped || !m_saving_act || 
-		     (status.LastImageSaved == last_frame));
-	if (finished)
+	finished &= (!m_saving_act || (status.LastImageSaved == last_frame));
+	if (finished) {
+		DEB_ALWAYS() << DEB_VAR2(stopped, status);
 		processingFinished();
+	}
 }
 
 GlobalCPUAffinityMgr::GlobalCPUAffinityMgr(Camera *cam)
 	: m_cam(cam), m_proc_finished(NULL), 
-	  m_lima_finished_timeout(0.5)
+	  m_lima_finished_timeout(2)
 {
 	DEB_CONSTRUCTOR();
 
@@ -1620,7 +1631,7 @@ GlobalCPUAffinityMgr::~GlobalCPUAffinityMgr()
 {
 	DEB_DESTRUCTOR();
 
-	setLimaAffinity(CPUAffinity());
+	setLimaThreadAffinity(CPUAffinity());
 
 	if (m_proc_finished)
 		m_proc_finished->m_mgr = NULL;
@@ -1638,7 +1649,8 @@ void GlobalCPUAffinityMgr::applyAndSet(const GlobalCPUAffinity& o)
 	if (all_system.getNbCPUs() == CPUAffinity::getNbSystemCPUs() / 2)
 		DEB_WARNING() << "Hyper-threading seems activated!";
 
-	setLimaAffinity(o.lima);
+	setLimaThreadAffinity(o.lima);
+	setLimaBufferAffinity(o.lima);
 	setRecvAffinity(o.recv);
 	setAcqAffinity(o.acq);
 
@@ -1653,7 +1665,7 @@ void GlobalCPUAffinityMgr::applyAndSet(const GlobalCPUAffinity& o)
 	m_set = o;
 }
 
-void GlobalCPUAffinityMgr::setLimaAffinity(CPUAffinity lima_affinity)
+void GlobalCPUAffinityMgr::setLimaThreadAffinity(CPUAffinity lima_affinity)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -1671,9 +1683,13 @@ void GlobalCPUAffinityMgr::setLimaAffinity(CPUAffinity lima_affinity)
 		m_curr.updateRecvAffinity(lima_affinity);
 	}
 
-	m_cam->m_buffer.setBufferCPUAffinity(lima_affinity);
-
 	m_curr.lima = lima_affinity;
+}
+
+void GlobalCPUAffinityMgr::setLimaBufferAffinity(CPUAffinity lima_affinity)
+{
+	DEB_MEMBER_FUNCT();
+	m_cam->m_buffer.setBufferCPUAffinity(lima_affinity);
 }
 
 void GlobalCPUAffinityMgr::setRecvAffinity(
@@ -1763,6 +1779,8 @@ void GlobalCPUAffinityMgr::recvFinished()
 		return;
 	}
 
+	StateCleanUp state_cleanup(*this, Processing, l, DEB_PTR());
+
 	CPUAffinity recv_all = RecvCPUAffinityList_all(m_curr.recv);
 	DEB_TRACE() << DEB_VAR2(m_curr.lima, recv_all);
 	if (m_curr.lima != recv_all) {
@@ -1776,11 +1794,8 @@ void GlobalCPUAffinityMgr::recvFinished()
 		CPUAffinity lima_affinity = m_curr.lima | recv_all;
 		DEB_ALWAYS() << "Allowing Lima to run on Recv CPUs: " 
 			     << lima_affinity;
-		setLimaAffinity(lima_affinity);
+		setLimaThreadAffinity(lima_affinity);
 	}
-
-	m_state = Processing;
-	m_cond.broadcast();
 }
 
 void GlobalCPUAffinityMgr::limaFinished()
@@ -1795,18 +1810,15 @@ void GlobalCPUAffinityMgr::limaFinished()
 	if (m_state == Ready)
 		return;
 
+	StateCleanUp state_cleanup(*this, Ready, l, DEB_PTR());
+
 	if (m_curr.lima != m_set.lima) {
 		m_state = Restoring;
 		AutoMutexUnlock u(l);
 		DEB_ALWAYS() << "Restoring Lima to dedicated CPUs: " 
 			     << m_set.lima;
-		setLimaAffinity(m_set.lima);
-		setRecvAffinity(m_set.recv);
-		setAcqAffinity(m_set.acq);
+		setLimaThreadAffinity(m_set.lima);
 	}
-
-	m_state = Ready;
-	m_cond.broadcast();
 }
 
 void GlobalCPUAffinityMgr::waitLimaFinished()
@@ -1820,7 +1832,8 @@ void GlobalCPUAffinityMgr::waitLimaFinished()
 
 	AutoMutex l = lock();
 	while (m_state != Ready) {
-		if (m_cond.wait(0.1))
+		m_cond.wait(0.1);
+		if (m_state != Processing)
 			continue;
 
 		AutoMutexUnlock u(l);
@@ -1840,6 +1853,7 @@ void GlobalCPUAffinityMgr::cleanUp()
 	AutoMutex l = lock();
 	m_state = Ready;
 }
+
 
 ostream& lima::SlsDetector::operator <<(ostream& os, const CPUAffinity& a)
 {
