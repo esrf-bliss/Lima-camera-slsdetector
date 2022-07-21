@@ -577,6 +577,7 @@ struct GlobalCPUAffinity {
 	CPUAffinity lima;
 	CPUAffinity other;
 	NetDevGroupCPUAffinityList netdev;
+	StringList rx_netdev;
 
 	CPUAffinity all() const;
 	void updateRecvAffinity(CPUAffinity a);

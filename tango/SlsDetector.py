@@ -380,7 +380,8 @@ class SlsDetector(PyTango.Device_4Impl):
         self.expandPixelDepthRefs(aff_map_raw)
         aff_map = {}
         for pixel_depth, aff_data in aff_map_raw.items():
-            recv_aff, acq, lima, other, netdev_aff = aff_data
+            recv_aff, acq, lima, other, netdev_aff = aff_data[:5]
+            rx_netdev = list(aff_data[5]) if len(aff_data) > 5 else []
             global_aff = GlobalCPUAffinity()
             recv_list = []
             for listeners in recv_aff:
@@ -404,6 +405,7 @@ class SlsDetector(PyTango.Device_4Impl):
                 ng_aff.queue_affinity = queue_aff
                 ng_aff_list.append(ng_aff)
             global_aff.netdev = ng_aff_list
+            global_aff.rx_netdev = rx_netdev
             aff_map[pixel_depth] = global_aff
         return aff_map
 
@@ -441,10 +443,11 @@ class SlsDetector(PyTango.Device_4Impl):
                 netdev_str = '"%s": {%s}' % (name_str, queue_str)
                 netdev_grp_list.append(netdev_str)
             netdev_grp_str = '(%s)' % ', '.join(netdev_grp_list)
-            aff_str = '%d: (%s, %s, %s, %s, %s)' % (pixel_depth, recv_str,
-                                                    acq_str, lima_str,
-                                                    other_str, netdev_grp_str)
-            pixel_depth_aff_list.append(aff_str)
+            aff_data = [recv_str, acq_str, lima_str, other_str, netdev_grp_str]
+            if global_aff.rx_netdev:
+                aff_data.append(str(tuple(global_aff.rx_netdev)))
+            aff_str = ', '.join(aff_data)
+            pixel_depth_aff_list.append('%d: (%s)' % (pixel_depth, aff_str))
         return '{%s}' % ', '.join(pixel_depth_aff_list)
 
     @Core.DEB_MEMBER_FUNCT
@@ -487,6 +490,9 @@ class SlsDetector(PyTango.Device_4Impl):
                 l.append('%d: (%s, %s)' % (queue, A(queue_aff.irq), 
                                            A(queue_aff.processing)))
             s += ','.join(l) + "}"
+            deb.Always('  ' + s)
+        if global_aff.rx_netdev:
+            s = "RxNetDev=%s" % (global_aff.rx_netdev,)
             deb.Always('  ' + s)
 
     @Core.DEB_MEMBER_FUNCT
@@ -544,12 +550,13 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [PyTango.DevVarStringArray,
          "Default PixelDepthCPUAffinityMap as Python string(s) defining a dict: "
          "{<pixel_depth>: <global_affinity>}, being global_affinity a tuple: "
-         "(<recv_list>, <acq>, <lima>, <other>, <netdev_grp_list>), "
-         "where recv_list is a list of tuples of listeners affinities, "
-         "acq, lima and other are affinities, "
-         "and netdev_grp_list is a list of tuples in the form: "
+         "(<recv_list>, <acq>, <lima>, <other>, <netdev_grp_list>"
+         "[, <rx_netdev>]), where recv_list is a list of tuples of "
+         "listeners affinities, acq, lima and other are affinities, "
+         "netdev_grp_list is a list of tuples in the form: "
          "(<comma_separated_netdev_name_list>, <rx_queue_affinity_map>), the "
-         "latter in the form of: {<queue>: (<irq>, <processing>)}. "
+         "latter in the form of: {<queue>: (<irq>, <processing>)}, and "
+         "rx_netdev is an optional list of Rx netdev names. "
          "Each affinity can be expressed by one of the functions: Mask(mask) "
          "or CPU(<cpu1>[, ..., <cpuN>]) for independent CPU enumeration", []],
         'buffer_max_memory':

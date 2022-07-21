@@ -399,6 +399,7 @@ struct GlobalCPUAffinity {
 	SlsDetector::CPUAffinity lima;
 	SlsDetector::CPUAffinity other;
 	SlsDetector::NetDevGroupCPUAffinityList netdev;
+	std::vector<std::string> rx_netdev;
 
 	SlsDetector::CPUAffinity all() const;
 };

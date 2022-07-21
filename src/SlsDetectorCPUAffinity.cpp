@@ -1661,6 +1661,7 @@ void GlobalCPUAffinityMgr::applyAndSet(const GlobalCPUAffinity& o)
 	m_curr.other = o.other;
 	m_system_mgr->setNetDevCPUAffinity(o.netdev);
 	m_curr.netdev = o.netdev;
+	m_curr.rx_netdev = o.rx_netdev;
 
 	m_set = o;
 }
@@ -1782,6 +1783,20 @@ void GlobalCPUAffinityMgr::recvFinished()
 	StateCleanUp state_cleanup(*this, Processing, l, DEB_PTR());
 
 	CPUAffinity recv_all = RecvCPUAffinityList_all(m_curr.recv);
+	StringList& rx_netdev_list = m_curr.rx_netdev;
+	StringList::iterator nit, nend = rx_netdev_list.end();
+	for (nit = rx_netdev_list.begin(); nit != nend; ++nit) {
+		typedef NetDevGroupCPUAffinityList GroupList;
+		GroupList& group_list = m_curr.netdev;
+		GroupList::iterator git, gend = group_list.end();
+		for (git = group_list.begin(); git != gend; ++git) {
+			StringList::iterator end = git->name_list.end();
+			if (find(git->name_list.begin(), end, *nit) == end)
+				continue;
+			DEB_TRACE() << "Netdev " << *nit << ": " << git->all();
+			recv_all |= git->all();
+		}
+	}
 	DEB_TRACE() << DEB_VAR2(m_curr.lima, recv_all);
 	if (m_curr.lima != recv_all) {
 		m_state = Changing;
