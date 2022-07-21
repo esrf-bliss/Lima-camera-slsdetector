@@ -657,6 +657,10 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevLong,
           PyTango.SCALAR,
           PyTango.READ_WRITE]],
+        'last_frame_caught':
+        [[PyTango.DevLong,
+          PyTango.SCALAR,
+          PyTango.READ]],
         }
 
     def __init__(self,name) :
