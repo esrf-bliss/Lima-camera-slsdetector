@@ -110,7 +110,7 @@ AutoPtr<Receiver::ImagePackets> Receiver::readSkippableImagePackets()
 	bool incomplete_data = (image_data->numberOfPorts == 0);
 	for (int i = 0; i < image_data->numberOfPorts; ++i) {
 		std::visit([&](auto &block) {
-			bool valid = block;
+			bool valid(block);
 			image_data->validPortData[i] = valid;
 			if (valid && (header.frameNumber == uint64_t(-1)) &&
 			    block->getNetworkHeader())
