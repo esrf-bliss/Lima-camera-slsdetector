@@ -40,6 +40,8 @@
 #=============================================================================
 #
 
+import os
+
 from .SlsDetector import *
 
 #------------------------------------------------------------------
@@ -117,6 +119,12 @@ class SlsDetectorEiger(SlsDetector):
         for i, val in self.get_write_mod_idx_val_list(attr):
             self.model.setAllTrimBits(i, val)
 
+    @Core.DEB_MEMBER_FUNCT
+    def setTestTrimBitsPattern(self):
+        settings_dir = self.cam.getCmd("settingspath")
+        test_prefix = os.path.join(settings_dir, 'standard', 'eigernoise')
+        self.cam.putCmd(f"trimbits {test_prefix}")
+
 
 #------------------------------------------------------------------
 #    SlsDetectorEiger class
@@ -145,6 +153,9 @@ class SlsDetectorEigerClass(SlsDetectorClass):
     device_property_list.update(SlsDetectorClass.device_property_list)
 
     cmd_list = {
+        'setTestTrimBitsPattern':
+        [[PyTango.DevVoid, ""],
+         [PyTango.DevVoid, ""]],
         }
     cmd_list.update(SlsDetectorClass.cmd_list)
 
