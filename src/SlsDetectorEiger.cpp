@@ -1141,16 +1141,22 @@ Eiger::CorrBase *Eiger::createChipBorderCorr(ImageType image_type)
 	CorrBase *border_corr;
 	switch (image_type) {
 	case Bpp8:
+		border_corr = new ChipBorderCorr<unsigned char>(this);
+		break;
 	case Bpp8S:
-		border_corr = new ChipBorderCorr<Byte>(this);
+		border_corr = new ChipBorderCorr<char>(this);
 		break;
 	case Bpp16:
+		border_corr = new ChipBorderCorr<unsigned short>(this);
+		break;
 	case Bpp16S:
-		border_corr = new ChipBorderCorr<Word>(this);
+		border_corr = new ChipBorderCorr<short>(this);
 		break;
 	case Bpp32:
+		border_corr = new ChipBorderCorr<unsigned int>(this);
+		break;
 	case Bpp32S:
-		border_corr = new ChipBorderCorr<Long>(this);
+		border_corr = new ChipBorderCorr<int>(this);
 		break;
 	default:
 		THROW_HW_ERROR(NotSupported) 

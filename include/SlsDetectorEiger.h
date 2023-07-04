@@ -44,10 +44,6 @@ class Eiger : public Model
 	DEB_CLASS_NAMESPC(DebModCamera, "Eiger", "SlsDetector");
 
  public:
-	typedef unsigned char Byte;
-	typedef unsigned short Word;
-	typedef unsigned int Long;
-
 	typedef std::vector<unsigned long> PtrDiffList;
 
 	typedef Defs::ClockDiv ClockDiv;
@@ -368,14 +364,16 @@ class Eiger : public Model
 						 int step) 
 		{
 			for (int i = 0; i < nb_iter; ++i, d += step)
-				d[0] = d[offset] /= 2;
+				if (d[offset] != T(-1))
+					d[0] = d[offset] /= 2;
 		}
 
 		static void correctBorderLine(T *d, int nb_iter, int step,
 					      double f) 
 		{
 			for (int i = 0; i < nb_iter; ++i, d += step)
-				d[0] /= f;
+				if (d[0] != T(-1))
+					d[0] /= f;
 		}
 
 		void correctInterChipCols(void *ptr)

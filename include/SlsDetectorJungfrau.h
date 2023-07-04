@@ -44,10 +44,6 @@ class Jungfrau : public Model
 	DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau", "SlsDetector");
 
  public:
-	typedef unsigned char Byte;
-	typedef unsigned short Word;
-	typedef unsigned int Long;
-
 	typedef Defs::GainMode GainMode;
 
 	class GainPed
