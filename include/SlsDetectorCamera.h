@@ -208,7 +208,6 @@ private:
 		Camera *m_cam;
 		Cond& m_cond;
 		AcqState& m_state;
-		FramePacketMap m_frame_packet_map;
 		StopState m_stop_state;
 	};
 
@@ -236,7 +235,7 @@ private:
 		return std::chrono::duration_cast<sls::ns>(sec);
 	}
 
-	AcqState getEffectiveState();
+	AcqState getEffectiveState(AutoMutex& l);
 
 	void checkDetIdleStatus();
 	void createReceivers();

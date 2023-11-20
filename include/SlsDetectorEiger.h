@@ -129,8 +129,6 @@ class Eiger : public Model
 			void expandPixelDepth4(const FrameData& data);
 			void copy(const FrameData& data);
 
-			void fillBadFrame(FrameType frame, char *bptr);
-
 			int getDstBufferOffset()
 			{
 				Port *port = m_port_list[0];

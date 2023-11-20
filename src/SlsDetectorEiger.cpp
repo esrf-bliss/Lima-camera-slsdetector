@@ -293,17 +293,6 @@ void Eiger::Geometry::Recv::copy(const FrameData& data)
 		m_port_list[i]->copy(data.dst, data.src[i]);
 }
 
-void Eiger::Geometry::Recv::fillBadFrame(FrameType frame, char *bptr)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(m_idx, frame);
-	FrameData data;
-	for (int i = 0; i < getNbPorts(); ++i)
-		data.src[i] = NULL;
-	data.dst = bptr;
-	processFrame(data);
-}
-
 void Eiger::Geometry::Recv::expandPixelDepth4(const FrameData& data)
 {
 	DEB_MEMBER_FUNCT();

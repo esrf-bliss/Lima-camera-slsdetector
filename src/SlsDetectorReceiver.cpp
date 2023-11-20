@@ -103,8 +103,8 @@ AutoPtr<Receiver::ImagePackets> Receiver::readSkippableImagePackets()
 	DEB_MEMBER_FUNCT();
 	AutoPtr<ImagePackets> image_data = new RecvImagePackets(this);
 	AnyPacketBlockList& blocks = RecvImagePacketBlocks(image_data);
-	sls_detector_header& header = image_data->header.detHeader;
-	header.frameNumber = -1;
+	slsDetectorDefs::sls_detector_header *header = NULL;
+	FrameType& frame = image_data->frame;
 	blocks = std::move(m_recv->GetFramePacketBlocks());
 	image_data->numberOfPorts = blocks.size();
 	bool incomplete_data = (image_data->numberOfPorts == 0);
@@ -112,24 +112,36 @@ AutoPtr<Receiver::ImagePackets> Receiver::readSkippableImagePackets()
 		std::visit([&](auto &block) {
 			bool valid(block);
 			image_data->validPortData[i] = valid;
-			if (valid && (header.frameNumber == uint64_t(-1)) &&
-			    block->getNetworkHeader())
-				header = *block->getNetworkHeader();
-			incomplete_data |= !(valid && block->hasFullFrame());
+			if (!valid) {
+				incomplete_data = true;
+				return;
+			}
+			if (frame == uint64_t(-1))
+				frame = block->getRecvFrameNumber();
+			if (!header)
+				header = block->getNetworkHeader();
+			incomplete_data |= !block->hasFullFrame();
 		    }, blocks[i]);
 	}
-	if (incomplete_data && !m_cam->m_tol_lost_packets)
+	bool error = (incomplete_data && !m_cam->m_tol_lost_packets);
+	// missing ports indicate failure in frame-discarding policy filter
+	int valid_ports = image_data->validPortData.count();
+	bool missing_ports = (!valid_ports ||
+			      (valid_ports != image_data->numberOfPorts));
+	if ((error || missing_ports) && (m_cam->getAcqState() == Running))
 		THROW_HW_ERROR(Error) << "Recv. " << m_idx << ": "
 				      << "got incomplete data";
-	if (image_data->validPortData.none())
+	else if (missing_ports)
 		return NULL;
-	DEB_TRACE() << DEB_VAR5(m_idx, header.frameNumber, header.modId,
-				header.row, header.column);
-	FrameType recv_frame = header.frameNumber;
-	if (recv_frame > m_cam->m_det_nb_frames)
+	if (header)
+		DEB_TRACE() << DEB_VAR6(m_idx, frame, header->frameNumber,
+					header->modId, header->row,
+					header->column);
+	else
+		DEB_TRACE() << DEB_VAR2(m_idx, frame);
+	if (frame > m_cam->m_det_nb_frames)
 		THROW_HW_ERROR(Error) << "Invalid frame: " 
-				      << DEB_VAR3(m_idx, recv_frame,
-						  DebHex(recv_frame));
+				      << DEB_VAR3(m_idx, frame, DebHex(frame));
 	return image_data;
 }
 
@@ -151,7 +163,7 @@ AutoPtr<Receiver::ImagePackets> Receiver::readImagePackets()
 		if (!image_data)
 			return NULL;
 
-		FrameType det_frame = image_data->detFrame();
+		FrameType det_frame = image_data->frame;
 		bool skip_this = false;
 		bool skip_next = false;
 		bool prev_last_skipped = m_last_skipped;
@@ -170,7 +182,7 @@ AutoPtr<Receiver::ImagePackets> Receiver::readImagePackets()
 			image_data = readSkippableImagePackets();
 			if (!image_data)
 				return NULL;
-			det_frame = image_data->detFrame();
+			det_frame = image_data->frame;
 		}
 
 		image_data->frame = det_frame - 1; // first frame is set to 1
@@ -213,11 +225,11 @@ bool Receiver::asmImagePackets(ImagePackets *image_data, char *buffer)
 	return got_data;
 }
 
-void Receiver::fillBadFrame(FrameType frame, char *buf)
+void Receiver::fillBadFrame(char *buf)
 {
 	DEB_MEMBER_FUNCT();
-	THROW_HW_ERROR(NotSupported) << DEB_VAR2(m_idx, frame) << ": "
-				     << "Not implemented yet";
+	MPFrameAssemblerPtr::element_type *a = m_asm_impl->m_asm.get();
+	a->fillMissingFrame(buf);
 }
 
 void Receiver::clearAllBuffers()

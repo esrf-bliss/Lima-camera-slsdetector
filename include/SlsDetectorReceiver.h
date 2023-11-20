@@ -47,19 +47,13 @@ class Receiver
 	DEB_CLASS_NAMESPC(DebModCamera, "Receiver", "SlsDetector");
 
 public:
-	typedef slsDetectorDefs::sls_detector_header sls_detector_header;
-	typedef slsDetectorDefs::sls_receiver_header sls_receiver_header;
-
 	class ImagePackets {
 	public:
 		FrameType frame;
-		sls_receiver_header header;
 		int numberOfPorts;
 		std::bitset<MAX_NUM_PORTS> validPortData;
 
 		virtual ~ImagePackets() {}
-
-		uint64_t detFrame() { return header.detHeader.frameNumber; }
 
 		bool assemble(char *buf)
 		{ return recv->asmImagePackets(this, buf); }
@@ -68,7 +62,7 @@ public:
 		friend class Receiver;
 
 		ImagePackets(Receiver *r) : frame(-1), numberOfPorts(0), recv(r)
-		{ header.detHeader.frameNumber = -1; }
+		{}
 
 		Receiver *recv;
 	};
@@ -87,7 +81,7 @@ public:
 
 	AutoPtr<ImagePackets> readImagePackets();
 
-	void fillBadFrame(FrameType frame, char *buf);
+	void fillBadFrame(char *buf);
 
 	SlsDetector::Stats& getStats()
 	{ return m_stats.stats; }

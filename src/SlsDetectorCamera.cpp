@@ -248,10 +248,6 @@ void Camera::AcqThread::threadFunction()
 			had_frames = true;
 		}
 	}
-	{
-		AutoMutexUnlock u(l);
-		m_frame_packet_map.clear();
-	}
 
 	AcqState prev_state = m_state;
 
@@ -289,55 +285,28 @@ DetFrameImagePackets Camera::AcqThread::readRecvPackets(FrameType frame)
 
 	DetFrameImagePackets det_frame_packets{frame, {}};
 	DetImagePackets& det_packets = det_frame_packets.second;
-	FramePacketMap::iterator it = m_frame_packet_map.find(frame);
-	if (it != m_frame_packet_map.end()) {
-		det_packets = std::move(it->second);
-		m_frame_packet_map.erase(it);
-	}
 
 	auto stopped = [&]() { return (m_cam->getAcqState() == StopReq); };
-	auto needs_reading_recv_packets = [&](int i) {
-		return ((det_packets.find(i) == det_packets.end()) &&
-			!stopped());
-	};
-
-	const int age_margin = 10;
 
 	int nb_recvs = m_cam->getNbRecvs();
 	for (int i = 0; i < nb_recvs; ++i) {
-		while (needs_reading_recv_packets(i)) {
-			AutoPtr<Receiver::ImagePackets> image_packets;
-			Receiver *recv = m_cam->m_recv_list[i];
-			image_packets = recv->readImagePackets();
-			if (!image_packets)
-				break;
-			typedef DetImagePackets::value_type MapEntry;
-			FrameType f = image_packets->frame;
-			if (f == frame)  {
-				det_packets.emplace(MapEntry(i, image_packets));
-			} else if (f < frame) {
-				continue;
-			} else {
-				DetImagePackets& other = m_frame_packet_map[f];
-				other.emplace(MapEntry(i, image_packets));
-				if (f > frame + age_margin)
-					break;
-			}
-		}
-		bool missing_frame = needs_reading_recv_packets(i);
-		FramePacketMap& ahead_packets = m_frame_packet_map;
-		if (missing_frame && !ahead_packets.empty() &&
-		    DEB_CHECK_ANY(DebTypeWarning)) {
-			DEB_WARNING() << "Recv. " << i << ": "
-				      << "missing frame: " << frame;
-			FrameType first = ahead_packets.begin()->first;
-			FrameType last = ahead_packets.rbegin()->first;
-			DEB_WARNING() << "  Avail. ahead packets from frames "
-				      << "[" << first << ".." << last << "]";
-		}
-		if (missing_frame && !m_cam->m_tol_lost_packets)
+		if (stopped())
+			return {};
+		AutoPtr<Receiver::ImagePackets> image_packets;
+		Receiver *recv = m_cam->m_recv_list[i];
+		image_packets = recv->readImagePackets();
+		if (stopped())
+			return {};
+		else if (!image_packets)
 			THROW_HW_ERROR(Error) << "Recv. " << i << ": "
-					      << "missing frame: " << frame;
+					      << "missing frame " << frame;
+		FrameType f = image_packets->frame;
+		if (f != frame)
+			THROW_HW_ERROR(Error) << "Recv. " << i << ": "
+					      << "unexpected frame " << f
+					      << " instead of " << frame;
+		typedef DetImagePackets::value_type MapEntry;
+		det_packets.emplace(MapEntry(i, image_packets));
 	}
 
 	return det_frame_packets;
@@ -924,13 +893,17 @@ AcqState Camera::getAcqState()
 {
 	DEB_MEMBER_FUNCT();
 	AutoMutex l = lock();
-	AcqState state = getEffectiveState();
+	AcqState state = getEffectiveState(l);
 	DEB_RETURN() << DEB_VAR1(state);
 	return state;
 }
 
-AcqState Camera::getEffectiveState()
+AcqState Camera::getEffectiveState(AutoMutex& l)
 {
+	DEB_MEMBER_FUNCT();
+	if ((&l.mutex() != &m_cond.mutex()) || !l.locked())
+		THROW_HW_ERROR(Error) << "Invalid AutoMutex";
+
 	if (m_state == Stopped) {
 		m_acq_thread = NULL;
 		m_state = Idle;
@@ -943,7 +916,7 @@ void Camera::waitAcqState(AcqState state)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(state);
 	AutoMutex l = lock();
-	while (getEffectiveState() != state)
+	while (getEffectiveState(l) != state)
 		m_cond.wait();
 }
 
@@ -952,9 +925,9 @@ AcqState Camera::waitNotAcqState(AcqState state)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(state);
 	AutoMutex l = lock();
-	while (getEffectiveState() == state)
+	while (getEffectiveState(l) == state)
 		m_cond.wait();
-	state = getEffectiveState();
+	state = getEffectiveState(l);
 	DEB_RETURN() << DEB_VAR1(state);
 	return state;
 }
@@ -1037,11 +1010,11 @@ void Camera::stopAcq()
 	m_global_cpu_affinity_mgr.stopAcq();
 
 	AutoMutex l = lock();
-	if (getEffectiveState() != Running)
+	if (getEffectiveState(l) != Running)
 		return;
 
 	m_acq_thread->stop(l, true);
-	if (getEffectiveState() != Idle)
+	if (getEffectiveState(l) != Idle)
 		THROW_HW_ERROR(Error) << "Camera not Idle";
 }
 
@@ -1053,7 +1026,7 @@ void Camera::triggerFrame()
 		THROW_HW_ERROR(InvalidValue) << "Wrong trigger mode";
 
 	AutoMutex l = lock();
-	if (getEffectiveState() != Running)
+	if (getEffectiveState(l) != Running)
 		THROW_HW_ERROR(Error) << "Camera not Running";
 
 	EXC_CHECK(m_det->sendSoftwareTrigger());
@@ -1091,11 +1064,10 @@ void Camera::assemblePackets(DetFrameImagePackets det_frame_packets)
 
 	int nb_recvs = getNbRecvs();
 	for (int i = 0; i < nb_recvs; ++i) {
-		bool ok = false;
-		if (det_packets[i])
-			ok = det_packets[i]->assemble(bptr);
-		if (!ok)
-			m_recv_list[i]->fillBadFrame(frame, bptr);
+		if (!det_packets[i])
+			THROW_HW_ERROR(Error) << DEB_VAR2(frame, i) << ": "
+					      << "Missing data packets";
+		det_packets[i]->assemble(bptr);
 	}
 }
 
@@ -1266,7 +1238,7 @@ void Camera::setTolerateLostPackets(bool tol_lost_packets)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(tol_lost_packets);
 	slsDetectorDefs::frameDiscardPolicy fdp;
-	fdp = tol_lost_packets ? slsDetectorDefs::DISCARD_EMPTY_FRAMES :
+	fdp = tol_lost_packets ? slsDetectorDefs::NO_DISCARD :
 				 slsDetectorDefs::DISCARD_PARTIAL_FRAMES;
 	EXC_CHECK(m_det->setRxFrameDiscardPolicy(fdp));
 	m_tol_lost_packets = tol_lost_packets;
