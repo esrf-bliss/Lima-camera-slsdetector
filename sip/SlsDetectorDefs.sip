@@ -278,7 +278,7 @@ struct SimpleStat {
 	double xacc2;
 	int xn;
 	double factor;
-	Mutex lock;
+	// Mutex lock;
 
 	// typedef std::map<int, int> Histogram
 	SlsDetector::SimpleStat::Histogram hist;
@@ -287,7 +287,7 @@ struct SimpleStat {
 	SimpleStat(double f = 1, int b = 5);
 	void reset();
 	void add(double x, bool do_hist = false);
-	// SimpleStat& operator =(const SimpleStat& o);
+
 	SlsDetector::SimpleStat& operator += (const SlsDetector::SimpleStat& o);
 
 	int n() const;
@@ -295,6 +295,9 @@ struct SimpleStat {
 	double max() const;
 	double ave() const;
 	double std() const;
+
+private:
+	SimpleStat(const SlsDetector::SimpleStat& o);
 };
 
 
@@ -305,6 +308,9 @@ struct Stats {
 	SlsDetector::SimpleStat recv_exec;
 	Stats();
 	void reset();
+
+private:
+	Stats(const SlsDetector::Stats& o);
 };
 
 

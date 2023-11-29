@@ -34,6 +34,9 @@ class BebShell
 	~BebShell();
 
 	std::string exec(std::string cmd);
+
+ private:
+	BebShell(const SlsDetector::BebShell& o);
 };
 
 class BebFpgaMem

@@ -112,7 +112,7 @@ public:
 	SlsDetector::GlobalCPUAffinityMgr::ProcessingFinishedEvent *
 		getProcessingFinishedEvent();
 
- private:
+private:
 	Camera(const SlsDetector::Camera& o);
 };
 

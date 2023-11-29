@@ -418,6 +418,10 @@ public:
 		void processingFinished();
 
 		void registerStatusCallback(CtControl *ct_control);
+
+	private:
+		ProcessingFinishedEvent(const
+		SlsDetector::GlobalCPUAffinityMgr::ProcessingFinishedEvent& o);
 	};
 
 	GlobalCPUAffinityMgr(SlsDetector::Camera *cam = NULL);
@@ -436,6 +440,9 @@ public:
 	void limaFinished();
 	void waitLimaFinished();
 	void cleanUp();
+
+private:
+	GlobalCPUAffinityMgr(const SlsDetector::GlobalCPUAffinityMgr& o);
 };
 
 

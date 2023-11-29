@@ -49,6 +49,9 @@ public:
 
 	virtual Data process(Data& data);
 	virtual Data processModel(Data& data) = 0;
+
+private:
+	Reconstruction(const SlsDetector::Reconstruction& o);
 };
 
 
