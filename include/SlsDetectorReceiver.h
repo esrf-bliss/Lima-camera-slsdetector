@@ -120,8 +120,12 @@ private:
 }; 
 
 typedef std::map<int, AutoPtr<Receiver::ImagePackets>> DetImagePackets;
-typedef std::map<FrameType, DetImagePackets> FramePacketMap;
-typedef FramePacketMap::value_type DetFrameImagePackets;
+typedef std::pair<FrameType, DetImagePackets> DetFrameImagePackets;
+
+struct PacketData : public sideband::Data {
+	DetFrameImagePackets packets;
+	PacketData(DetFrameImagePackets&& p) : packets(std::move(p)) {}
+};
 
 
 } // namespace SlsDetector
