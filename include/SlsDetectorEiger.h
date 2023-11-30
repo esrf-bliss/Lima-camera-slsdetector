@@ -440,7 +440,8 @@ class Eiger : public Model
 	const FrameDim& getRecvFrameDim()
 	{ return m_geom.m_recv_frame_dim; }
 
-	int getNbRecvs();
+	int getNbRecvs()
+	{ return getCamera()->getNbRecvs(); }
 
 	CorrBase *createChipBorderCorr(ImageType image_type);
 
@@ -483,7 +484,6 @@ class Eiger : public Model
 	bool m_signed_image_mode;
 	Geometry m_geom;
 	CorrList m_corr_list;
-	RecvList m_recv_list;
 	ModelReconstruction *m_reconstruction;
 	bool m_fixed_clock_div;
 	ClockDiv m_clock_div;

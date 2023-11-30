@@ -513,9 +513,6 @@ Eiger::Eiger(Camera *cam)
 
 	m_geom.setNbRecvs(nb_det_modules);
 
-	for (int i = 0; i < nb_det_modules; ++i)
-		m_recv_list.push_back(cam->getRecv(i));
-
 	if (isTenGigabitEthernetEnabled()) {
 		DEB_TRACE() << "Forcing 10G Ethernet flow control";
 		setFlowControl10G(true);
@@ -1033,14 +1030,6 @@ void Eiger::getSignedImageMode(bool& signed_image_mode)
 	DEB_MEMBER_FUNCT();
 	signed_image_mode = m_signed_image_mode;
 	DEB_RETURN() << DEB_VAR1(signed_image_mode);
-}
-
-int Eiger::getNbRecvs()
-{
-	DEB_MEMBER_FUNCT();
-	int nb_recvs = m_recv_list.size();
-	DEB_RETURN() << DEB_VAR1(nb_recvs);
-	return nb_recvs;
 }
 
 bool Eiger::isTenGigabitEthernetEnabled()

@@ -581,9 +581,6 @@ Jungfrau::Jungfrau(Camera *cam)
 
 	DEB_TRACE() << "Using Jungfrau detector, " << DEB_VAR1(nb_det_modules);
 
-	for (int i = 0; i < nb_det_modules; ++i)
-		m_recv_list.push_back(cam->getRecv(i));
-
 	m_gain_ped_img_proc = new GainPedImgProc(this);
 	m_gain_adc_map_img_proc = new GainADCMapImgProc(this);
 	m_ave_img_proc = new AveImgProc(this);
@@ -878,14 +875,6 @@ void Jungfrau::getGainMode(GainMode& gain_mode)
 	EXC_CHECK(sls_mode = m_det->getGainMode().tsquash(err_msg));
 	gain_mode = GainMode(sls_mode);
 	DEB_RETURN() << DEB_VAR1(gain_mode);
-}
-
-int Jungfrau::getNbRecvs()
-{
-	DEB_MEMBER_FUNCT();
-	int nb_recvs = m_recv_list.size();
-	DEB_RETURN() << DEB_VAR1(nb_recvs);
-	return nb_recvs;
 }
 
 void Jungfrau::prepareAcq()

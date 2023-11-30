@@ -529,7 +529,8 @@ class Jungfrau : public Model
 	int getNbJungfrauModules()
 	{ return getNbDetModules(); }
 
-	int getNbRecvs();
+	int getNbRecvs()
+	{ return getCamera()->getNbRecvs(); }
 
 	AutoPtr<GainPedImgProc> m_gain_ped_img_proc;
 	AutoPtr<GainADCMapImgProc> m_gain_adc_map_img_proc;
@@ -538,7 +539,6 @@ class Jungfrau : public Model
 	ImgProcList m_img_proc_list;
 	ImgSrc m_img_src;
 	ModelReconstruction *m_reconstruction;
-	RecvList m_recv_list;
 };
 
 std::ostream& operator <<(std::ostream& os,
