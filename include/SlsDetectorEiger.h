@@ -310,22 +310,6 @@ class Eiger : public Model
 
 	typedef std::vector<CorrBase *> CorrList;
 
-	class InterModGapCorr : public CorrBase
-	{
-		DEB_CLASS_NAMESPC(DebModCamera, "Eiger::InterModGapCorr", 
-				  "SlsDetector");
-	public:
-		InterModGapCorr(Eiger *eiger);
-
-		virtual void prepareAcq();
-		virtual void correctFrame(FrameType frame, void *ptr);
-
-	protected:
-		typedef std::pair<int, int> Block;
-		typedef std::vector<Block> BlockList;
-		BlockList m_gap_list;
-	};
-
 	template <class T>
 	class ChipBorderCorr : public CorrBase
 	{
@@ -459,7 +443,6 @@ class Eiger : public Model
 	int getNbRecvs();
 
 	CorrBase *createChipBorderCorr(ImageType image_type);
-	CorrBase *createInterModGapCorr();
 
 	void addCorr(CorrBase *corr);
 	void removeCorr(CorrBase *corr);

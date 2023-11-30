@@ -79,44 +79,6 @@ void Eiger::CorrBase::prepareAcq()
 	m_inter_lines[m_nb_eiger_modules - 1] = 0;
 }
 
-Eiger::InterModGapCorr::InterModGapCorr(Eiger *eiger)
-	: CorrBase(eiger)
-{
-	DEB_CONSTRUCTOR();
-}
-
-void Eiger::InterModGapCorr::prepareAcq()
-{
-	DEB_MEMBER_FUNCT();
-
-	CorrBase::prepareAcq();
-
-	m_gap_list.clear();
-
-	int mod_size = m_mod_frame_dim.getMemSize();
-	int width = m_mod_frame_dim.getSize().getWidth();
-	int ilw = width * m_mod_frame_dim.getDepth();
-	for (int i = 0, start = 0; i < m_nb_eiger_modules - 1; ++i) {
-		start += mod_size;
-		int size = m_inter_lines[i] * ilw;
-		m_gap_list.push_back(Block(start, size));
-		start += size;
-	}
-}
-
-void Eiger::InterModGapCorr::correctFrame(FrameType /*frame*/, void *ptr)
-{
-	DEB_MEMBER_FUNCT();
-	
-	char *dest = static_cast<char *>(ptr);
-	BlockList::const_iterator it, end = m_gap_list.end();
-	for (it = m_gap_list.begin(); it != end; ++it) {
-		int start = it->first;
-		int size = it->second;
-		memset(dest + start, 0, size);
-	}
-}
-
 Data Eiger::ModelReconstruction::processModel(Data& data)
 {
 	DEB_MEMBER_FUNCT();
@@ -864,9 +826,6 @@ void Eiger::updateImageSize()
 
 	createChipBorderCorr(image_type);
 
-	if (getNbEigerModules() > 1)
-		createInterModGapCorr();
-
 	if (pixel_depth == PixelDepth32) {
 		setClockDiv(QuarterSpeed);
 	} else if (m_fixed_clock_div) {
@@ -1156,15 +1115,6 @@ Eiger::CorrBase *Eiger::createChipBorderCorr(ImageType image_type)
 
 	DEB_RETURN() << DEB_VAR1(border_corr);
 	return border_corr;
-}
-
-Eiger::CorrBase *Eiger::createInterModGapCorr()
-{
-	DEB_MEMBER_FUNCT();
-	CorrBase *gap_corr = new InterModGapCorr(this);
-	addCorr(gap_corr);
-	DEB_RETURN() << DEB_VAR1(gap_corr);
-	return gap_corr;
 }
 
 void Eiger::addCorr(CorrBase *corr)
