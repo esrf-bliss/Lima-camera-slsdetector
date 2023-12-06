@@ -239,7 +239,7 @@ void Camera::AcqThread::threadFunction()
 			AutoMutexUnlock u(m_lock);
 			m_thread.stopAcq();
 
-			Stats stats;
+			SlsDetector::Stats stats;
 			m_thread.m_cam->getStats(stats);
 			DEB_ALWAYS() << DEB_VAR1(stats);
 		}
@@ -325,17 +325,22 @@ void Camera::AcqThread::threadFunction()
 	};
 
 	while (!acq.stopReq() && cont_acq && (next_frame < acq_nb_frames)) {
+		Timestamp t0 = Timestamp::now();
 		FrameType frame;
 		{
 			AutoMutexUnlock u(l);
 			frame = get_next_frame();
 			DEB_TRACE() << DEB_VAR2(next_frame, frame);
 		}
+		Timestamp t1 = Timestamp::now();
+		m_stats.read_packets.add(t1 - t0);
 		if ((frame == -1) || acq.stopReq())
 			break;
 		while (!acq.stopReq())
 			if (m_cam->m_buffer.waitFrame(frame, l))
 				break;
+		Timestamp t2 = Timestamp::now();
+		m_stats.wait_frame.add(t2 - t1);
 		if (acq.stopReq())
 			break;
 		{
@@ -344,11 +349,13 @@ void Camera::AcqThread::threadFunction()
 			cont_acq = status.first;
 			acq_end = status.second;
 		}
-		Timestamp t = Timestamp::now();
+		Timestamp t3 = Timestamp::now();
+		m_stats.new_frame.add(t3 - t2);
 		if (need_check_recv() &&
-		    (t - last_check_ts > check_recv_finished_time)) {
+		    (t3 - last_check_ts > check_recv_finished_time)) {
 			check_recv_finished();
 			last_check_ts = Timestamp::now();
+			m_stats.check_recv.add(Timestamp::now() - t3);
 		}
 	}
 
@@ -360,6 +367,11 @@ void Camera::AcqThread::threadFunction()
 	}
 
 	cleanup.threadFinished();
+
+	DEB_ALWAYS() << DEB_VAR1(m_stats.read_packets);
+	DEB_ALWAYS() << DEB_VAR1(m_stats.wait_frame);
+	DEB_ALWAYS() << DEB_VAR1(m_stats.new_frame);
+	DEB_ALWAYS() << DEB_VAR1(m_stats.check_recv);
 }
 
 DetFrameImagePackets Camera::AcqThread::readRecvPackets(FrameType frame)

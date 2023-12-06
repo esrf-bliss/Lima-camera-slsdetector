@@ -202,6 +202,13 @@ private:
 			bool m_finished;
 		};
 
+		struct Stats {
+			SimpleStat read_packets{1e6};
+			SimpleStat wait_frame{1e6};
+			SimpleStat new_frame{1e6};
+			SimpleStat check_recv{1e6};
+		};
+
 		DetFrameImagePackets readRecvPackets(FrameType frame);
 		Status newFrameReady(FrameType frame);
 		void startAcq();
@@ -212,6 +219,7 @@ private:
 		Cond& m_cond;
 		AcqState& m_state;
 		StopState m_stop_state;
+		Stats m_stats;
 	};
 
 	friend class BufferMgr;
