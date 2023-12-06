@@ -82,7 +82,7 @@ public:
 
 	void setBufferCPUAffinity(CPUAffinity buffer_affinity);
 
-	bool waitFrame(FrameType frame_nb, AutoMutex& l);
+	bool waitFrame(FrameType frame_nb);
 
 	BufferCtrlObj *getBufferCtrlObj()
 	{ return m_buffer_ctrl_obj; }
@@ -116,7 +116,7 @@ private:
 	BufferMgr(Camera *cam);
 
 	Camera *m_cam;
-	Cond& m_cond;
+	Cond m_cond;
 	ResizePolicy m_resize_policy;
 	CPUAffinity m_buffer_affinity;
 	BufferCtrlObj *m_buffer_ctrl_obj;

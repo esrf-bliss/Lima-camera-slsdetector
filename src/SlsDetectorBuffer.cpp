@@ -28,8 +28,8 @@ using namespace lima::SlsDetector;
 
 
 BufferMgr::BufferMgr(Camera *cam)
-	: m_cam(cam), m_cond(m_cam->m_cond), m_resize_policy(Auto),
-	  m_buffer_ctrl_obj(NULL), m_max_memory(70)
+	: m_cam(cam), m_resize_policy(Auto), m_buffer_ctrl_obj(NULL),
+	  m_max_memory(70)
 {
 	DEB_CONSTRUCTOR();
 }
@@ -43,11 +43,13 @@ void BufferMgr::setBufferCtrlObj(BufferCtrlObj *buffer_ctrl_obj)
 				buffer_ctrl_obj->getBufferSync(m_cond) : NULL;
 }
 
-bool BufferMgr::waitFrame(FrameType frame_nb, AutoMutex& l)
+bool BufferMgr::waitFrame(FrameType frame_nb)
 {
 	DEB_MEMBER_FUNCT();
 	if (!m_buffer_ctrl_obj)
 		THROW_HW_ERROR(Error) << "No BufferCbMgr defined";
+
+	AutoMutex l(m_cond.mutex());
 	BufferSync::Status status = m_buffer_sync->wait(frame_nb);
 	switch (status) {
 	case BufferSync::AVAILABLE:

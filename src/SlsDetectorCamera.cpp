@@ -336,9 +336,11 @@ void Camera::AcqThread::threadFunction()
 		m_stats.read_packets.add(t1 - t0);
 		if ((frame == -1) || acq.stopReq())
 			break;
-		while (!acq.stopReq())
-			if (m_cam->m_buffer.waitFrame(frame, l))
+		while (!acq.stopReq()) {
+			AutoMutexUnlock u(l);
+			if (m_cam->m_buffer.waitFrame(frame))
 				break;
+		}
 		Timestamp t2 = Timestamp::now();
 		m_stats.wait_frame.add(t2 - t1);
 		if (acq.stopReq())
