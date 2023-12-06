@@ -44,6 +44,8 @@ class TestApp : public HwTestApp
 		std::string config_fname;
 		bool raw_mode{false};
 		Jungfrau::ImgSrc jungfrau_img_src{Jungfrau::Raw};
+		bool eiger_test_pattern{true};
+		int eiger_dac_threshold{2300};
 
 		Pars();
 	};
@@ -83,6 +85,12 @@ TestApp::Pars::Pars()
 
 	AddOpt(jungfrau_img_src, "-i", "--jungfrau-img-src",
 	       "Jungfrau image source");
+
+	AddOpt(eiger_test_pattern, "-p", "--eiger-test-pattern",
+	       "Eiger test trimbits pattern");
+
+	AddOpt(eiger_dac_threshold, "-t", "--eiger-dac-threshold",
+	       "Eiger DAC threshold valud");
 }
 
 HwTestApp::Pars *TestApp::getPars()
@@ -113,8 +121,24 @@ HwInterface *TestApp::getHwInterface()
 
 	if (m_jungfrau) {
 		Jungfrau::ImgSrc img_src = m_pars->jungfrau_img_src;
-		DEB_ALWAYS() << "Junfrau: ImgSrc=" << img_src;
+		DEB_ALWAYS() << "Jungfrau: ImgSrc=" << img_src;
 		m_jungfrau->setImgSrc(img_src);
+	} else {
+		bool test_pattern = m_pars->eiger_test_pattern;
+		DEB_ALWAYS() << "Eiger: TestPattern=" << test_pattern;
+		if (test_pattern) {
+			std::string settings_dir;
+			settings_dir = m_cam->getCmd("settingspath");
+			std::string test_prefix;
+			test_prefix = settings_dir + "/standard/eigernoise";
+			std::string cmd = "trimbits " + test_prefix;
+			DEB_ALWAYS() << DEB_VAR1(cmd);
+			m_cam->putCmd(cmd);
+			int dac_threshold = m_pars->eiger_dac_threshold;
+			DEB_ALWAYS() << DEB_VAR1(dac_threshold);
+			m_cam->setDAC(-1, Defs::DACIndex::Threshold,
+				      dac_threshold);
+		}
 	}
 
 	return m_interface;

@@ -46,6 +46,8 @@ class TestApp : public CtTestApp
 		Jungfrau::GainPed::MapType jungfrau_gain_ped_map_type
 			{Jungfrau::GainPed::Map16};
 		Jungfrau::ImgSrc jungfrau_img_src{Jungfrau::Raw};
+		bool eiger_test_pattern{true};
+		int eiger_dac_threshold{2300};
 
 		Pars();
 	};
@@ -87,6 +89,12 @@ TestApp::Pars::Pars()
 	       "Jungfrau::GainPed map type");
 
 	AddOpt(jungfrau_img_src, "--jungfrau-img-src", "Jungfrau image source");
+
+	AddOpt(eiger_test_pattern, "--eiger-test-pattern",
+	       "Eiger test trimbits pattern");
+
+	AddOpt(eiger_dac_threshold, "--eiger-dac-threshold",
+	       "Eiger DAC threshold valud");
 }
 
 CtTestApp::Pars *TestApp::getPars()
@@ -124,11 +132,27 @@ CtControl *TestApp::getCtControl()
 	if (m_jungfrau) {
 		Jungfrau::GainPed::MapType map_type =
 			m_pars->jungfrau_gain_ped_map_type;
-		DEB_ALWAYS() << "Junfrau: GainPed::MapType=" << map_type;
+		DEB_ALWAYS() << "Jungfrau: GainPed::MapType=" << map_type;
 		m_jungfrau->setGainPedMapType(map_type);
 		Jungfrau::ImgSrc img_src = m_pars->jungfrau_img_src;
-		DEB_ALWAYS() << "Junfrau: ImgSrc=" << img_src;
+		DEB_ALWAYS() << "Jungfrau: ImgSrc=" << img_src;
 		m_jungfrau->setImgSrc(img_src);
+	} else {
+		bool test_pattern = m_pars->eiger_test_pattern;
+		DEB_ALWAYS() << "Eiger: TestPattern=" << test_pattern;
+		if (test_pattern) {
+			std::string settings_dir;
+			settings_dir = m_cam->getCmd("settingspath");
+			std::string test_prefix;
+			test_prefix = settings_dir + "/standard/eigernoise";
+			std::string cmd = "trimbits " + test_prefix;
+			DEB_ALWAYS() << DEB_VAR1(cmd);
+			m_cam->putCmd(cmd);
+			int dac_threshold = m_pars->eiger_dac_threshold;
+			DEB_ALWAYS() << DEB_VAR1(dac_threshold);
+			m_cam->setDAC(-1, Defs::DACIndex::Threshold,
+				      dac_threshold);
+		}
 	}
 
 	m_ct = new CtControl(m_interface);
