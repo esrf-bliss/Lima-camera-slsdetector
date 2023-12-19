@@ -22,6 +22,7 @@
 
 #include "SlsDetectorCamera.h"
 #include "lima/MiscUtils.h"
+#include "lima/Exceptions.h"
 
 #include <glob.h>
 #include <cmath>
@@ -504,6 +505,34 @@ ostream& lima::SlsDetector::operator <<(ostream& os, Type type)
 	case JungfrauDet:	name = "Jungfrau";	break;
 	}
 	return os << name;
+}
+
+ostream& lima::SlsDetector::operator <<(ostream& os, PixelDepth pixel_depth)
+{
+	const char *name = "Invalid";
+	switch (pixel_depth) {
+	case PixelDepth4:	name = "4";	break;
+	case PixelDepth8:	name = "8";	break;
+	case PixelDepth16:	name = "16";	break;
+	case PixelDepth32:	name = "32";	break;
+	}
+	return os << name;
+}
+
+istream& lima::SlsDetector::operator >>(istream& is, PixelDepth& pixel_depth)
+{
+	std::string s;
+	is >> s;
+	if (s == "4")		pixel_depth = PixelDepth4;
+	else if (s == "8")	pixel_depth = PixelDepth8;
+	else if (s == "16")	pixel_depth = PixelDepth16;
+	else if (s == "32")	pixel_depth = PixelDepth32;
+	else {
+		std::ostringstream msg;
+		msg << "Invalid SlsDetector::PixelDepth: " << s;
+		throw LIMA_HW_EXC(InvalidValue, msg.str());
+	}
+	return is;
 }
 
 ostream& lima::SlsDetector::operator <<(ostream& os, const StringList& l)

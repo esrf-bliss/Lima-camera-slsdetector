@@ -193,7 +193,8 @@ enum PixelDepth {
 
 std::ostream& operator <<(std::ostream& os, AcqState state);
 std::ostream& operator <<(std::ostream& os, Type type);
-
+std::ostream& operator <<(std::ostream& os, PixelDepth pixel_depth);
+std::istream& operator >>(std::istream& is, PixelDepth& pixel_depth);
 
 typedef uint64_t FrameType;
 typedef std::vector<std::string> StringList;

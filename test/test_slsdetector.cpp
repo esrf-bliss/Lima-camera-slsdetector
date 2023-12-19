@@ -44,6 +44,7 @@ class TestApp : public HwTestApp
 		std::string config_fname;
 		bool raw_mode{false};
 		Jungfrau::ImgSrc jungfrau_img_src{Jungfrau::Raw};
+		PixelDepth eiger_pixel_depth{PixelDepth4};
 		bool eiger_test_pattern{true};
 		int eiger_dac_threshold{2300};
 
@@ -86,6 +87,9 @@ TestApp::Pars::Pars()
 	AddOpt(jungfrau_img_src, "-i", "--jungfrau-img-src",
 	       "Jungfrau image source");
 
+	AddOpt(eiger_pixel_depth, "-t", "--eiger-pixel-depth",
+	       "Eiger sensor pixel depth");
+
 	AddOpt(eiger_test_pattern, "-p", "--eiger-test-pattern",
 	       "Eiger test trimbits pattern");
 
@@ -124,6 +128,9 @@ HwInterface *TestApp::getHwInterface()
 		DEB_ALWAYS() << "Jungfrau: ImgSrc=" << img_src;
 		m_jungfrau->setImgSrc(img_src);
 	} else {
+		PixelDepth pixel_depth = m_pars->eiger_pixel_depth;
+		DEB_ALWAYS() << "Eiger: PixelDepth=" << pixel_depth;
+		m_cam->setPixelDepth(pixel_depth);
 		bool test_pattern = m_pars->eiger_test_pattern;
 		DEB_ALWAYS() << "Eiger: TestPattern=" << test_pattern;
 		if (test_pattern) {
