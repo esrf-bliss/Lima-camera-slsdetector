@@ -51,9 +51,7 @@ Installation & Module configuration
 
 As a reference, see:
 
-- :ref:`linux_installation`
-
-- :ref:`linux_compilation`
+- :ref:`build_installation`
 
 - :ref:`tango_installation`
 
