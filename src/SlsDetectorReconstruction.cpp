@@ -108,14 +108,6 @@ void Reconstruction::prepare()
 	if (!model)
 		THROW_HW_ERROR(Error) << "Camera has no model";
 	model->getAcqFrameDim(m_raw_frame_dim, m_cam->m_raw_mode);
-	
-	AutoMutex l(m_mutex);
-	m_stopped = false;
-	if (!m_frame_packet_map.empty()) {
-		DEB_ERROR() << "m_frame_packet_map not empty!";
-		AutoMutexUnlock u(l);
-		m_frame_packet_map.clear();
-	}
 }
 
 Data Reconstruction::getRawData(Data& data)
@@ -158,43 +150,42 @@ void Reconstruction::releaseThreadData(void *thread_data)
 void Reconstruction::stop()
 {
 	DEB_MEMBER_FUNCT();
-	AutoMutex l(m_mutex);
-	if (m_stopped)
-		return;
-	m_stopped = true;
-	l.unlock();
-	m_frame_packet_map.clear();
 }
 
-bool Reconstruction::addFramePackets(DetFrameImagePackets det_frame_packets)
+void Reconstruction::assemblePackets(Data& data, DetFrameImagePackets& packets)
 {
 	DEB_MEMBER_FUNCT();
-	AutoMutex l(m_mutex);
-	if (m_stopped)
-		return false;
-	m_frame_packet_map.emplace(std::move(det_frame_packets));
-	return true;
+	FrameType frame = packets.first;
+	DEB_PARAM() << DEB_VAR2(data, frame);
+
+	char *bptr = (char *) data.data();
+	DetImagePackets& det_packets = packets.second;
+	int nb_recvs = det_packets.size();
+	for (int i = 0; i < nb_recvs; ++i) {
+		if (!det_packets[i])
+			THROW_HW_ERROR(Error) << DEB_VAR2(frame, i) << ": "
+					      << "Missing data packets";
+		det_packets[i]->assemble(bptr);
+	}
 }
 
 Data Reconstruction::process(Data& data)
 {
 	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(data);
 
-	AutoMutex l(m_mutex);
-	if (m_stopped)
-		return data;
-	FrameType frame = data.frameNumber;
-	FramePacketMap::iterator it = m_frame_packet_map.find(frame);
-	if (it == m_frame_packet_map.end())
-		return data;
+	static const std::string key = "packet_data";
+	Data::SidebandContainer::Optional plugin_data;
+	plugin_data = data.sideband.get(key);
+	if (!plugin_data)
+		THROW_HW_ERROR(Error) << "Cannot get packet_data from " << data;
+	data.sideband.erase(key);
 
-	DetFrameImagePackets det_frame_packets = std::move(*it);
-	m_frame_packet_map.erase(it);
-	l.unlock();
+	typedef std::shared_ptr<PacketData> Ptr;
+	Ptr packet_data = sideband::DataCast<PacketData>(*plugin_data);
 
-	m_cam->assemblePackets(std::move(det_frame_packets));
+	Data raw_data = getRawData(data);
+	assemblePackets(raw_data, packet_data->packets);
 
 	return m_active ? processModel(data) : data;
 }
-
-

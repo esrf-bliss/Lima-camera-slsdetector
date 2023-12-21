@@ -73,9 +73,9 @@ public:
 	
 	virtual void prepare();
 
-	bool addFramePackets(DetFrameImagePackets det_frame_packets);
-
 	Data getRawData(Data& data);
+
+	void assemblePackets(Data& data, DetFrameImagePackets& packets);
 
 	virtual Data process(Data& data);
 	virtual Data processModel(Data& data) = 0;
@@ -96,9 +96,6 @@ private:
 	bool m_active;
 	LimaBufferMode m_lima_buffer_mode;
 	FrameDim m_raw_frame_dim;
-	Mutex m_mutex;
-	FramePacketMap m_frame_packet_map;
-	bool m_stopped;
 };
 
 } // namespace SlsDetector

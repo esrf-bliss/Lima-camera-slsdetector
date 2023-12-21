@@ -183,12 +183,17 @@ void Camera::AcqThread::stop(AutoMutex& l, bool wait)
 		m_cond.wait();
 }
 
-inline
-Camera::AcqThread::Status Camera::AcqThread::newFrameReady(FrameType frame)
+inline Camera::AcqThread::Status
+Camera::AcqThread::newFrameReady(DetFrameImagePackets&& packets)
 {
 	DEB_MEMBER_FUNCT();
 	HwFrameInfoType frame_info;
+	FrameType frame = packets.first;
 	frame_info.acq_frame_nb = frame;
+	static const std::string key = "packet_data";
+	HwAddData(key, frame_info,
+		  std::make_shared<PacketData>(std::move(packets)));
+	DEB_TRACE() << DEB_VAR1(frame_info);
 	StdBufferCbMgr *cb_mgr = m_cam->m_buffer.getBufferCbMgr();
 	bool cont_acq = cb_mgr->newFrameReady(frame_info);
 	bool acq_end = (frame == m_cam->m_lima_nb_frames - 1);
@@ -305,14 +310,6 @@ void Camera::AcqThread::threadFunction()
 	const double check_recv_finished_time = 1.0;
 	Timestamp last_check_ts = Timestamp::now();
 
-	auto get_next_frame = [&]() {
-		DetFrameImagePackets packets = readRecvPackets(next_frame++);
-		FrameType frame = packets.first;
-		if (!reconstruct->addFramePackets(std::move(packets)))
-			frame = -1;
-		return frame;
-	};
-
 	auto need_check_recv = [&] { return affinity_mgr.needCheckRecv(); };
 	auto check_recv_finished = [&] {
 		int last_frame;
@@ -326,16 +323,18 @@ void Camera::AcqThread::threadFunction()
 
 	while (!acq.stopReq() && cont_acq && (next_frame < acq_nb_frames)) {
 		Timestamp t0 = Timestamp::now();
-		FrameType frame;
+		FrameType frame = next_frame++;
+		DetFrameImagePackets packets;
 		{
 			AutoMutexUnlock u(l);
-			frame = get_next_frame();
-			DEB_TRACE() << DEB_VAR2(next_frame, frame);
+			packets = std::move(readRecvPackets(frame));
 		}
 		Timestamp t1 = Timestamp::now();
 		m_stats.read_packets.add(t1 - t0);
-		if ((frame == -1) || acq.stopReq())
+		if (packets.second.empty() || acq.stopReq())
 			break;
+		else if (packets.first != frame)
+			THROW_HW_ERROR(Error) << "Invalid packets frame";
 		while (!acq.stopReq()) {
 			AutoMutexUnlock u(l);
 			if (m_cam->m_buffer.waitFrame(frame))
@@ -347,7 +346,7 @@ void Camera::AcqThread::threadFunction()
 			break;
 		{
 			AutoMutexUnlock u(l);
-			Status status = newFrameReady(frame);
+			Status status = newFrameReady(std::move(packets));
 			cont_acq = status.first;
 			acq_end = status.second;
 		}
@@ -1132,27 +1131,6 @@ Camera::DetStatus Camera::getDetTrigStatus()
 	DetStatus trig_status = ready ? Defs::Waiting : Defs::Running;
 	DEB_RETURN() << DEB_VAR1(trig_status);
 	return trig_status;
-}
-
-void Camera::assemblePackets(DetFrameImagePackets det_frame_packets)
-{
-	DEB_MEMBER_FUNCT();
-
-	const FrameType& frame = det_frame_packets.first;
-	DetImagePackets& det_packets = det_frame_packets.second;
-
-	Data frame_data = m_buffer.getBufferCtrlObj()->getFrameData(frame);
-	Reconstruction *reconstruct = m_model->getReconstruction();
-	Data raw_data = reconstruct->getRawData(frame_data);
-	char *bptr = (char *) raw_data.data();
-
-	int nb_recvs = getNbRecvs();
-	for (int i = 0; i < nb_recvs; ++i) {
-		if (!det_packets[i])
-			THROW_HW_ERROR(Error) << DEB_VAR2(frame, i) << ": "
-					      << "Missing data packets";
-		det_packets[i]->assemble(bptr);
-	}
 }
 
 void Camera::waitLastSkippedFrame()

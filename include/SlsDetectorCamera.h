@@ -210,7 +210,7 @@ private:
 		};
 
 		DetFrameImagePackets readRecvPackets(FrameType frame);
-		Status newFrameReady(FrameType frame);
+		Status newFrameReady(DetFrameImagePackets&& packets);
 		void startAcq();
 		void stopAcq();
 		void onError(AutoMutex& l);
@@ -250,8 +250,6 @@ private:
 
 	void checkDetIdleStatus();
 	void createReceivers();
-
-	void assemblePackets(DetFrameImagePackets det_frame_packets);
 
 	bool checkLostPackets();
 
