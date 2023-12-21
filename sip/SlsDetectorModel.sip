@@ -31,26 +31,21 @@ class Model
 {
 
 public:
-	class Recv
-	{
-	public:
-		virtual ~Recv();
-
-		virtual int getNbProcessingThreads() = 0;
-		virtual void setNbProcessingThreads(int nb_proc_threads) = 0;
-
-		virtual void setCPUAffinity(const SlsDetector::RecvCPUAffinity&
-							recv_affinity) = 0;
-	};
-
 	Model(SlsDetector::Camera *cam, SlsDetector::Type type);
 	virtual ~Model();
 
 	virtual void getFrameDim(FrameDim& frame_dim /Out/,
 				 bool raw = false) = 0;
+	virtual void getAcqFrameDim(FrameDim& frame_dim /Out/,
+				    bool raw = false);
+
+	virtual void getDetMap(Data& det_map /Out/) = 0;
 
 	SlsDetector::Camera *getCamera();
 	SlsDetector::Type getType();
+
+	virtual void setNbUDPInterfaces(int  nb_udp_ifaces);
+	virtual void getNbUDPInterfaces(int& nb_udp_ifaces /Out/);
 
 	virtual std::string getName() = 0;
 	virtual void getPixelSize(double& x_size /Out/,
@@ -67,28 +62,24 @@ public:
 	virtual void getTimeRanges(SlsDetector::TimeRanges& 
 		     		   time_ranges /Out/) = 0;
 
-	virtual int getNbFrameMapItems() = 0;
-	virtual void updateFrameMapItems(FrameMap *map) = 0;
-	virtual void processBadItemFrame(unsigned long frame, int item,
-					 char *bptr) = 0;
+	virtual bool checkTrigMode(SlsDetector::Defs::TrigMode trig_mode) = 0;
 
 	virtual bool isXferActive() = 0;
 
+	virtual SlsDetector::Reconstruction *getReconstruction();
+
 protected:
 	void updateCameraModel();
+	void updateCameraImageSize();
+	void updateCameraTimeRanges();
 
 	virtual void updateImageSize() = 0;
 
 	void putCmd(const std::string& s, int idx = -1);
 	std::string getCmd(const std::string& s, int idx = -1);
 
-	char *getFrameBufferPtr(unsigned long frame_nb);
-
 	virtual 
 	bool checkSettings(SlsDetector::Defs::Settings settings) = 0;
-
-	virtual int getNbRecvs() = 0;
-	virtual SlsDetector::Model::Recv *getRecv(int recv_idx) = 0;
 
 	virtual void prepareAcq() = 0;
 	virtual void startAcq() = 0;

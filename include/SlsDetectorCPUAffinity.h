@@ -92,8 +92,15 @@ class SystemCmdPipe
 	{ return m_cmd.args(); }
 
 	void start();
-	void wait();
+	int wait();
+	int wait(StringList& out, StringList& err);
 
+	int execute()
+	{ start(); return wait(); }
+	int execute(StringList& out, StringList& err)
+	{ start(); return wait(out, err); }
+
+	
 	void setPipe(PipeIdx idx, PipeType type);
 	Pipe& getPipe(PipeIdx idx);
  
@@ -129,20 +136,27 @@ class SystemCmdPipe
 	SystemCmd m_cmd;
 };
 
+
 class CPUAffinity 
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "CPUAffinity", "SlsDetector");
  public:
-	CPUAffinity(uint64_t m = 0) : m_mask(internalMask(m))
-	{}
+	static constexpr int MaxNbCPUs = NumaSoftBufferAllocMgr::MaxNbCPUs;
+	static constexpr int NbULongBits = sizeof(unsigned long) * 8;
+	static constexpr int NbULongs = MaxNbCPUs / NbULongBits;
+
+	typedef std::bitset<MaxNbCPUs> Mask;
+	typedef unsigned long ULongArray[NbULongs];
+
+	CPUAffinity() {}
+	CPUAffinity(const Mask& m) : m_mask(m) {}
 
 	static int getNbSystemCPUs(bool max_nb = false);
 
 	static int getNbHexDigits(bool max_nb = false)
 	{ return getNbSystemCPUs(max_nb) / 4; }
 
-	static uint64_t allCPUs(bool max_nb = false)
-	{ return (uint64_t(1) << getNbSystemCPUs(max_nb)) - 1; }
+	static const Mask& allCPUs(bool max_nb = false);
 
 	int getNbCPUs() const
 	{ return m_mask.any() ? m_mask.count() : getNbSystemCPUs(); }
@@ -151,28 +165,41 @@ class CPUAffinity
 	void applyToTask(pid_t task, bool incl_threads = true,
 			 bool use_taskset = true) const;
 
-	uint64_t getMask() const
-	{ return m_mask.any() ? m_mask.to_ulong() : allCPUs(); }
+	const Mask &getMask() const
+	{ return m_mask.any() ? m_mask : allCPUs(); }
 
-	uint64_t getZeroDefaultMask() const
-	{ return m_mask.to_ulong(); }
-
-	operator uint64_t() const
-	{ return getMask(); }
+	const Mask &getZeroDefaultMask() const
+	{ return m_mask; }
 
 	CPUAffinity& operator |=(const CPUAffinity& o);
 
 	bool isDefault() const
-	{ return m_mask.none() || (m_mask.to_ulong() == allCPUs()); }
-
-	void getNUMANodeMask(std::vector<unsigned long>& node_mask,
-			     int& max_node);
+	{ return m_mask.none() || (m_mask == allCPUs()); }
 
 	static std::string getProcDir(bool local_threads);
 	static std::string getTaskProcDir(pid_t task, bool is_thread);
 
+	static void maskToULongArray(const Mask& mask, ULongArray& array);
+	static Mask maskFromULongArray(const ULongArray& array);
+
+	static std::string maskToString(const Mask& mask, int base = 16,
+					bool comma_sep = false);
+	static Mask maskFromString(std::string aff_str, int base = 16);
+
+	void toULongArray(ULongArray& array) const
+	{ maskToULongArray(getMask(), array); }
+
+	static CPUAffinity fromULongArray(const ULongArray& array)
+	{ return maskFromULongArray(array); }
+
+	std::string toString(int base = 16, bool comma_sep = false) const
+	{ return maskToString(getMask(), base, comma_sep); }
+
+	static CPUAffinity fromString(std::string aff_str, int base = 16)
+	{ return maskFromString(aff_str, base);	}
+
  private:
-	static uint64_t internalMask(uint64_t m)
+	static Mask internalMask(Mask m)
 	{ return (m != allCPUs()) ? m : 0; }
 
 	void applyWithTaskset(pid_t task, bool incl_threads) const;
@@ -181,13 +208,13 @@ class CPUAffinity
 	static int findNbSystemCPUs();
 	static int findMaxNbSystemCPUs();
 
-	std::bitset<64> m_mask;
+	Mask m_mask;
 };
 
 inline
 bool operator ==(const CPUAffinity& a, const CPUAffinity& b)
 {
-	uint64_t mask = CPUAffinity::allCPUs();
+	CPUAffinity::Mask mask = CPUAffinity::allCPUs();
 	return (a.getMask() & mask) == (b.getMask() & mask);
 }
 
@@ -208,7 +235,8 @@ CPUAffinity operator |(const CPUAffinity& a, const CPUAffinity& b)
 inline
 CPUAffinity& CPUAffinity::operator |=(const CPUAffinity& o)
 {
-	return *this = *this | o;
+	m_mask |= o.m_mask;
+	return *this;
 }
 
 typedef std::vector<CPUAffinity> CPUAffinityList;
@@ -390,9 +418,9 @@ class SystemCPUAffinityMgr
 	~SystemCPUAffinityMgr();
 
 	static ProcList getProcList(Filter filter = All, 
-				    CPUAffinity cpu_affinity = 0);
+				    CPUAffinity cpu_affinity = {});
 	static ProcList getThreadList(Filter filter = All, 
-				      CPUAffinity cpu_affinity = 0);
+				      CPUAffinity cpu_affinity = {});
 
 	void setOtherCPUAffinity(CPUAffinity cpu_affinity);
 	void setNetDevCPUAffinity(
@@ -423,23 +451,28 @@ class SystemCPUAffinityMgr
 		typedef uint64_t Arg;
 		typedef char String[StringLen];
 
+		typedef CPUAffinity::ULongArray Mask;
+
 		struct Packet {
 			Cmd cmd;
 			union Union {
-				uint64_t proc_affinity;
+				Mask proc_affinity;
 				struct NetDevAffinity {
 					String name_list;
 					unsigned int queue_affinity_len;
 					struct QueueAffinity {
 						int queue;
-						uint64_t irq;
-						uint64_t processing;
+						Mask irq;
+						Mask processing;
 					} queue_affinity[AffinityMapLen];
 				} netdev_affinity;
 			} u;
 
-			Packet(Cmd c=Init) : cmd(c)
-			{ memset(&u, 0, sizeof(u)); }
+			Packet(Cmd c=Init)
+			{
+				memset(this, 0, sizeof(Packet));
+				cmd = c;
+			}
 		};
 		typedef NetDevRxQueueAffinityMap NetDevAffinityMap;
 		typedef Packet::Union::NetDevAffinity PacketNetDevAffinity;
@@ -455,7 +488,7 @@ class SystemCPUAffinityMgr
 		void childFunction();
 		void procAffinitySetter(CPUAffinity cpu_affinity);
 
-		NetDevGroupCPUAffinity netDevAffinityEncode(
+		NetDevGroupCPUAffinity netDevAffinityDecode(
 							const Packet& packet);
 		void netDevAffinitySetter(
 				const NetDevGroupCPUAffinity& netdev_affinity);
@@ -477,6 +510,7 @@ class SystemCPUAffinityMgr
 	void checkWatchDogStart();
 	void checkWatchDogStop();
 
+	bool m_active;
 	AutoPtr<WatchDog> m_watchdog;
 	CPUAffinity m_other;
 	NetDevGroupCPUAffinityList m_netdev;
@@ -484,7 +518,6 @@ class SystemCPUAffinityMgr
 
 struct RecvCPUAffinity {
 	CPUAffinityList listeners;
-	CPUAffinityList recv_threads;
 
 	RecvCPUAffinity();
 	CPUAffinity all() const;
@@ -492,8 +525,6 @@ struct RecvCPUAffinity {
 
 	const CPUAffinityList& Listeners() const
 	{ return listeners; }
-	const CPUAffinityList& RecvThreads() const
-	{ return recv_threads; }
 
 	typedef const CPUAffinityList& (RecvCPUAffinity::*Selector)() const;
 };
@@ -501,16 +532,14 @@ struct RecvCPUAffinity {
 
 inline CPUAffinity RecvCPUAffinity::all() const
 {
-	return (CPUAffinityList_all(listeners) |
-		CPUAffinityList_all(recv_threads));
+	return CPUAffinityList_all(listeners);
 }
 
 
 inline 
 bool operator ==(const RecvCPUAffinity& a, const RecvCPUAffinity& b)
 {
-	return ((a.listeners == b.listeners) &&
-		(a.recv_threads == b.recv_threads));
+	return (a.listeners == b.listeners);
 }
 
 inline 
@@ -544,9 +573,11 @@ inline CPUAffinity RecvCPUAffinityList_all(const RecvCPUAffinityList& l,
 					       
 struct GlobalCPUAffinity {
 	RecvCPUAffinityList recv;
+	CPUAffinity acq;
 	CPUAffinity lima;
 	CPUAffinity other;
 	NetDevGroupCPUAffinityList netdev;
+	StringList rx_netdev;
 
 	CPUAffinity all() const;
 	void updateRecvAffinity(CPUAffinity a);
@@ -576,7 +607,7 @@ class GlobalCPUAffinityMgr
 
 		class ImageStatusCallback : 
 		public CtControl::ImageStatusCallback
-			{
+		{
 			public:
 			ImageStatusCallback(
 				ProcessingFinishedEvent *proc_finished)
@@ -588,7 +619,7 @@ class GlobalCPUAffinityMgr
 				{ m_proc_finished->imageStatusChanged(status); }
 			private:
 				ProcessingFinishedEvent *m_proc_finished;
-			};
+		};
 
 		void prepareAcq();
 		void stopAcq();
@@ -602,6 +633,7 @@ class GlobalCPUAffinityMgr
 		GlobalCPUAffinityMgr *m_mgr;
 		ImageStatusCallback m_cb;
 		CtControl *m_ct;
+		Mutex m_mutex;
 		int m_nb_frames;
 		bool m_cnt_act;
 		bool m_saving_act;
@@ -632,8 +664,20 @@ class GlobalCPUAffinityMgr
 		Ready, Acquiring, Changing, Processing, Restoring,
 	};
 
-	void setLimaAffinity(CPUAffinity lima_affinity);
+	class StateCleanUp : StateCleanUpHelper<State>
+	{
+	public:
+		StateCleanUp(GlobalCPUAffinityMgr& mgr, State final_state,
+			     AutoMutex& l, DebObj *deb_ptr)
+			: StateCleanUpHelper(mgr.m_state, final_state,
+					     mgr.m_cond, l, deb_ptr)
+		{}
+	};
+
+	void setLimaThreadAffinity(CPUAffinity lima_affinity);
+	void setLimaBufferAffinity(CPUAffinity lima_affinity);
 	void setRecvAffinity(const RecvCPUAffinityList& recv_affinity_list);
+	void setAcqAffinity(CPUAffinity acq_affinity);
 
 	AutoMutex lock()
 	{ return AutoMutex(m_cond.mutex()); }

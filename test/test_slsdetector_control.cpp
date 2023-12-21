@@ -19,388 +19,162 @@
 // You should have received a copy of the GNU General Public License
 // along with this program; if not, see <http://www.gnu.org/licenses/>.
 //###########################################################################
-#include "SlsDetectorInterface.h"
-#include "SlsDetectorEiger.h"
-#include "lima/CtControl.h"
-#include "lima/CtAcquisition.h"
-#include "lima/CtImage.h"
-#include "lima/CtSaving.h"
-#include "lima/CtSpsImage.h"
-#include "lima/AcqState.h"
 
-using namespace lima;
+#include "SlsDetectorEiger.h"
+#include "SlsDetectorJungfrau.h"
+#include "SlsDetectorInterface.h"
+#include "lima/CtTestApp.h"
+
 using namespace std;
-using namespace SlsDetector;
+using namespace lima;
+using namespace lima::SlsDetector;
 
 DEB_GLOBAL(DebModTest);
 
-//*********************************************************************
-//* ImageStatusCallback
-//*********************************************************************
-
-class ImageStatusCallback : public CtControl::ImageStatusCallback
+class TestApp : public CtTestApp
 {
-	DEB_CLASS(DebModTest, "ImageStatusCallback");
+	DEB_CLASS_NAMESPC(DebModTest, "TestApp", "SlsDetector");
 
-public:
-	ImageStatusCallback(CtControl& ct, AcqState& acq_state);
-	virtual ~ImageStatusCallback();
+ public:
+	class Pars : public CtTestApp::Pars
+	{
+		DEB_CLASS_NAMESPC(DebModTest, "TestApp::Pars", "SlsDetector");
+	public:
+		int cam_det_id{0};
+		std::string cam_config_fname;
+		bool cam_raw_mode{false};
+		Jungfrau::GainPed::MapType jungfrau_gain_ped_map_type
+			{Jungfrau::GainPed::Map16};
+		Jungfrau::ImgSrc jungfrau_img_src{Jungfrau::Raw};
+		PixelDepth eiger_pixel_depth{PixelDepth4};
+		bool eiger_test_pattern{true};
+		int eiger_dac_threshold{2300};
 
-protected:
-	virtual void imageStatusChanged(
-				const CtControl::ImageStatus& img_status);
+		Pars();
+	};
 
-private:
-	CtControl& m_ct;
-	AcqState& m_acq_state;
+	TestApp(int argc, char *argv[]) : CtTestApp(argc, argv) {}
 
-	int m_nb_frames;
+ protected:
+	virtual CtTestApp::Pars *getPars();
+	virtual CtControl *getCtControl();
+	virtual index_map getIndexMap() { return {}; }
+	virtual void configureAcq(const index_map& indexes) {}
+
+	AutoPtr<Pars> m_pars;
+	AutoPtr<Camera> m_cam;
+	AutoPtr<Eiger> m_eiger;
+	AutoPtr<Jungfrau> m_jungfrau;
+	AutoPtr<Interface> m_interface;
+	AutoPtr<CtControl> m_ct;
 };
 
-ImageStatusCallback::ImageStatusCallback(CtControl& ct, AcqState& acq_state)
-	: m_ct(ct), m_acq_state(acq_state), m_nb_frames(0)
+
+TestApp::Pars::Pars()
 {
 	DEB_CONSTRUCTOR();
+	const char *env_config = getenv("SLSDETECTOR_CONFIG");
+	if (env_config)
+		cam_config_fname = env_config;
+
+#define AddOpt(var, opt, par)	\
+	m_opt_list.insert(MakeOpt(var, "", opt, par))
+
+	AddOpt(cam_det_id, "--cam-det-id", "multi-detector ID");
+
+	AddOpt(cam_config_fname, "--cam-config-fname", "detector config file");
+
+	AddOpt(cam_raw_mode, "--cam-raw-mode", "raw mode");
+
+	AddOpt(jungfrau_gain_ped_map_type, "--jungfrau-gain-ped-map-type",
+	       "Jungfrau::GainPed map type");
+
+	AddOpt(jungfrau_img_src, "--jungfrau-img-src", "Jungfrau image source");
+
+	AddOpt(eiger_pixel_depth, "--eiger-pixel-depth",
+	       "Eiger sensor pixel depth");
+
+	AddOpt(eiger_test_pattern, "--eiger-test-pattern",
+	       "Eiger test trimbits pattern");
+
+	AddOpt(eiger_dac_threshold, "--eiger-dac-threshold",
+	       "Eiger DAC threshold valud");
 }
 
-ImageStatusCallback::~ImageStatusCallback()
+CtTestApp::Pars *TestApp::getPars()
 {
-	DEB_DESTRUCTOR();
+	m_pars = new Pars();
+	return m_pars;
 }
 
-void ImageStatusCallback::imageStatusChanged(
-				const CtControl::ImageStatus& img_status)
+CtControl *TestApp::getCtControl()
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(img_status);
 
-	int last_acq_frame_nb = img_status.LastImageAcquired;
-	int last_saved_frame_nb = img_status.LastImageSaved;
-	DEB_ALWAYS() << DEB_VAR1(img_status);
+	if (m_pars->cam_config_fname.empty())
+		THROW_HW_ERROR(Error) << "Missing config file";
 
-	if (last_acq_frame_nb == 0) {
-		CtAcquisition *ct_acq = m_ct.acquisition();
-		ct_acq->getAcqNbFrames(m_nb_frames);
-		DEB_ALWAYS() << DEB_VAR1(m_nb_frames);
+	m_cam = new Camera(m_pars->cam_config_fname, m_pars->cam_det_id);
+	m_interface = new Interface(*m_cam);
+
+	Type det_type = m_cam->getType();
+	Reconstruction *r = NULL;
+	if (det_type == EigerDet) {
+		m_eiger = new Eiger(m_cam);
+		r = m_eiger->getReconstruction();
+	} else if (det_type == JungfrauDet) {
+		m_jungfrau = new Jungfrau(m_cam);
+		r = m_jungfrau->getReconstruction();
+	} else
+		THROW_HW_ERROR(Error) << "Unknown detector: " << det_type;
+	if (!r)
+		THROW_HW_ERROR(Error) << "Invalid NULL reconstruction";
+	m_interface->setReconstruction(r);
+
+	m_cam->setRawMode(m_pars->cam_raw_mode);
+
+	if (m_jungfrau) {
+		Jungfrau::GainPed::MapType map_type =
+			m_pars->jungfrau_gain_ped_map_type;
+		DEB_ALWAYS() << "Jungfrau: GainPed::MapType=" << map_type;
+		m_jungfrau->setGainPedMapType(map_type);
+		Jungfrau::ImgSrc img_src = m_pars->jungfrau_img_src;
+		DEB_ALWAYS() << "Jungfrau: ImgSrc=" << img_src;
+		m_jungfrau->setImgSrc(img_src);
+	} else {
+		PixelDepth pixel_depth = m_pars->eiger_pixel_depth;
+		DEB_ALWAYS() << "Eiger: PixelDepth=" << pixel_depth;
+		m_cam->setPixelDepth(pixel_depth);
+		bool test_pattern = m_pars->eiger_test_pattern;
+		DEB_ALWAYS() << "Eiger: TestPattern=" << test_pattern;
+		if (test_pattern) {
+			std::string settings_dir;
+			settings_dir = m_cam->getCmd("settingspath");
+			std::string test_prefix;
+			test_prefix = settings_dir + "/standard/eigernoise";
+			std::string cmd = "trimbits " + test_prefix;
+			DEB_ALWAYS() << DEB_VAR1(cmd);
+			m_cam->putCmd(cmd);
+			int dac_threshold = m_pars->eiger_dac_threshold;
+			DEB_ALWAYS() << DEB_VAR1(dac_threshold);
+			m_cam->setDAC(-1, Defs::DACIndex::Threshold,
+				      dac_threshold);
+		}
 	}
 
-	if ((last_acq_frame_nb == m_nb_frames - 1) &&
-	    (m_acq_state.get() == AcqState::Acquiring)) {
-		DEB_ALWAYS() << "All frames acquired!";
-		m_acq_state.set(AcqState::Saving);
-	}
-
-	if (last_saved_frame_nb == m_nb_frames - 1) {
-		DEB_ALWAYS() << "All frames saved!";
-		m_acq_state.set(AcqState::Finished);
-	}
+	m_ct = new CtControl(m_interface);
+	return m_ct;
 }
-
-
-//*********************************************************************
-//* SlsDetectorAcq
-//*********************************************************************
-
-class SlsDetectorAcq
-{
-	DEB_CLASS(DebModTest, "SlsDetectorAcq");
-public:
-	SlsDetectorAcq(std::string config_fname);
-	~SlsDetectorAcq();
-
-	void initSaving(string dir, string prefix, string suffix, int idx, 
-			CtSaving::FileFormat fmt, CtSaving::SavingMode mode,
-			int frames_per_file, bool overwrite=false);
-
-	void setExpTime(double exp_time);
-	void setNbAcqFrames(int nb_acq_frames);
-
-	void start();
-	void wait();
-	void run();
-
-	void setBin(Bin& bin);
-	void setRoi(Roi& roi);
-
-private:
-	void printDefaults();
-
-	Camera			m_cam;
-	Interface		m_hw_inter;
-	AcqState		m_acq_state;
-
-	AutoPtr<Eiger>		m_eiger;
-	AutoPtr<Eiger::Correction> m_corr;
-
-	AutoPtr<ImageStatusCallback> m_img_status_cb;
-
-	AutoPtr<CtControl>	m_ct;
-	CtAcquisition		*m_ct_acq;
-	CtSaving		*m_ct_saving;
-	CtImage			*m_ct_image;
-	CtBuffer		*m_ct_buffer;
-#ifdef WITH_SPS_IMAGE
-	CtSpsImage		*m_ct_display;
-#endif
-};
-
-SlsDetectorAcq::SlsDetectorAcq(string config_fname)
-	: m_cam(config_fname), m_hw_inter(m_cam)
-{
-	DEB_CONSTRUCTOR();
-
-	switch (m_cam.getType()) {
-	case EigerDet:
-		m_eiger = new Eiger(&m_cam);
-		m_corr = new Eiger::Correction(m_eiger);
-		break;
-	default:
-		DEB_WARNING() << "Non-supported type: " << m_cam.getType();
-	}
-
-	m_ct = new CtControl(&m_hw_inter);
-
-	m_ct_acq     = m_ct->acquisition();
-	m_ct_saving  = m_ct->saving();
-	m_ct_image   = m_ct->image();
-	m_ct_buffer  = m_ct->buffer();
-#ifdef WITH_SPS_IMAGE
-	m_ct_display = m_ct->display();
-#endif
-
-	printDefaults();
-
-	if (m_corr)
-		m_ct->setReconstructionTask(m_corr);
-
-	m_img_status_cb = new ImageStatusCallback(*m_ct, m_acq_state);
-	m_ct->registerImageStatusCallback(*m_img_status_cb);
-#ifdef WITH_SPS_IMAGE
-	m_ct_display->setNames("_ccd_ds_", "slsdetector_live");
-	m_ct_display->setActive(true);
-#endif
-	DEB_TRACE() << "All is OK!";
-}
-
-SlsDetectorAcq::~SlsDetectorAcq()
-{
-	DEB_DESTRUCTOR();
-}
-
-void SlsDetectorAcq::printDefaults()
-{
-	DEB_MEMBER_FUNCT();
-
-	AcqMode acq_mode;
-	m_ct_acq->getAcqMode(acq_mode);
-	DEB_TRACE() << "Default " << DEB_VAR1(acq_mode);
-
-	ImageType image_type;
-	m_ct_image->getImageType(image_type);
-	DEB_TRACE() << "Default " << DEB_VAR1(image_type);
-
-	Size max_size;
-	m_ct_image->getMaxImageSize(max_size);
-	DEB_TRACE() << "Default " << DEB_VAR1(max_size);
-
-	CtImage::ImageOpMode img_op_mode;
-	m_ct_image->getMode(img_op_mode);
-	DEB_TRACE() << "Default " << DEB_VAR1(img_op_mode);
-
-	Bin bin;
-	m_ct_image->getBin(bin);
-	DEB_TRACE() << "Default " << DEB_VAR1(bin);
-
-	Roi roi;
-	m_ct_image->getRoi(roi);
-	DEB_TRACE() << "Default " << DEB_VAR1(roi);
-	
-	double exp_time;
-	m_ct_acq->getAcqExpoTime(exp_time);
-	DEB_TRACE() << "Default " << DEB_VAR1(exp_time);
-
-	int nb_frames;
-	m_ct_acq->getAcqNbFrames(nb_frames);
-	DEB_TRACE() << "Default " << DEB_VAR1(nb_frames);
-
-}
-
-void SlsDetectorAcq::start()
-{
-	DEB_MEMBER_FUNCT();
-
-	m_ct->prepareAcq();
-	m_acq_state.set(AcqState::Acquiring);
-	DEB_TRACE() << "Starting acquisition";
-   	m_ct->startAcq();
-}
-
-void SlsDetectorAcq::wait()
-{
-	DEB_MEMBER_FUNCT();
-	m_acq_state.waitNot(AcqState::Acquiring | AcqState::Saving);
-	DEB_TRACE() << "Acquisition finished";
-	m_cam.waitState(Idle);
-	DEB_TRACE() << "Camera finished";
-
-}
-
-void SlsDetectorAcq::run()
-{
-	DEB_MEMBER_FUNCT();
-	start();
-	wait();
-}
-
-void SlsDetectorAcq::initSaving(string dir, string prefix, string suffix, 
-				int idx, CtSaving::FileFormat fmt, 
-				CtSaving::SavingMode mode, int frames_per_file,
-				bool overwrite)
-{
-	DEB_MEMBER_FUNCT();
-
-	m_ct_saving->setDirectory(dir);
- 	m_ct_saving->setPrefix(prefix);
-	m_ct_saving->setSuffix(suffix);
-	m_ct_saving->setNextNumber(idx);
-	m_ct_saving->setFormat(fmt);
-	m_ct_saving->setSavingMode(mode);
-	m_ct_saving->setFramesPerFile(frames_per_file);
-	m_ct_saving->setOverwritePolicy(overwrite ? CtSaving::Overwrite : 
-						    CtSaving::Append);
-}
-
-void SlsDetectorAcq::setExpTime(double exp_time)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(exp_time);
-
-	double lat_time = 1e-3;
-	m_ct_acq->setAcqExpoTime(exp_time - lat_time);
-	m_ct_acq->setLatencyTime(lat_time);
-}
-
-void SlsDetectorAcq::setNbAcqFrames(int nb_acq_frames)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(nb_acq_frames);
-
-	m_ct_acq->setAcqNbFrames(nb_acq_frames);
-}
-
-void SlsDetectorAcq::setBin(Bin& bin)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(bin);
-
-	m_ct_image->setBin(bin);
-}
-
-void SlsDetectorAcq::setRoi(Roi& roi)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(roi);
-
-	Size max_size;
-	m_ct_image->getMaxImageSize(max_size);
-	Bin bin;
-	m_ct_image->getBin(bin);
-	max_size /= bin;
-	Roi max_roi(Point(0, 0), max_size);
-	DEB_TRACE() << DEB_VAR2(roi, max_roi);
-	if (!max_roi.containsRoi(roi)) {
-		Point tl = roi.getTopLeft();
-		if (!max_roi.containsPoint(tl))
-			THROW_HW_ERROR(InvalidValue) << DEB_VAR2(roi, max_roi);
-		Point br = max_roi.getBottomRight();
-		roi.setCorners(tl, br);
-		DEB_WARNING() << "Restricting roi: " << DEB_VAR2(roi, max_roi);
-	}
-
-	m_ct_image->setRoi(roi);
-
-}
-
-//*********************************************************************
-//* test_slsdetector_control
-//*********************************************************************
-
-void test_slsdetector_control(string config_fname, bool enable_debug = false)
-{
-	DEB_GLOBAL_FUNCT();
-
-	if (enable_debug) {
-		DebParams::enableTypeFlags(DebParams::AllFlags);
-	}
-
-	DEB_ALWAYS() << "Creating SlsDetectorAcq";
-	SlsDetectorAcq acq(config_fname);
-	DEB_ALWAYS() << "Done!";
-
-	system("mkdir -p data");
-
-	acq.initSaving("data", "img", ".edf", 0, CtSaving::EDF, 
-		       CtSaving::AutoFrame, 1, true);
-
-	DEB_ALWAYS() << "First run with default pars";
-	acq.run();
-	DEB_ALWAYS() << "Done!";
-
-	double exp_time = 100e-3;
-	acq.setExpTime(exp_time);
-
-	int nb_acq_frames = 50;
-	acq.setNbAcqFrames(nb_acq_frames);
-
-	DEB_ALWAYS() << "Run " << DEB_VAR2(exp_time, nb_acq_frames);
-	acq.run();
-	DEB_ALWAYS() << "Done!";
-
-	Bin bin(2);
-	acq.setBin(bin);
-
-	nb_acq_frames = 5;
-	acq.setNbAcqFrames(nb_acq_frames);
-
-	DEB_ALWAYS() << "Run " << DEB_VAR2(bin, nb_acq_frames);
-	acq.run();
-	DEB_ALWAYS() << "Done!";
-
-	Roi roi = Roi(Point(256, 128), Size(256, 512));
-	acq.setRoi(roi);
-
-	DEB_ALWAYS() << "Run " << DEB_VAR1(roi);
-	acq.run();
-	DEB_ALWAYS() << "Done!";
-}
-
-
-//*********************************************************************
-//* main
-//*********************************************************************
 
 int main(int argc, char *argv[])
 {
 	DEB_GLOBAL_FUNCT();
-
-	string config_fname = getenv("EIGER_CONFIG");
-	if (config_fname.empty()) {
-		if (argc < 2) {
-			DEB_ERROR() << "Must provide configuration file";
-			exit(1);
-		}
-		config_fname = argv[1];
-	}
-
-	string par;
-	if (argc > 2)
-		par = argv[2];
-	bool enable_debug = (par == "debug");
-
-	try {
-		test_slsdetector_control(config_fname, enable_debug);
-	} catch (Exception& e) {
-		DEB_ERROR() << "LIMA Exception: " << e;
-	}
+        try {
+		TestApp app(argc, argv);
+		app.run();
+        } catch (Exception& e) {
+	        DEB_ERROR() << "LIMA Exception:" << e.getErrMsg();
+        }
 	return 0;
-}
+};
+

@@ -23,9 +23,16 @@
 #ifndef __SLS_DETECTOR_RECEIVER_H
 #define __SLS_DETECTOR_RECEIVER_H
 
-#include "SlsDetectorFrameMap.h"
-#include "SlsDetectorModel.h"
-#include "slsReceiverUsers.h"
+#include "SlsDetectorCPUAffinity.h"
+
+#include "sls/sls_detector_defs.h"
+
+#include "lima/AppPars.h"
+
+namespace sls
+{
+class Receiver;
+}
 
 namespace lima 
 {
@@ -40,29 +47,50 @@ class Receiver
 	DEB_CLASS_NAMESPC(DebModCamera, "Receiver", "SlsDetector");
 
 public:
-	typedef slsReceiverDefs::sls_detector_header sls_detector_header;
-	typedef slsReceiverDefs::sls_receiver_header sls_receiver_header;
-	typedef slsReceiverDefs::receiver_image_data ImageData;
+	class ImagePackets {
+	public:
+		FrameType frame;
+		int numberOfPorts;
+		std::bitset<MAX_NUM_PORTS> validPortData;
+
+		virtual ~ImagePackets() {}
+
+		bool assemble(char *buf)
+		{ return recv->asmImagePackets(this, buf); }
+
+	protected:
+		friend class Receiver;
+
+		ImagePackets(Receiver *r) : frame(-1), numberOfPorts(0), recv(r)
+		{}
+
+		Receiver *recv;
+	};
 
 	Receiver(Camera *cam, int idx, int rx_port);
 	~Receiver();
 
 	void start();
 
+	void setGapPixelsEnable(bool enable)
+	{ m_gap_pixels_enable = enable; }
+
 	void prepareAcq();
 
 	void setCPUAffinity(const RecvCPUAffinity& recv_affinity);
 
-	bool getImage(ImageData& image_data);
-	
+	AutoPtr<ImagePackets> readImagePackets();
+
+	void fillBadFrame(char *buf);
+
 	SlsDetector::Stats& getStats()
 	{ return m_stats.stats; }
 
-	void clearAllBuffers()
-	{ m_recv->clearAllBuffers(); }
+	void clearAllBuffers();
 
 private:
 	friend class Camera;
+	friend class ImagePackets;
 
 	struct Stats {
 		SlsDetector::Stats stats;
@@ -74,14 +102,26 @@ private:
 			last_t0 = last_t1 = Timestamp();
 		}
 	};
-	
+
+	struct AssemblerImpl;
+
+	bool asmImagePackets(ImagePackets *image_data, char *buffer);
+	AutoPtr<ImagePackets> readSkippableImagePackets();
+
 	Camera *m_cam;
 	int m_idx;
 	int m_rx_port;
-	Args m_args;
-	AutoPtr<slsReceiverUsers> m_recv;
+	AppArgs m_args;
+	bool m_gap_pixels_enable;
+	AutoPtr<sls::Receiver> m_recv;
+	AssemblerImpl *m_asm_impl;
 	Stats m_stats;
+	bool m_last_skipped;
 }; 
+
+typedef std::map<int, AutoPtr<Receiver::ImagePackets>> DetImagePackets;
+typedef std::map<FrameType, DetImagePackets> FramePacketMap;
+typedef FramePacketMap::value_type DetFrameImagePackets;
 
 
 } // namespace SlsDetector

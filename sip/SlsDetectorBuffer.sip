@@ -20,61 +20,40 @@
 // along with this program; if not, see <http://www.gnu.org/licenses/>.
 //###########################################################################
 
-#ifndef __SLS_DETECTOR_ARGS_H
-#define __SLS_DETECTOR_ARGS_H
-
-#include "lima/AutoObj.h"
-#include "lima/Debug.h"
-
-#include <string>
-#include <vector>
-
-namespace lima 
-{
-
 namespace SlsDetector
 {
 
-class Args
+%TypeHeaderCode
+#include "SlsDetectorBuffer.h"
+%End
+
+class BufferMgr
 {
-	DEB_CLASS_NAMESPC(DebModCamera, "Args", "SlsDetector");
-
 public:
-	Args();
-	Args(unsigned int argc, char *argv[]);
-	Args(const std::string& s);
-	Args(const Args& o);
+	enum ResizePolicy {
+		Auto, Manual
+	};
 
-	void set(const std::string& s);
-	void clear();
+	void setMaxMemory(short  max_memory);
+	void getMaxMemory(short& max_memory /Out/);
 
-	unsigned int size()
-	{ return m_argc; }
-	operator char **()
-	{ return m_argv; }
-	operator bool()
-	{ return bool(m_argc); }
-	char *operator[](int pos)
-	{ return m_argv[pos]; }
+	void getMaxNbBuffers(long& nb_buffers /Out/);
 
-	Args& operator =(const std::string& s);
+	void setResizePolicy(
+		SlsDetector::BufferMgr::ResizePolicy  resize_policy);
+	void getResizePolicy(
+		SlsDetector::BufferMgr::ResizePolicy& resize_policy /Out/);
 
-	std::string pop_front();
-	void erase(int pos);
+	void setPacketFifoDepth(int  fifo_depth);
+	void getPacketFifoDepth(int& fifo_depth);
+
+	void clearAllBuffers();
+	void releaseBuffers();
 
 private:
-	typedef std::vector<std::string> StringList;
-
-	void update_argc_argv();
-	
-	StringList m_arg_list;
-	unsigned int m_argc;
-	AutoPtr<char *, true> m_argv;
+	BufferMgr(Camera *cam);
+	BufferMgr(const BufferMgr& o);
 };
 
-} // namespace SlsDetector
 
-} // namespace lima
-
-
-#endif // __SLS_DETECTOR_ARGS_H
+}; // namespace SlsDetector

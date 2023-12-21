@@ -37,21 +37,14 @@ class Eiger : public SlsDetector::Model
 
  public:
 	enum ParallelMode {
-		NonParallel, Parallel, Safe,
-	};
-
-	class Correction : public LinkTask
-	{
-	public:
-		Correction(SlsDetector::Eiger *eiger);
-
-		virtual Data process(Data& data);
+		NonParallel, Parallel,
 	};
 
 	Eiger(SlsDetector::Camera *cam);
 
 	virtual void getFrameDim(FrameDim& frame_dim /Out/, bool raw = false);
-	SlsDetector::Eiger::Correction *createCorrectionTask() /Factory/;
+
+	virtual void getDetMap(Data& det_map /Out/);
 
 	virtual std::string getName();
 	virtual void getPixelSize(double& x_size /Out/, double& y_size /Out/);
@@ -70,6 +63,8 @@ class Eiger : public SlsDetector::Model
 				   SlsDetector::Eiger::ParallelMode parallel_mode,
 				   SlsDetector::TimeRanges& time_ranges /Out/);
 
+	virtual bool checkTrigMode(SlsDetector::Defs::TrigMode trig_mode);
+
 	void setParallelMode(SlsDetector::Eiger::ParallelMode  mode);
 	void getParallelMode(SlsDetector::Eiger::ParallelMode& mode);
 
@@ -80,8 +75,8 @@ class Eiger : public SlsDetector::Model
 	void setSubExpTime(double  sub_exp_time);
 	void getSubExpTime(double& sub_exp_time /Out/);
 
-	void setAllTrimBits(int sub_mod_idx, int  val);
-	void getAllTrimBits(int sub_mod_idx, int& val /Out/);
+	void setAllTrimBits(int mod_idx, int  val);
+	void getAllTrimBits(int mod_idx, int& val /Out/);
 	void getAllTrimBitsList(std::vector<int>& val_list /Out/);
 
 	void setHighVoltage(int  hvolt);
@@ -93,22 +88,22 @@ class Eiger : public SlsDetector::Model
 	void setTxFrameDelay(int  tx_frame_delay);
 	void getTxFrameDelay(int& tx_frame_delay /Out/);
 
+	void setSignedImageMode(bool  signed_image_mode);
+	void getSignedImageMode(bool& signed_image_mode /Out/);
+
 	void getFpgaFramePtrDiff(std::vector<unsigned long>& ptr_diff /Out/);
 
 	virtual bool isXferActive();
 
- protected:
-	virtual int getNbFrameMapItems();
-	virtual void updateFrameMapItems(FrameMap *map);
-	virtual void processBadItemFrame(unsigned long frame, int item,
-					 char *bptr);
+	void setApplyCorrections(bool  active);
+	void getApplyCorrections(bool& active /Out/);
 
+	virtual Reconstruction *getReconstruction();
+
+ protected:
 	virtual void updateImageSize();
 
 	virtual bool checkSettings(SlsDetector::Defs::Settings settings);
-
-	virtual int getNbRecvs();
-	virtual SlsDetector::Model::Recv *getRecv(int recv_idx);
 
 	virtual void prepareAcq();
 	virtual void startAcq();

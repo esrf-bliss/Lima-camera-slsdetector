@@ -23,24 +23,37 @@
 namespace SlsDetector
 {
 
+class Reconstruction : public LinkTask
+{
 %TypeHeaderCode
-#include "SlsDetectorFrameMap.h"
+#include "SlsDetectorReconstruction.h"
 %End
 
-class FrameMap
-{
 public:
-	void setNbItems(int nb_items);
-	void setBufferSize(int buffer_size);
-	void clear();
+	class CtrlObjProxy {
+	public:
+		CtrlObjProxy(SlsDetector::Reconstruction *r);
+		virtual ~CtrlObjProxy();
 
-	unsigned long getLastItemFrame() const;
-	unsigned long getLastFinishedFrame() const;
+		LinkTask *getReconstructionTask();
+
+	protected:
+		virtual void reconstructionChange(LinkTask *task) = 0;
+	};
+
+	Reconstruction(SlsDetector::Camera *cam);
+	virtual ~Reconstruction();
+
+	void setActive(bool  active);
+	void getActive(bool& active /Out/);
+
+	virtual Data process(Data& data);
+	virtual Data processModel(Data& data) = 0;
 
 private:
-	FrameMap();
-	FrameMap(const FrameMap& o);
+	Reconstruction(const SlsDetector::Reconstruction& o);
 };
+
 
 
 }; // namespace SlsDetector

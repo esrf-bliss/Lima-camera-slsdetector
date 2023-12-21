@@ -162,7 +162,7 @@ class SipType
 	ConvertToCpp convertToCpp(PyObject *p, int *sipIsErr)
 	{ return ConvertToCpp(*this, p, sipIsErr); }
 
-	ConvertFromCpp convertFromCpp(T *c, bool is_new = true)
+	ConvertFromCpp convertFromCpp(T *c, bool /*is_new*/ = true)
 	{ return ConvertFromCpp(*this, c); }
 
  private:

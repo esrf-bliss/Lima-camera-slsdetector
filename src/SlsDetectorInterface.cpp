@@ -20,6 +20,7 @@
 // along with this program; if not, see <http://www.gnu.org/licenses/>.
 //###########################################################################
 #include "SlsDetectorInterface.h"
+#include "SlsDetectorEiger.h"
 #include "lima/MiscUtils.h"
 
 using namespace lima;
@@ -106,13 +107,22 @@ void DetInfoCtrlObj::setCurrImageType(ImageType curr_image_type)
 {
 	DEB_MEMBER_FUNCT();
 	PixelDepth pixel_depth;
+	bool signed_img;
 	switch (curr_image_type) {
-	case Bpp8:	pixel_depth = PixelDepth8;	break;
-	case Bpp16:	pixel_depth = PixelDepth16;	break;
-	case Bpp32:	pixel_depth = PixelDepth32;	break;
+	case Bpp8:   pixel_depth = PixelDepth8;  signed_img = false; break;
+	case Bpp8S:  pixel_depth = PixelDepth8;  signed_img = true;  break;
+	case Bpp16:  pixel_depth = PixelDepth16; signed_img = false; break;
+	case Bpp16S: pixel_depth = PixelDepth16; signed_img = true;  break;
+	case Bpp32:  pixel_depth = PixelDepth32; signed_img = false; break;
+	case Bpp32S: pixel_depth = PixelDepth32; signed_img = true; break;
 	default:
 		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(curr_image_type);
 	}
+	if (m_cam.getType() == EigerDet) {
+		Eiger *eiger = static_cast<Eiger *>(m_cam.getModel());
+		eiger->setSignedImageMode(signed_img);
+	} else if (signed_img)
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(curr_image_type);
 	m_cam.setPixelDepth(pixel_depth);
 }
 
@@ -196,7 +206,7 @@ static const TrigPair Lima2CamTrigModeCList[] = {
 	TrigPair(IntTrigMult,	Defs::SoftTriggerExposure),
 	TrigPair(ExtTrigSingle, Defs::BurstTrigger),
 	TrigPair(ExtTrigMult,	Defs::TriggerExposure),
-	TrigPair(ExtGate,	Defs::Gating),
+	TrigPair(ExtGate,	Defs::Gated),
 };
 SyncCtrlObj::TrigModeMap
 SyncCtrlObj::Lima2CamTrigModeMap(C_LIST_ITERS(Lima2CamTrigModeCList));
@@ -205,6 +215,18 @@ SyncCtrlObj::SyncCtrlObj(Camera& cam)
 	: m_cam(cam), m_time_ranges_cb(this)
 {
 	DEB_CONSTRUCTOR();
+
+	Defs::TrigMode cam_mode;
+	m_cam.getTrigMode(cam_mode);
+	typedef TrigModeMap::const_iterator MapConstIt;
+	MapConstIt it = FindMapValue(Lima2CamTrigModeMap, cam_mode);
+	if (it == Lima2CamTrigModeMap.end())
+		THROW_HW_ERROR(NotSupported) << "Non-supported Camera TrigMode "
+					     << DEB_VAR2(cam_mode,
+							 int(cam_mode));
+	m_trig_mode = it->first;
+	DEB_TRACE() << DEB_VAR1(m_trig_mode);
+
 	m_cam.registerTimeRangesChangedCallback(m_time_ranges_cb);
 }
 
@@ -220,6 +242,10 @@ bool SyncCtrlObj::checkTrigMode(TrigMode trig_mode)
 	DEB_PARAM() << DEB_VAR1(trig_mode);
 	TrigModeMap::iterator it = Lima2CamTrigModeMap.find(trig_mode);
 	bool valid_mode = (it != Lima2CamTrigModeMap.end());
+	Model *model = m_cam.getModel();
+	if (valid_mode && model)
+		valid_mode = model->checkTrigMode(it->second);
+	DEB_TRACE() << DEB_VAR3(trig_mode, bool(model), valid_mode);
 	DEB_RETURN() << DEB_VAR1(valid_mode);
 	return valid_mode;
 }
@@ -233,21 +259,14 @@ void SyncCtrlObj::setTrigMode(TrigMode trig_mode)
 					     << DEB_VAR1(trig_mode);
 	Defs::TrigMode cam_mode = Lima2CamTrigModeMap[trig_mode];
 	m_cam.setTrigMode(cam_mode);
+	m_trig_mode = trig_mode;
 }
 
 void SyncCtrlObj::getTrigMode(TrigMode& trig_mode)
 {
 	DEB_MEMBER_FUNCT();
-	Defs::TrigMode cam_mode;
-	m_cam.getTrigMode(cam_mode);
-	typedef TrigModeMap::const_iterator MapConstIt;
-	MapConstIt it = FindMapValue(Lima2CamTrigModeMap, cam_mode);
-	if (it == Lima2CamTrigModeMap.end())
-		THROW_HW_ERROR(NotSupported) << "Non-supported Camera TrigMode "
-					     << DEB_VAR2(cam_mode,
-							 int(cam_mode));
-	trig_mode = it->first;
-	DEB_PARAM() << DEB_VAR1(trig_mode);
+	trig_mode = m_trig_mode;
+	DEB_RETURN() << DEB_VAR1(trig_mode);
 }
 
 void SyncCtrlObj::setExpTime(double exp_time)
@@ -329,6 +348,37 @@ EventCtrlObj::~EventCtrlObj()
 
 
 /*******************************************************************
+ * \brief ReconstructionCtrlObj constructor
+ *******************************************************************/
+
+ReconstructionCtrlObj::Proxy::Proxy(Owner *owner, Reconstruction *r)
+  : Reconstruction::CtrlObjProxy(r), m_owner(owner)
+{
+	DEB_CONSTRUCTOR();
+}
+
+void ReconstructionCtrlObj::Proxy::reconstructionChange(LinkTask *task)
+{
+	DEB_MEMBER_FUNCT();
+	m_owner->reconstructionChange(task);
+}
+
+void ReconstructionCtrlObj::setReconstruction(Reconstruction *r)
+{
+	DEB_MEMBER_FUNCT();
+	m_proxy = new Proxy(this, r);
+}
+
+LinkTask *ReconstructionCtrlObj::getReconstructionTask()
+{
+	DEB_MEMBER_FUNCT();
+	LinkTask *task = m_proxy ? m_proxy->getReconstructionTask() : NULL;
+	DEB_RETURN() << DEB_VAR1(task);
+	return task;
+}
+
+
+/*******************************************************************
  * \brief Hw Interface constructor
  *******************************************************************/
 
@@ -338,7 +388,7 @@ Interface::Interface(Camera& cam)
 {
 	DEB_CONSTRUCTOR();
 
-	m_cam.setBufferCtrlObj(&m_buffer);
+	m_cam.getBuffer()->setBufferCtrlObj(&m_buffer);
 	m_cam.registerEventCallback(m_event_cb);
 
 	HwDetInfoCtrlObj *det_info = &m_det_info;
@@ -353,6 +403,9 @@ Interface::Interface(Camera& cam)
 	HwEventCtrlObj *event = &m_event;
 	m_cap_list.push_back(HwCap(event));
 
+	HwReconstructionCtrlObj *reconstruction = &m_reconstruction;
+	m_cap_list.push_back(HwCap(reconstruction));
+
 	reset(SoftReset);
 	resetDefaults();
 }
@@ -361,7 +414,7 @@ Interface::~Interface()
 {
 	DEB_DESTRUCTOR();
 	stopAcq();
-	m_cam.setBufferCtrlObj(NULL);
+	m_cam.getBuffer()->setBufferCtrlObj(NULL);
 }
 
 void Interface::getCapList(HwInterface::CapList &cap_list) const
@@ -403,7 +456,7 @@ void Interface::startAcq()
 	Defs::TrigMode trig_mode;
 	m_cam.getTrigMode(trig_mode);
 	bool int_trig_multi = (trig_mode == Defs::SoftTriggerExposure);
-	if (!int_trig_multi || (m_cam.getState() != Running))
+	if (!int_trig_multi || (m_cam.getAcqState() != Running))
 		m_cam.startAcq();
 	if (int_trig_multi)
 		m_cam.triggerFrame();
@@ -419,9 +472,18 @@ void Interface::getStatus(StatusType& status)
 {
 	DEB_MEMBER_FUNCT();
 
-	State state = m_cam.getState();
+	AcqState state = m_cam.getAcqState();
 	status.acq = (state == Idle) ? AcqReady : AcqRunning;
-	status.det = DetIdle;
+
+	Defs::TrigMode trig_mode;
+	m_cam.getTrigMode(trig_mode);
+	if (trig_mode == Defs::SoftTriggerExposure) {
+		Defs::DetStatus trig_status = m_cam.getDetTrigStatus();
+		bool ready = (trig_status == Defs::Waiting);
+		status.det = ready ? DetIdle : DetExposure;
+	} else {
+		status.det = DetIdle;
+	}
 
 	DEB_RETURN() << DEB_VAR1(status);
 }
@@ -434,4 +496,8 @@ int Interface::getNbHwAcquiredFrames()
 	return nb_hw_acq_frames;
 }
 
-
+void Interface::setReconstruction(Reconstruction *r)
+{
+	DEB_MEMBER_FUNCT();
+	m_reconstruction.setReconstruction(r);
+}

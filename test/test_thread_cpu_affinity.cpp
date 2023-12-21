@@ -49,7 +49,9 @@ TestThread::TestThread(int cpu, Cond& cond, volatile bool& active)
 			m_cond.wait();
 	}
 
-	CPUAffinity aff(1L << cpu);
+	CPUAffinity::Mask mask;
+	mask.set(cpu);
+	CPUAffinity aff(mask);
 	aff.applyToTask(getThreadID(), false, false);
 }
 
@@ -78,15 +80,14 @@ int main(int argc, char *argv[])
 {
 	DEB_GLOBAL_FUNCT();
 
-	bool debug = false;
+	bool debug = true;
 	if (debug)
 		DebParams::setTypeFlags(DebParams::AllFlags);
 
-	int mask = 0;
-	if (argc > 1) {
-		istringstream is(argv[1]);
-		is >> mask;
-	}
+	CPUAffinity mask;
+	if (argc > 1)
+		mask = CPUAffinity::fromString(argv[1]);
+
 	SystemCPUAffinityMgr mgr;
 
 	mgr.setOtherCPUAffinity(CPUAffinity(0x001));
@@ -108,7 +109,7 @@ int main(int argc, char *argv[])
 	netdev_aff.queue_affinity[-1] = queue_aff;
 	netdev_aff_list.push_back(netdev_aff);
 
-	CPUAffinity this_aff = 0x001;
+	CPUAffinity this_aff(0x001);
 	DEB_TRACE() << "Setting " << DEB_VAR1(this_aff);
 	this_aff.applyToTask(GetThreadID(), false, false);
 
@@ -116,12 +117,14 @@ int main(int argc, char *argv[])
 	volatile bool active = false;
 
 	int nb_cpus = CPUAffinity::getNbSystemCPUs();
-	int test_cpus = mask ? mask : (1 << nb_cpus) - 1;
-	DEB_ALWAYS() << DEB_VAR1(DebHex(test_cpus));
+	CPUAffinity all_cpus(CPUAffinity::allCPUs());
+	CPUAffinity::Mask test_cpus = !mask.isDefault() ? mask.getMask() :
+							  all_cpus.getMask();
+	DEB_ALWAYS() << DEB_VAR1(test_cpus);
 	typedef vector<AutoPtr<TestThread> > ThreadList;
 	ThreadList thread_list;
 	for (int i = 0; i < nb_cpus; ++i) {
-		if (1 << i & test_cpus) {
+		if (test_cpus.test(i)) {
 			TestThread *t = new TestThread(i, cond, active);
 			int cpu = t->getCPU();
 			DEB_ALWAYS() << DEB_VAR1(cpu);
@@ -133,7 +136,7 @@ int main(int argc, char *argv[])
 	active = true;
 	cond.broadcast();
 
-	Sleep(5);
+	Sleep(10);
 	DEB_ALWAYS() << "Stopping";
 	active = false;
 	ThreadList::iterator it, end = thread_list.end();

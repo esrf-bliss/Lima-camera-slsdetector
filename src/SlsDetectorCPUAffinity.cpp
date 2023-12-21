@@ -209,6 +209,10 @@ void SystemCmdPipe::start()
 
 	m_child_pid = fork();
 	if (m_child_pid == 0) {
+		// if reading the output, disable debug
+		if (m_pipe_list[StdOut].ptr)
+			DebParams::setTypeFlags(0);
+
 		m_pipe_list[StdIn].close(Pipe::WriteFd);
 		m_pipe_list[StdOut].close(Pipe::ReadFd);
 		m_pipe_list[StdErr].close(Pipe::ReadFd);
@@ -223,15 +227,59 @@ void SystemCmdPipe::start()
 	}
 }
 
-void SystemCmdPipe::wait()
+int SystemCmdPipe::wait()
 {
 	DEB_MEMBER_FUNCT();
 	if (m_child_pid < 0)
 		THROW_HW_ERROR(Error) << "cmd not running";
 	int child_ret;
 	waitpid(m_child_pid, &child_ret, 0);
-	DEB_TRACE() << DEB_VAR1(child_ret);
 	m_child_pid = -1;
+	DEB_RETURN() << DEB_VAR1(child_ret);
+	return child_ret;
+}
+
+int SystemCmdPipe::wait(StringList& out, StringList& err)
+{
+	DEB_MEMBER_FUNCT();
+
+	struct Reader {
+		StringList& out;
+		Pipe *pipe;
+		
+		const int buffer_len = 1024;
+		const char *term = "\n";
+
+		Reader(SystemCmdPipe& c, PipeIdx i, StringList& l)
+			: out(l), pipe(c.m_pipe_list[i] ? &c.getPipe(i) : NULL)
+		{ out.clear(); }
+
+		bool read()
+		{
+			if (!pipe)
+				return false;
+			string s = pipe->readLine(buffer_len, term);
+			bool had_data = !s.empty();
+			if (had_data)
+				out.push_back(s);
+			return had_data;
+		}
+	};
+	std::vector<Reader> reader = {Reader(*this, StdOut, out),
+				      Reader(*this, StdErr, err)};
+	if (!reader[0].pipe && !reader[1].pipe)
+		THROW_HW_ERROR(InvalidValue) << "Cmd has no pipe";
+
+	while (true) {
+		bool had_out = reader[0].read();
+		bool had_err = reader[1].read();
+		if (!had_out && !had_err)
+			break;
+	}
+
+	int ret = wait();
+	DEB_RETURN() << DEB_VAR3(ret, out, err);
+	return ret;
 }
 
 void SystemCmdPipe::setPipe(PipeIdx idx, PipeType type)
@@ -282,8 +330,26 @@ int CPUAffinity::getNbSystemCPUs(bool max_nb)
 	EXEC_ONCE(nb_cpus = findNbSystemCPUs());
 	static int max_nb_cpus = 0;
 	EXEC_ONCE(max_nb_cpus = findMaxNbSystemCPUs());
+	if (max_nb_cpus > MaxNbCPUs)
+		throw LIMA_HW_EXC(Error, "Too many CPUS: ")
+			<< max_nb_cpus << ", MaxNbCPUs=" << MaxNbCPUs;
 	int cpus = (max_nb && max_nb_cpus) ? max_nb_cpus : nb_cpus;
 	return cpus;
+}
+
+const CPUAffinity::Mask &CPUAffinity::allCPUs(bool max_nb)
+{
+	if (max_nb) {
+		static Mask max_nb_mask;
+		EXEC_ONCE(for (int i = 0; i < getNbSystemCPUs(true); ++i)
+				max_nb_mask.set(i));
+		return max_nb_mask;
+	} else {
+		static Mask mask;
+		EXEC_ONCE(for (int i = 0; i < getNbSystemCPUs(false); ++i)
+				mask.set(i));
+		return mask;
+	}
 }
 
 std::string CPUAffinity::getProcDir(bool local_threads)
@@ -313,9 +379,9 @@ std::string CPUAffinity::getTaskProcDir(pid_t task, bool is_thread)
 void CPUAffinity::initCPUSet(cpu_set_t& cpu_set) const
 {
 	CPU_ZERO(&cpu_set);
-	uint64_t mask = getMask();
-	for (unsigned int i = 0; i < sizeof(mask) * 8; ++i) {
-		if ((mask >> i) & 1)
+	Mask mask = getMask();
+	for (unsigned int i = 0; i < MaxNbCPUs; ++i) {
+		if (mask.test(i))
 			CPU_SET(i, &cpu_set);
 	}
 }
@@ -386,44 +452,94 @@ void CPUAffinity::applyWithSetAffinity(pid_t task, bool incl_threads) const
 	}
 }
 
-void CPUAffinity::getNUMANodeMask(vector<unsigned long>& node_mask,
-				  int& max_node)
+void CPUAffinity::maskToULongArray(const Mask& mask, ULongArray& array)
 {
-	DEB_MEMBER_FUNCT();
+	constexpr Mask ULongMask(std::numeric_limits<unsigned long>::max());
+	for (int i = 0; i < NbULongs; ++i)
+		array[i] = ((mask >> (i * NbULongBits)) & ULongMask).to_ulong();
+}
 
-	typedef vector<unsigned long> Array;
+CPUAffinity::Mask CPUAffinity::maskFromULongArray(const ULongArray& array)
+{
+	Mask mask;
+	for (int i = 0; i < NbULongs; ++i)
+		mask |= Mask(array[i]) << (i * NbULongBits);
+	return mask;
+}
 
-	int nb_nodes = numa_max_node() + 1;
-	const int item_bits = sizeof(Array::reference) * 8;
-	int nb_items = nb_nodes / item_bits;
-	if (nb_nodes % item_bits != 0)
-		++nb_items;
-
-	DEB_PARAM() << DEB_VAR2(*this, nb_items);
-	max_node = nb_nodes + 1;
-
-	node_mask.assign(nb_items, 0);
-
-	uint64_t mask = getMask();
-	for (unsigned int i = 0; i < sizeof(mask) * 8; ++i) {
-		if ((mask >> i) & 1) {
-			unsigned int n = numa_node_of_cpu(i);
-			Array::reference v = node_mask[n / item_bits];
-			v |= 1L << (n % item_bits);
+string CPUAffinity::maskToString(const Mask& mask, int base, bool comma_sep)
+{
+	if (base == 2)
+		return mask.to_string();
+	else if (base != 16)
+		throw LIMA_HW_EXC(InvalidValue, "Invalid base: ") << base;
+		
+	ostringstream os;
+	ULongArray array;
+	maskToULongArray(mask, array);
+	os << hex << setfill('0');
+	string sep;
+	for (int i = NbULongs - 1; i >= 0; --i) {
+		unsigned long ul_val = array[i];
+		constexpr int NbULongInts = NbULongBits / 32;
+		for (int j = NbULongInts - 1; j >= 0; --j) {
+			uint32_t ui_val = (ul_val >> (j * 32)) & 0xffffffff;
+			os << sep << setw(32 / 4) << ui_val;
+			if (sep.empty() && comma_sep)
+				sep = ",";
 		}
 	}
-
-	if (DEB_CHECK_ANY(DebTypeReturn)) {
-		ostringstream os;
-		os << hex << "0x" << setw(nb_nodes / 4) << setfill('0');
-		bool first = true;
-		Array::reverse_iterator it, end = node_mask.rend();
-		for (it = node_mask.rbegin(); it != end; ++it, first = false)
-			os << (!first ? "," : "") << *it;
-		DEB_RETURN() << "node_mask=" << os.str() << ", "
-			     << DEB_VAR1(max_node);
-	}
+	return os.str();
 }
+
+CPUAffinity::Mask CPUAffinity::maskFromString(string aff_str, int base)
+{
+	if ((base != 2) && (base != 16))
+		throw LIMA_HW_EXC(InvalidValue, "Invalid base: ") << base;
+	
+	if (!aff_str.empty() && (base == 16) && (aff_str.find("0x") == 0))
+		aff_str.erase(0, 2);
+	size_t len = aff_str.size();
+	if (len && (aff_str.rfind('L') == len - 1))
+		aff_str.erase(len - 1);
+
+#define convert_to_ulong(s, v)						\
+	do {								\
+		size_t pos;						\
+		v = stoul(s, &pos, base);				\
+		if (pos != s.size())					\
+			throw LIMA_HW_EXC(InvalidValue, "Invalid mask: ") \
+						<< aff_str;		\
+	} while (0)
+
+	ULongArray array;
+	const size_t bits_per_char = (base == 16) ? 4 : 1;
+	const size_t chars_per_ulong = NbULongBits / bits_per_char;
+	int idx = 0;
+	string val;
+	string::const_reverse_iterator it, end = aff_str.rend();
+	for (it = aff_str.rbegin(); it != end; ++it) {
+		if (*it == ',')
+			continue;
+		else if (idx == NbULongs)
+			throw LIMA_HW_EXC(InvalidValue, "Invalid mask: ")
+							<< aff_str;
+		val.insert(0, 1, *it);
+		if (val.size() == chars_per_ulong) {
+			convert_to_ulong(val, array[idx++]);
+			val.clear();
+		}
+	}
+	if (!val.empty())
+		convert_to_ulong(val, array[idx++]);
+	while (idx < NbULongs)
+		array[idx++] = 0;
+
+#undef convert_to_ulong
+
+	return maskFromULongArray(array);
+}
+
 
 bool IrqMgr::m_irqbalance_stopped = false;
 StringList IrqMgr::m_dev_list;
@@ -483,15 +599,15 @@ IntList IrqMgr::getIrqList()
 	ifstream proc_ints("/proc/interrupts");
 	ostringstream os;
 	int nb_cpus = CPUAffinity::getNbSystemCPUs();
+	string info_token_re = "([^ \t]+)[ \t]*";
 	os << "[ \t]*"
 	   << "(?P<irq>[0-9]+):[ \t]+"
 	   << "(?P<counts>(([0-9]+)[ \t]+){" << nb_cpus << "})"
-	   << "(?P<type>[-A-Za-z0-9_]+)[ \t]+"
-	   << "(?P<name>[-A-Za-z0-9_]+)";
+	   << "(?P<info>(" << info_token_re << "){2,4})";
 	DEB_TRACE() << DEB_VAR1(os.str());
 	RegEx int_re(os.str());
 	while (proc_ints) {
-		char buffer[1024];
+		char buffer[4096];
 		proc_ints.getline(buffer, sizeof(buffer));
 		string s = buffer;
 		DEB_TRACE() << DEB_VAR1(s);
@@ -500,8 +616,14 @@ IntList IrqMgr::getIrqList()
 			continue;
 		int irq;
 		istringstream(match["irq"]) >> irq;
-		DEB_TRACE() << "found match: " << irq << ": " 
-			     << string(match["name"]);
+		if (DEB_CHECK_ANY(DebTypeTrace)) {
+			string info = match["info"];
+			SimpleRegEx info_re(info_token_re);
+			RegEx::MatchListType match_list;
+			info_re.multiSearch(info, match_list);
+			string name = match_list.back()[1];
+			DEB_TRACE() << "found match: " << irq << ": " << name;
+		}
 		IntStringList::iterator it, end = dev_irqs.end();
 		bool ok = false;
 		for (it = dev_irqs.begin(); !ok && (it != end); ++it)
@@ -672,7 +794,8 @@ void NetDevRxQueueMgr::apply(Task task, int queue, CPUAffinity a)
 			ok = applyWithSetter(task, *it, a);
 		if (ok)
 			return;
-		DEB_ERROR() << "Could not use setter";
+		DEB_ERROR() << "Could not use setter: "
+			    << DEB_VAR4(m_dev, task, queue, a);
 		did_error_setter[task] = true;
 	}
 }
@@ -758,12 +881,11 @@ bool NetDevRxQueueMgr::applyWithFile(const string& fname, CPUAffinity a)
 {
 	DEB_MEMBER_FUNCT();
 
-	ostringstream os;
-	os << hex << a.getZeroDefaultMask();
-	DEB_TRACE() << "writing " << os.str() << " to " << fname;
+	string s = a.toString(16, true);
+	DEB_TRACE() << "writing " << s << " to " << fname;
 	ofstream aff_file(fname.c_str());
 	if (aff_file)
-		aff_file << os.str();
+		aff_file << s;
 	if (aff_file)
 		aff_file.close();
 	bool file_ok(aff_file);
@@ -780,8 +902,9 @@ bool NetDevRxQueueMgr::applyWithSetter(Task task, const string& irq_queue,
 	static string desc = getSetterSudoDesc();
 	SystemCmd setter(AffinitySetterName, desc);
 	ConstStr task_opt = (task == Irq) ? "-i" : "-r";
+	const CPUAffinity::Mask& mask = a.getZeroDefaultMask();
 	setter.args() << task_opt << " " << m_dev << " " << irq_queue << " "
-		      << hex << "0x" << a.getZeroDefaultMask();
+		      << CPUAffinity::maskToString(mask, 16, true);
 	bool setter_ok = (setter.execute() == 0);
 	DEB_RETURN() << DEB_VAR1(setter_ok);
 	return setter_ok;
@@ -832,9 +955,8 @@ static const char *NetDevRxQueueMgrAffinitySetterSrcCList[] = {
 "",
 "int main(int argc, char *argv[])",
 "{",
-"	char *dev, *irq_queue, *p, fname[256], buffer[128];",
+"	char *dev, *irq_queue, *p, fname[256];",
 "	int irq, rps, fd, len, ret;",
-"	long aff;",
 "",
 "	if (argc != 5)",
 "		exit(1);",
@@ -848,36 +970,26 @@ static const char *NetDevRxQueueMgrAffinitySetterSrcCList[] = {
 "	dev = argv[2];",
 "	irq_queue = argv[3];",
 "",
-"	errno = 0;",
-"	aff = strtol(argv[4], &p, 0);",
-"	if (errno || *p)",
-"		exit(3);",
-"",
 "	len = sizeof(fname);",
 "	if (irq)",
-"		ret = snprintf(fname, len, \"/proc/irq/%s/smp_affinity\",", 
+"		ret = snprintf(fname, len, \"/proc/irq/%s/smp_affinity\",",
 "			       irq_queue);",
 "	else",
-"		ret = snprintf(fname, len, \"/sys/class/net/%s/queues/%s/rps_cpus\",", 
+"		ret = snprintf(fname, len, \"/sys/class/net/%s/queues/%s/rps_cpus\",",
 "			       dev, irq_queue);",
 "	if ((ret < 0) || (ret == len))",
-"		exit(4);",
-"",
-"	len = sizeof(buffer);",
-"	ret = snprintf(buffer, len, \"%016lx\", aff);",
-"	if ((ret < 0) || (ret == len))",
-"		exit(5);",
+"		exit(3);",
 "",
 "	fd = open(fname, O_WRONLY);",
 "	if (fd < 0)",
-"		exit(6);",
-"",	
-"	for (p = buffer; *p; p += ret)",
+"		exit(4);",
+"",
+"	for (p = argv[4]; *p; p += ret)",
 "		if ((ret = write(fd, p, strlen(p))) < 0)",
-"			exit(7);",
+"			exit(5);",
 "",
 "	if (close(fd) < 0)",
-"		exit(8);",
+"		exit(6);",
 "	return 0;",
 "}",
 };
@@ -895,18 +1007,15 @@ IntList NetDevRxQueueMgr::getRxQueueList()
 	SystemCmdPipe ethtool("ethtool");
 	ethtool.args() << "-S " << m_dev;
 	ethtool.setPipe(SystemCmdPipe::StdOut, SystemCmdPipe::DoPipe);
-	ethtool.start();
-	Pipe& child_out = ethtool.getPipe(SystemCmdPipe::StdOut);
+	StringList out, err;
+	ethtool.execute(out, err);
 
-	RegEx re("^[ \t]*rx_queue_(?P<queue>[0-9]+)_packets:[ \t]+"
+	RegEx re("^[ \t]*rx(_queue_)?(?P<queue>[0-9]+)_packets:[ \t]+"
 		 "(?P<packets>[0-9]+)\n$");
-	while (true) {
-		string s = child_out.readLine(1024, "\n");
-		if (s.empty())
-			break;
-
+	StringList::iterator it, end = out.end();
+	for (it = out.begin(); it != end; ++it) {
 		RegEx::FullNameMatchType match;
-		if (!re.matchName(s, match))
+		if (!re.matchName(*it, match))
 			continue;
 
 		int queue;
@@ -1030,10 +1139,14 @@ void SystemCPUAffinityMgr::WatchDog::childFunction()
 		do {
 			Packet packet = readParentCmd();
 			if (packet.cmd == SetProcAffinity) {
-				procAffinitySetter(packet.u.proc_affinity);
+				typedef CPUAffinity::ULongArray ULongArray;
+				ULongArray& array = packet.u.proc_affinity;
+				CPUAffinity proc_affinity =
+					CPUAffinity::fromULongArray(array);
+				procAffinitySetter(proc_affinity);
 			} else if (packet.cmd == SetNetDevAffinity) {
 				NetDevGroupCPUAffinity netdev_affinity =
-					netDevAffinityEncode(packet);
+					netDevAffinityDecode(packet);
 				netDevAffinitySetter(netdev_affinity);
 			} else if (packet.cmd == CleanUp) {
 				cleanup_req = true;
@@ -1058,7 +1171,7 @@ void
 SystemCPUAffinityMgr::WatchDog::procAffinitySetter(CPUAffinity cpu_affinity)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(cpu_affinity);
+	DEB_PARAM() << DEB_VAR2(cpu_affinity, m_other);
 
 	static bool aff_set = false;
 	if (aff_set && (cpu_affinity == m_other))
@@ -1105,20 +1218,11 @@ string SystemCPUAffinityMgr::WatchDog::concatStringList(StringList list)
 
 StringList SystemCPUAffinityMgr::WatchDog::splitStringList(string str)
 {
-	StringList list;
-	string::size_type i, p, n;
-	for (i = 0; (i != string::npos) && (i != str.size()); i = p) {
-		p = str.find(",", i);
-		n = (p == string::npos) ? p : (p - i);
-		list.push_back(string(str, i, n));
-		if (p != string::npos)
-			++p;
-	}
-	return list;
+	return SplitString(str);
 }
 
 NetDevGroupCPUAffinity
-SystemCPUAffinityMgr::WatchDog::netDevAffinityEncode(const Packet& packet)
+SystemCPUAffinityMgr::WatchDog::netDevAffinityDecode(const Packet& packet)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -1130,8 +1234,8 @@ SystemCPUAffinityMgr::WatchDog::netDevAffinityEncode(const Packet& packet)
 	const PacketNetDevQueueAffinity *a = packet_affinity.queue_affinity;
 	for (unsigned int i = 0; i < nb_queues; ++i, ++a) {
 		NetDevRxQueueCPUAffinity qa;
-		qa.irq = a->irq;
-		qa.processing = a->processing;
+		qa.irq = CPUAffinity::fromULongArray(a->irq);
+		qa.processing = CPUAffinity::fromULongArray(a->processing);
 		NetDevRxQueueAffinityMap::value_type v(a->queue, qa);
 		queue_affinity.insert(v);
 	}
@@ -1186,7 +1290,7 @@ SystemCPUAffinityMgr::WatchDog::setOtherCPUAffinity(CPUAffinity cpu_affinity)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(cpu_affinity);
 	Packet packet(SetProcAffinity);
-	packet.u.proc_affinity = cpu_affinity;
+	cpu_affinity.toULongArray(packet.u.proc_affinity);
 	sendChildCmd(packet);
 }
 
@@ -1210,8 +1314,8 @@ void SystemCPUAffinityMgr::WatchDog::setNetDevCPUAffinity(
 	PacketNetDevQueueAffinity *a = ndga.queue_affinity;
 	for (it = queue_affinity.begin(); it != end; ++it, ++a) {
 		a->queue = it->first;
-		a->irq = it->second.irq;
-		a->processing = it->second.processing;
+		it->second.irq.toULongArray(a->irq);
+		it->second.processing.toULongArray(a->processing);
 	}
 	sendChildCmd(packet);
 }
@@ -1219,6 +1323,12 @@ void SystemCPUAffinityMgr::WatchDog::setNetDevCPUAffinity(
 SystemCPUAffinityMgr::SystemCPUAffinityMgr()
 {
 	DEB_CONSTRUCTOR();
+
+	const char *setter_pid = getenv("SET_CPU_AFFINITY_PID");
+	bool setter_found = (setter_pid && *setter_pid);
+	m_active = !setter_found;
+	DEB_ALWAYS() << "set_cpu_affinity: "
+		     << DEB_VAR2(setter_found, m_active);
 }
 
 SystemCPUAffinityMgr::~SystemCPUAffinityMgr()
@@ -1259,9 +1369,10 @@ SystemCPUAffinityMgr::getProcList(Filter filter, CPUAffinity cpu_affinity)
 
 			re = "Cpus_allowed:?$";
 			if (re.match(s, full_match) && (filter != All)) {
-				uint64_t int_affinity;
-				status_file >> hex >> int_affinity >> dec;
-				CPUAffinity affinity = int_affinity;
+				string affinity_str;
+				status_file >> affinity_str;
+				CPUAffinity affinity =
+					CPUAffinity::fromString(affinity_str);
 				bool aff_match = (affinity == cpu_affinity);
 				bool filt_match = (filter == MatchAffinity);
 				has_good_affinity = (aff_match == filt_match);
@@ -1304,6 +1415,9 @@ void SystemCPUAffinityMgr::setOtherCPUAffinity(CPUAffinity cpu_affinity)
 {
 	DEB_MEMBER_FUNCT();
 
+	if (!m_active)
+		return;
+
 	checkWatchDogStart();
 	m_watchdog->setOtherCPUAffinity(cpu_affinity);
 	m_other = cpu_affinity;
@@ -1314,6 +1428,9 @@ void SystemCPUAffinityMgr::setNetDevCPUAffinity(
 			const NetDevGroupCPUAffinityList& netdev_list)
 {
 	DEB_MEMBER_FUNCT();
+
+	if (!m_active)
+		return;
 
 	checkWatchDogStart();
 
@@ -1331,14 +1448,13 @@ void SystemCPUAffinityMgr::setNetDevCPUAffinity(
 }
 
 RecvCPUAffinity::RecvCPUAffinity()
-	: listeners(1), recv_threads(1)
+	: listeners(1)
 {
 }
 
 RecvCPUAffinity& RecvCPUAffinity::operator =(CPUAffinity a)
 {
 	listeners.assign(1, a);
-	recv_threads.assign(1, a);
 	return *this;
 }
 
@@ -1365,7 +1481,7 @@ ProcessingFinishedEvent::ProcessingFinishedEvent(GlobalCPUAffinityMgr *mgr)
 	m_cnt_act = false;
 	m_saving_act = false;
 	m_stopped = false;
-	m_last_cb_ts = Timestamp::now();
+	updateLastCallbackTimestamp();
 }
 
 GlobalCPUAffinityMgr::
@@ -1394,7 +1510,7 @@ void GlobalCPUAffinityMgr::ProcessingFinishedEvent::prepareAcq()
 		OpStageNameListMap::const_iterator mit, mend = active_op.end();
 		ostringstream os;
 		os << "{";
-		for (mit = active_op.begin(); mit != mend; ++mend) {
+		for (mit = active_op.begin(); mit != mend; ++mit) {
 			const int& stage = mit->first;
 			os << stage << ": [";
 			const NameList& name_list = mit->second;
@@ -1423,12 +1539,14 @@ void GlobalCPUAffinityMgr::ProcessingFinishedEvent::prepareAcq()
 
 	DEB_TRACE() << DEB_VAR3(m_nb_frames, m_saving_act, m_cnt_act);
 
+	AutoMutex l(m_mutex);
 	m_stopped = false;
 }
 
 void GlobalCPUAffinityMgr::ProcessingFinishedEvent::stopAcq()
 {
 	DEB_MEMBER_FUNCT();
+	AutoMutex l(m_mutex);
 	m_stopped = true;
 }
 
@@ -1453,7 +1571,7 @@ ProcessingFinishedEvent::registerStatusCallback(CtControl *ct)
 void GlobalCPUAffinityMgr::
 ProcessingFinishedEvent::limitUpdateRate()
 {
-	Timestamp next_ts = m_last_cb_ts + Timestamp(1.0 / 10);
+	Timestamp next_ts = getLastCallbackTimestamp() + Timestamp(1.0 / 10);
 	double remaining = next_ts - Timestamp::now();
 	if (remaining > 0)
 		Sleep(remaining);
@@ -1462,12 +1580,14 @@ ProcessingFinishedEvent::limitUpdateRate()
 void GlobalCPUAffinityMgr::
 ProcessingFinishedEvent::updateLastCallbackTimestamp()
 {
+	AutoMutex l(m_mutex);
 	m_last_cb_ts = Timestamp::now();
 }
 
 Timestamp GlobalCPUAffinityMgr::
 ProcessingFinishedEvent::getLastCallbackTimestamp()
 {
+	AutoMutex l(m_mutex);
 	return m_last_cb_ts;
 }
 
@@ -1480,20 +1600,27 @@ ProcessingFinishedEvent::imageStatusChanged(
 	limitUpdateRate();
 	updateLastCallbackTimestamp();
 
+	bool stopped;
+	{
+		AutoMutex l(m_mutex);
+		stopped = m_stopped;
+	}
+
 	int max_frame = m_nb_frames - 1; 
 	int last_frame = status.LastImageAcquired;
-	bool finished = (m_stopped || (last_frame == max_frame));
+	bool finished = (stopped || (last_frame == max_frame));
 	finished &= (status.LastImageReady == last_frame);
 	finished &= (!m_cnt_act || (status.LastCounterReady == last_frame));
-	finished &= (m_stopped || !m_saving_act || 
-		     (status.LastImageSaved == last_frame));
-	if (finished)
+	finished &= (!m_saving_act || (status.LastImageSaved == last_frame));
+	if (finished) {
+		DEB_ALWAYS() << DEB_VAR2(stopped, status);
 		processingFinished();
+	}
 }
 
 GlobalCPUAffinityMgr::GlobalCPUAffinityMgr(Camera *cam)
 	: m_cam(cam), m_proc_finished(NULL), 
-	  m_lima_finished_timeout(0.5)
+	  m_lima_finished_timeout(2)
 {
 	DEB_CONSTRUCTOR();
 
@@ -1504,7 +1631,7 @@ GlobalCPUAffinityMgr::~GlobalCPUAffinityMgr()
 {
 	DEB_DESTRUCTOR();
 
-	setLimaAffinity(CPUAffinity());
+	setLimaThreadAffinity(CPUAffinity());
 
 	if (m_proc_finished)
 		m_proc_finished->m_mgr = NULL;
@@ -1522,8 +1649,10 @@ void GlobalCPUAffinityMgr::applyAndSet(const GlobalCPUAffinity& o)
 	if (all_system.getNbCPUs() == CPUAffinity::getNbSystemCPUs() / 2)
 		DEB_WARNING() << "Hyper-threading seems activated!";
 
-	setLimaAffinity(o.lima);
+	setLimaThreadAffinity(o.lima);
+	setLimaBufferAffinity(o.lima);
 	setRecvAffinity(o.recv);
+	setAcqAffinity(o.acq);
 
 	if (!m_system_mgr)
 		m_system_mgr = new SystemCPUAffinityMgr();
@@ -1532,11 +1661,12 @@ void GlobalCPUAffinityMgr::applyAndSet(const GlobalCPUAffinity& o)
 	m_curr.other = o.other;
 	m_system_mgr->setNetDevCPUAffinity(o.netdev);
 	m_curr.netdev = o.netdev;
+	m_curr.rx_netdev = o.rx_netdev;
 
 	m_set = o;
 }
 
-void GlobalCPUAffinityMgr::setLimaAffinity(CPUAffinity lima_affinity)
+void GlobalCPUAffinityMgr::setLimaThreadAffinity(CPUAffinity lima_affinity)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -1553,7 +1683,14 @@ void GlobalCPUAffinityMgr::setLimaAffinity(CPUAffinity lima_affinity)
 		lima_affinity.applyToTask(pid, true);
 		m_curr.updateRecvAffinity(lima_affinity);
 	}
+
 	m_curr.lima = lima_affinity;
+}
+
+void GlobalCPUAffinityMgr::setLimaBufferAffinity(CPUAffinity lima_affinity)
+{
+	DEB_MEMBER_FUNCT();
+	m_cam->m_buffer.setBufferCPUAffinity(lima_affinity);
 }
 
 void GlobalCPUAffinityMgr::setRecvAffinity(
@@ -1565,14 +1702,19 @@ void GlobalCPUAffinityMgr::setRecvAffinity(
 		return;
 
 	m_cam->setRecvCPUAffinity(recv_affinity_list);
-
-	const RecvCPUAffinityList& l = recv_affinity_list;
-	RecvCPUAffinity::Selector s = &RecvCPUAffinity::RecvThreads;
-	CPUAffinity buffer_affinity = RecvCPUAffinityList_all(l, s);
-	DEB_ALWAYS() << DEB_VAR1(buffer_affinity);
-	m_cam->m_buffer_ctrl_obj->setCPUAffinityMask(buffer_affinity);
-
 	m_curr.recv = recv_affinity_list;
+}
+
+void GlobalCPUAffinityMgr::setAcqAffinity(CPUAffinity acq_affinity)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(acq_affinity);
+
+	if (acq_affinity == m_curr.acq)
+		return;
+
+	m_cam->m_acq_thread_cpu_affinity = acq_affinity;
+	m_curr.acq = acq_affinity;
 }
 
 void GlobalCPUAffinityMgr::updateRecvRestart()
@@ -1621,12 +1763,40 @@ void GlobalCPUAffinityMgr::recvFinished()
 	DEB_MEMBER_FUNCT();
 
 	AutoMutex l = lock();
-	if (!m_proc_finished)
+	if (!m_proc_finished) {
 		m_state = Ready;
-	if (m_state == Ready) 
+	} else {
+		PoolThreadMgr& pool_thread_mgr = PoolThreadMgr::get();
+		int nb_threads = pool_thread_mgr.getNumberOfThread();
+		int nb_cpus = m_curr.lima.getNbCPUs();
+		DEB_TRACE() << DEB_VAR2(nb_threads, nb_cpus);
+		if (nb_threads == nb_cpus) {
+			DEB_ALWAYS() << "Skipping processing";
+			m_state = Ready;
+		}
+	}
+	if (m_state == Ready) {
+		m_cond.broadcast();
 		return;
+	}
+
+	StateCleanUp state_cleanup(*this, Processing, l, DEB_PTR());
 
 	CPUAffinity recv_all = RecvCPUAffinityList_all(m_curr.recv);
+	StringList& rx_netdev_list = m_curr.rx_netdev;
+	StringList::iterator nit, nend = rx_netdev_list.end();
+	for (nit = rx_netdev_list.begin(); nit != nend; ++nit) {
+		typedef NetDevGroupCPUAffinityList GroupList;
+		GroupList& group_list = m_curr.netdev;
+		GroupList::iterator git, gend = group_list.end();
+		for (git = group_list.begin(); git != gend; ++git) {
+			StringList::iterator end = git->name_list.end();
+			if (find(git->name_list.begin(), end, *nit) == end)
+				continue;
+			DEB_TRACE() << "Netdev " << *nit << ": " << git->all();
+			recv_all |= git->all();
+		}
+	}
 	DEB_TRACE() << DEB_VAR2(m_curr.lima, recv_all);
 	if (m_curr.lima != recv_all) {
 		m_state = Changing;
@@ -1639,11 +1809,8 @@ void GlobalCPUAffinityMgr::recvFinished()
 		CPUAffinity lima_affinity = m_curr.lima | recv_all;
 		DEB_ALWAYS() << "Allowing Lima to run on Recv CPUs: " 
 			     << lima_affinity;
-		setLimaAffinity(lima_affinity);
+		setLimaThreadAffinity(lima_affinity);
 	}
-
-	m_state = Processing;
-	m_cond.broadcast();
 }
 
 void GlobalCPUAffinityMgr::limaFinished()
@@ -1658,17 +1825,15 @@ void GlobalCPUAffinityMgr::limaFinished()
 	if (m_state == Ready)
 		return;
 
+	StateCleanUp state_cleanup(*this, Ready, l, DEB_PTR());
+
 	if (m_curr.lima != m_set.lima) {
 		m_state = Restoring;
 		AutoMutexUnlock u(l);
 		DEB_ALWAYS() << "Restoring Lima to dedicated CPUs: " 
 			     << m_set.lima;
-		setLimaAffinity(m_set.lima);
-		setRecvAffinity(m_set.recv);
+		setLimaThreadAffinity(m_set.lima);
 	}
-
-	m_state = Ready;
-	m_cond.broadcast();
 }
 
 void GlobalCPUAffinityMgr::waitLimaFinished()
@@ -1682,7 +1847,8 @@ void GlobalCPUAffinityMgr::waitLimaFinished()
 
 	AutoMutex l = lock();
 	while (m_state != Ready) {
-		if (m_cond.wait(0.1))
+		m_cond.wait(0.1);
+		if (m_state != Processing)
 			continue;
 
 		AutoMutexUnlock u(l);
@@ -1703,10 +1869,10 @@ void GlobalCPUAffinityMgr::cleanUp()
 	m_state = Ready;
 }
 
+
 ostream& lima::SlsDetector::operator <<(ostream& os, const CPUAffinity& a)
 {
-	return os << hex << "0x" << setw(CPUAffinity::getNbHexDigits())
-		  << setfill('0') << a.getMask() << dec << setfill(' ');
+	return os << a.toString();
 }
 
 ostream&
@@ -1747,7 +1913,7 @@ lima::SlsDetector::operator <<(ostream& os, const NetDevGroupCPUAffinity& a)
 ostream& lima::SlsDetector::operator <<(ostream& os, const RecvCPUAffinity& a)
 {
 	os << "<";
-	os << "listeners=" << a.listeners << ", recv_threads=" << a.recv_threads;
+	os << "listeners=" << a.listeners;
 	return os << ">";
 }
 
@@ -1766,7 +1932,12 @@ ostream& lima::SlsDetector::operator <<(ostream& os, const GlobalCPUAffinity& a)
 {
 	os << "<";
 	os << "recv=" << a.recv << ", lima=" << a.lima << ", other=" << a.other;
-	return os << ">";
+	os << "netdev=<";
+	bool first = true;
+	NetDevGroupCPUAffinityList::const_iterator it, end = a.netdev.end();
+	for (it = a.netdev.begin(); it != end; ++it, first = false)
+		os << (first ? "" : ", ") << *it;
+	return os << ">>";
 }
 
 ostream& 

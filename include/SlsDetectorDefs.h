@@ -23,9 +23,10 @@
 #ifndef __SLS_DETECTOR_DEFS_H
 #define __SLS_DETECTOR_DEFS_H
 
-#include "sls_detector_defs.h"
+#include "sls/sls_detector_defs.h"
 
 #include "lima/Debug.h"
+#include "lima/Exceptions.h"
 #include "lima/RegExUtils.h"
 #include "lima/Timestamp.h"
 
@@ -43,11 +44,10 @@ namespace Defs
 enum TrigMode {
 	Auto            = slsDetectorDefs::AUTO_TIMING, 
 	TriggerExposure = slsDetectorDefs::TRIGGER_EXPOSURE, 
-	TriggerReadout  = slsDetectorDefs::TRIGGER_READOUT,
-	Gating          = slsDetectorDefs::GATE_FIX_NUMBER, 
-	TriggeredGating = slsDetectorDefs::GATE_WITH_START_TRIGGER,
+	Gated           = slsDetectorDefs::GATED,
 	BurstTrigger    = slsDetectorDefs::BURST_TRIGGER,
-	SoftTriggerExposure, 
+	TriggeredGated  = slsDetectorDefs::TRIGGER_GATED,
+	SoftTriggerExposure,
 };
 
 enum Settings {
@@ -58,79 +58,31 @@ enum Settings {
 	LowGain       = slsDetectorDefs::LOWGAIN,
 	MediumGain    = slsDetectorDefs::MEDIUMGAIN,
 	VeryHighGain  = slsDetectorDefs::VERYHIGHGAIN,
-	LowNoise      = slsDetectorDefs::LOWNOISE,
-	DynamicHG0    = slsDetectorDefs::DYNAMICHG0,
 	FixGain1      = slsDetectorDefs::FIXGAIN1,
 	FixGain2      = slsDetectorDefs::FIXGAIN2,
-	ForceSwitchG1 = slsDetectorDefs::FORCESWITCHG1,
-	ForceSwitchG2 = slsDetectorDefs::FORCESWITCHG2,
 	VeryLowGain   = slsDetectorDefs::VERYLOWGAIN,
 	Undefined     = slsDetectorDefs::UNDEFINED,
 	Unitialized   = slsDetectorDefs::UNINITIALIZED,
 };
 
-#define MultiSlsDetectorErr	(-100)
+enum GainMode {
+	Dynamic       = slsDetectorDefs::DYNAMIC,
+        ForceSwitchG1 = slsDetectorDefs::FORCE_SWITCH_G1,
+        ForceSwitchG2 = slsDetectorDefs::FORCE_SWITCH_G2,
+        FixG1         = slsDetectorDefs::FIX_G1,
+        FixG2         = slsDetectorDefs::FIX_G2,
+        FixG0         = slsDetectorDefs::FIX_G0,
+};
+
 #define SlsDetectorBadIndexErr	(-9999)
 
 enum DACIndex {
-	Threshold        = slsDetectorDefs::THRESHOLD,
-	CalibPulse       = slsDetectorDefs::CALIBRATION_PULSE,
-	TrimBitSize      = slsDetectorDefs::TRIMBIT_SIZE,
-	PreAmp           = slsDetectorDefs::PREAMP,
-	Shaper1          = slsDetectorDefs::SHAPER1,
-	Shaper2          = slsDetectorDefs::SHAPER2,
-	Humidity         = slsDetectorDefs::HUMIDITY,
-	DetectorBias     = slsDetectorDefs::DETECTOR_BIAS,
-	PowerVa          = slsDetectorDefs::VA_POT,
-	PowerVdd         = slsDetectorDefs::VDD_POT,
-	PowerVsh         = slsDetectorDefs::VSH_POT,
-	PowerVio         = slsDetectorDefs::VIO_POT,
-	PowerHV          = slsDetectorDefs::HV_POT,
-	GotthardVrefDS   = slsDetectorDefs::G_VREF_DS,
-	GotthardVcascnPB = slsDetectorDefs::G_VCASCN_PB,
-	GotthardVcascpPB = slsDetectorDefs::G_VCASCP_PB,
-	GotthardVoutCM   = slsDetectorDefs::G_VOUT_CM,
-	GotthardVcascOut = slsDetectorDefs::G_VCASC_OUT,
-	GotthardVinCM    = slsDetectorDefs::G_VIN_CM,
-	GotthardVrefComp = slsDetectorDefs::G_VREF_COMP,
-	GotthardIBTestC  = slsDetectorDefs::G_IB_TESTC,
-	VoltDAC0         = slsDetectorDefs::V_DAC0,
-	VoltDAC1         = slsDetectorDefs::V_DAC1,
-	VoltDAC2         = slsDetectorDefs::V_DAC2,
-	VoltDAC3         = slsDetectorDefs::V_DAC3,
-	VoltDAC4         = slsDetectorDefs::V_DAC4,
-	VoltDAC5         = slsDetectorDefs::V_DAC5,
-	VoltDAC6         = slsDetectorDefs::V_DAC6,
-	VoltDAC7         = slsDetectorDefs::V_DAC7,
-	EigerSvP         = slsDetectorDefs::E_SvP,
-	EigerSvN         = slsDetectorDefs::E_SvN,
-	EigerVtr         = slsDetectorDefs::E_Vtr,
-	EigerVrf         = slsDetectorDefs::E_Vrf,
-	EigerVrs         = slsDetectorDefs::E_Vrs,
-	EigerVtgstv      = slsDetectorDefs::E_Vtgstv,
-	EigerVcmpLL      = slsDetectorDefs::E_Vcmp_ll,
-	EigerVcmpLR      = slsDetectorDefs::E_Vcmp_lr,
-	EigerVcal        = slsDetectorDefs::E_cal,
-	EigerVcmpRL      = slsDetectorDefs::E_Vcmp_rl,
-	EigerVcmpRR      = slsDetectorDefs::E_Vcmp_rr,
-	EigerRxbRB       = slsDetectorDefs::E_rxb_rb,
-	EigerRxbLB       = slsDetectorDefs::E_rxb_lb,
-	EigerVcp         = slsDetectorDefs::E_Vcp,
-	EigerVcn         = slsDetectorDefs::E_Vcn,
-	EigerVis         = slsDetectorDefs::E_Vis,
-	IODelay          = slsDetectorDefs::IO_DELAY,
-	ADCVpp           = slsDetectorDefs::ADC_VPP,
-	HVNew            = slsDetectorDefs::HV_NEW,
-	PowerA           = slsDetectorDefs::V_POWER_A,
-	PowerB           = slsDetectorDefs::V_POWER_B,
-	PowerC           = slsDetectorDefs::V_POWER_C,
-	PowerD           = slsDetectorDefs::V_POWER_D,
-	PowerIO          = slsDetectorDefs::V_POWER_IO,
-	PowerChip        = slsDetectorDefs::V_POWER_CHIP,
+	EigerVcmpLL = slsDetectorDefs::VCMP_LL,
+	EigerVcmpLR = slsDetectorDefs::VCMP_LR,
+	EigerVcmpRL = slsDetectorDefs::VCMP_RL,
+	EigerVcmpRR = slsDetectorDefs::VCMP_RR,
+	Threshold   = slsDetectorDefs::VTHRESHOLD,
 };
-
-typedef std::map<DACIndex, std::string> DACCmdMapType;
-extern DACCmdMapType DACCmdMap;
 
 enum ADCIndex {
 	TempADC          = slsDetectorDefs::TEMPERATURE_ADC,
@@ -144,14 +96,10 @@ enum ADCIndex {
 	TempFPGAFR       = slsDetectorDefs::TEMPERATURE_FPGA3,
 };
 
-typedef std::map<ADCIndex, std::string> ADCCmdMapType;
-extern ADCCmdMapType ADCCmdMap;
-
 enum ClockDiv {
-	FullSpeed,
-	HalfSpeed,
-	QuarterSpeed,
-	SuperSlowSpeed,
+	FullSpeed = slsDetectorDefs::FULL_SPEED,
+	HalfSpeed = slsDetectorDefs::HALF_SPEED,
+	QuarterSpeed = slsDetectorDefs::QUARTER_SPEED,
 };
 
 enum DetStatus {
@@ -164,21 +112,7 @@ enum DetStatus {
 	Stopped      = slsDetectorDefs::STOPPED,
 };
 
-enum NetworkParameter {
-	DetectorMAC     = slsDetectorDefs::DETECTOR_MAC,
-	DetectorIP      = slsDetectorDefs::DETECTOR_IP,
-	RecvHostName    = slsDetectorDefs::RECEIVER_HOSTNAME,
-	RecvUDPIP       = slsDetectorDefs::RECEIVER_UDP_IP,
-	RecvUDPPort     = slsDetectorDefs::RECEIVER_UDP_PORT,
-	RecvUDPMAC      = slsDetectorDefs::RECEIVER_UDP_MAC,
-	RecvUDPPort2    = slsDetectorDefs::RECEIVER_UDP_PORT2,
-	DetTxDelayLeft  = slsDetectorDefs::DETECTOR_TXN_DELAY_LEFT,
-	DetTxDelayRight = slsDetectorDefs::DETECTOR_TXN_DELAY_RIGHT,
-	DetTxDelayFrame = slsDetectorDefs::DETECTOR_TXN_DELAY_FRAME,
-	FlowCtrl10G     = slsDetectorDefs::FLOW_CONTROL_10G,
-	FlowCtrlWrPtr   = slsDetectorDefs::FLOW_CONTROL_WR_PTR,
-	FlowCtrlRdPtr   = slsDetectorDefs::FLOW_CONTROL_RD_PTR,
-};
+typedef slsDetectorDefs::xy xy;
 
 std::ostream& operator <<(std::ostream& os, TrigMode trig_mode);
 std::ostream& operator <<(std::ostream& os, Settings settings);
@@ -186,10 +120,18 @@ std::ostream& operator <<(std::ostream& os, DACIndex dac_idx);
 std::ostream& operator <<(std::ostream& os, ADCIndex adc_idx);
 std::ostream& operator <<(std::ostream& os, ClockDiv clock_div);
 std::ostream& operator <<(std::ostream& os, DetStatus status);
-std::ostream& operator <<(std::ostream& os, NetworkParameter net_param);
 
 } // namespace Defs
 
+typedef std::vector<int> Positions;
+
+inline Positions Idx2Pos(int idx)
+{
+	if (idx != -1)
+		return {idx};
+	else
+		return {};
+}
 
 template <class T>
 class PrettyList
@@ -203,7 +145,7 @@ class PrettyList
 	std::ostream& print(std::ostream& os) const
 	{
 		os << "[";
-		int prev;
+		int prev = -1;
 		bool in_seq = false;
 		bool first = true;
 		for (const_iterator it = begin; it != end; ++it) {
@@ -234,7 +176,7 @@ std::ostream& operator <<(std::ostream& os, const PrettyList<T>& pl)
 }
 
 
-enum State {
+enum AcqState {
 	Idle, Init, Starting, Running, StopReq, Stopping, Stopped,
 };
 
@@ -249,9 +191,10 @@ enum PixelDepth {
 	PixelDepth32 = 32,
 };
 
-std::ostream& operator <<(std::ostream& os, State state);
+std::ostream& operator <<(std::ostream& os, AcqState state);
 std::ostream& operator <<(std::ostream& os, Type type);
-
+std::ostream& operator <<(std::ostream& os, PixelDepth pixel_depth);
+std::istream& operator >>(std::istream& is, PixelDepth& pixel_depth);
 
 typedef uint64_t FrameType;
 typedef std::vector<std::string> StringList;
@@ -269,6 +212,7 @@ std::ostream& operator <<(std::ostream& os, const FrameArray& a);
 typedef PrettyList<IntList> PrettyIntList;
 typedef PrettyList<SortedIntList> PrettySortedList;
 
+StringList SplitString(const std::string& s, const std::string& sep = ",");
 
 struct TimeRanges {
 	TimeRanges() :
@@ -515,6 +459,48 @@ class SeqFilter {
 	SortedIntList m_waiting;
 };
 
+
+inline void CheckLockedAutoMutex(Cond& cond, AutoMutex& l, DebObj *deb_ptr)
+{
+	DEB_FROM_PTR(deb_ptr);
+	if (&l.mutex() != &cond.mutex())
+		THROW_HW_ERROR(Error) << "Bad AutoMutex";
+	else if (!l.locked())
+		THROW_HW_ERROR(Error) << "Mutex not locked";
+}
+
+template <typename T>
+class StateCleanUpHelper
+{
+public:
+  StateCleanUpHelper(T& state, T final_state, Cond& cond, AutoMutex& l,
+		     DebObj *deb_ptr)
+	  : m_state(state), m_final_state(final_state), m_cond(cond), m_lock(l),
+	    m_deb_ptr(deb_ptr)
+	{
+		DEB_FROM_PTR(m_deb_ptr);
+		CheckLockedAutoMutex(m_cond, m_lock, DEB_PTR());
+		DEB_TRACE() << DEB_VAR1(m_state);
+	}
+
+	~StateCleanUpHelper()
+	{
+		DEB_FROM_PTR(m_deb_ptr);
+		DEB_TRACE() << DEB_VAR1(m_state);
+		m_state = m_final_state;
+		DEB_TRACE() << DEB_VAR1(m_state);
+		m_cond.broadcast();
+	}
+
+protected:
+	T& m_state;
+	T m_final_state;
+	Cond& m_cond;
+	AutoMutex& m_lock;
+	DebObj *m_deb_ptr;
+};
+
+
 struct Stats {
 	SimpleStat cb_period;
 	SimpleStat new_finish;
@@ -533,6 +519,12 @@ typedef RegEx::FullMatchType FullMatch;
 typedef RegEx::MatchListType MatchList;
 typedef MatchList::const_iterator MatchListIt;
 
+#define EXC_CHECK(x)						\
+	try {							\
+		x;						\
+	} catch (std::exception& e) {				\
+		THROW_HW_ERROR(Error) << e.what();		\
+	}
 
 } // namespace SlsDetector
 

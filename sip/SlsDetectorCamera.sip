@@ -37,11 +37,11 @@ public:
 	SlsDetector::Model *getModel();
 	std::vector<std::string> getHostnameList();
 	int getNbDetModules();
-	int getNbDetSubModules();
 
-//	void setBufferCtrlObj(NumaSoftBufferCtrlObj *buffer_ctrl_obj);
+	void setModuleActive(int mod_idx, bool  active);
+	void getModuleActive(int mod_idx, bool& active /Out/);
 
-	void clearAllBuffers();
+	SlsDetector::BufferMgr *getBuffer();
 
 	void setPixelDepth(SlsDetector::PixelDepth  pixel_depth);
 	void getPixelDepth(SlsDetector::PixelDepth& pixel_depth /Out/);
@@ -49,19 +49,19 @@ public:
 	void setRawMode(bool  raw_mode);
 	void getRawMode(bool& raw_mode /Out/);
 
-	SlsDetector::State getState();
-	void waitState(SlsDetector::State state);
-	SlsDetector::State waitNotState(SlsDetector::State state);
+	SlsDetector::AcqState getAcqState();
+	void waitAcqState(SlsDetector::AcqState state);
+	SlsDetector::AcqState waitNotAcqState(SlsDetector::AcqState state);
 
 	void getFrameDim(FrameDim& frame_dim /Out/, bool raw = false);
-
-	SlsDetector::FrameMap *getFrameMap();
 
 	void putCmd(const std::string& s, int idx = -1);
 	std::string getCmd(const std::string& s, int idx = -1);
 
 	int getFramesCaught();
+	int getLastFrameCaught();
 	SlsDetector::Defs::DetStatus getDetStatus();
+	SlsDetector::Defs::DetStatus getDetTrigStatus();
 
 	void setTrigMode(SlsDetector::Defs::TrigMode  trig_mode);
 	void getTrigMode(SlsDetector::Defs::TrigMode& trig_mode /Out/);
@@ -77,16 +77,16 @@ public:
 	void setSkipFrameFreq(unsigned long  skip_frame_freq);
 	void getSkipFrameFreq(unsigned long& skip_frame_freq /Out/);
 
-	// setDAC: sub_mod_idx: 0-N=module, -1=all
-	void setDAC(int sub_mod_idx, SlsDetector::Defs::DACIndex dac_idx,
+	// setDAC: mod_idx: 0-N=module, -1=all
+	void setDAC(int mod_idx, SlsDetector::Defs::DACIndex dac_idx,
 		    int  val,       bool milli_volt = false);
-	void getDAC(int sub_mod_idx, SlsDetector::Defs::DACIndex dac_idx,
+	void getDAC(int mod_idx, SlsDetector::Defs::DACIndex dac_idx,
 	     	    int& val /Out/, bool milli_volt = false);
 	void getDACList(SlsDetector::Defs::DACIndex dac_idx,
 			std::vector<int>& val_list /Out/,
 			bool milli_volt = false);
 
-	void getADC(int sub_mod_idx, SlsDetector::Defs::ADCIndex adc_idx,
+	void getADC(int mod_idx, SlsDetector::Defs::ADCIndex adc_idx,
 		    int& val /Out/);
 	void getADCList(SlsDetector::Defs::ADCIndex adc_idx,
 		        std::vector<int>& val_list /Out/);
@@ -94,19 +94,8 @@ public:
 	void setSettings(SlsDetector::Defs::Settings  settings);
 	void getSettings(SlsDetector::Defs::Settings& settings /Out/);
 
-	void setNetworkParameter(SlsDetector::Defs::NetworkParameter net_param,
-				 std::string& val /In,Out/);
-	void getNetworkParameter(SlsDetector::Defs::NetworkParameter net_param,
-				 std::string& val /Out/);
-
 	void setTolerateLostPackets(bool  tol_lost_packets);
 	void getTolerateLostPackets(bool& tol_lost_packets /Out/);
-
-	int getNbBadFrames(int recv_idx);
-	void getBadFrameList(int recv_idx, int first_idx, int last_idx,
-			     std::vector<int>& bad_frame_list /Out/);
-	void getBadFrameList(int recv_idx, 
-			     std::vector<int>& bad_frame_list /Out/);
 
 	void prepareAcq();
 	void startAcq();
@@ -124,7 +113,7 @@ public:
 	SlsDetector::GlobalCPUAffinityMgr::ProcessingFinishedEvent *
 		getProcessingFinishedEvent();
 
- private:
+private:
 	Camera(const SlsDetector::Camera& o);
 };
 

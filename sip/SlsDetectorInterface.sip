@@ -36,6 +36,9 @@ class EventCallback : EventCallback
 
  protected:
 	virtual void processEvent(Event *event);
+
+ private:
+	EventCallback(const SlsDetector::EventCallback& o);
 };
 
 
@@ -65,6 +68,9 @@ class DetInfoCtrlObj : HwDetInfoCtrlObj
 					HwMaxImageSizeCallback& cb);
 	virtual void unregisterMaxImageSizeCallback(
 					HwMaxImageSizeCallback& cb);
+
+ private:
+	DetInfoCtrlObj(const SlsDetector::DetInfoCtrlObj& o);
 };
 
 
@@ -94,6 +100,8 @@ class SyncCtrlObj : HwSyncCtrlObj
 
 	virtual void getValidRanges(HwSyncCtrlObj::ValidRangesType& valid_ranges /Out/);
 
+ private:
+	SyncCtrlObj(const SlsDetector::SyncCtrlObj& o);
 };
 
 
@@ -132,6 +140,8 @@ class Interface : HwInterface
 	virtual int getNbHwAcquiredFrames();
 
 	void resetDefaults();
+
+	void setReconstruction(SlsDetector::Reconstruction *r);
 
 	SIP_PYOBJECT getHwCtrlObj(HwCap::Type cap_type);
 %MethodCode

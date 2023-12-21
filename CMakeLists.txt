@@ -80,14 +80,19 @@ endif()
 # Additional packages
 find_package(Numa REQUIRED)
 
+# Remove warning on alignment of packet members
+SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Waddress-of-packed-member")
+
 # slsDetectorPackage
 set(SLS_DETECTOR_DIR ${CMAKE_CURRENT_SOURCE_DIR}/slsDetectorPackage)
+set(SLS_DETECTOR_SUPPORT ${SLS_DETECTOR_DIR}/slsSupportLib)
 set(SLS_DETECTOR_SW ${SLS_DETECTOR_DIR}/slsDetectorSoftware)
 set(SLS_DETECTOR_RECV ${SLS_DETECTOR_DIR}/slsReceiverSoftware)
 
 set(SLS_USE_TEXTCLIENT ON CACHE BOOL "Text Client")
 set(SLS_USE_RECEIVER ON CACHE BOOL "Receiver")
 set(SLS_USE_GUI OFF CACHE BOOL "GUI")
+set(SLS_USE_TESTS ON CACHE BOOL "TESTS")
 
 add_subdirectory(${SLS_DETECTOR_DIR})
 
@@ -95,17 +100,23 @@ file(GLOB_RECURSE SLSDETECTOR_INCS "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h")
 
 add_library(slsdetector SHARED
   src/SlsDetectorDefs.cpp
-  src/SlsDetectorFrameMap.cpp
-  src/SlsDetectorArgs.cpp
   src/SlsDetectorCPUAffinity.cpp
   src/SlsDetectorBebTools.cpp
   src/SlsDetectorModel.cpp
   src/SlsDetectorReceiver.cpp
   src/SlsDetectorCamera.cpp
+  src/SlsDetectorReconstruction.cpp
+  src/SlsDetectorBuffer.cpp
   src/SlsDetectorEiger.cpp
+  src/SlsDetectorJungfrau.cpp
   src/SlsDetectorInterface.cpp
   ${SLSDETECTOR_INCS}
 )
+
+# Additional compile definitions
+add_compile_definitions(NO_WARN_X86_INTRINSICS)
+
+target_compile_options(slsdetector PRIVATE "-Wno-address-of-packed-member")
 
 # Generate export macros
 generate_export_header(slsdetector)
@@ -119,13 +130,8 @@ set_target_properties(slsdetector PROPERTIES
 # Add dependencies
 target_include_directories(slsdetector
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+    PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SUPPORT}/include>"
     PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SW}/include>"
-    PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SW}/commonFiles>"
-    PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SW}/slsDetector>"
-    PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SW}/multiSlsDetector>"
-    PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SW}/slsDetectorServer>"
-    PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SW}/slsDetectorAnalysis>"
-    PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_SW}/slsReceiverInterface>"
     PUBLIC "$<BUILD_INTERFACE:${SLS_DETECTOR_RECV}/include>"
     PUBLIC "$<BUILD_INTERFACE:${NUMA_INCLUDE_DIR}>"
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>"           # For export header

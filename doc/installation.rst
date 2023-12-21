@@ -1568,15 +1568,21 @@ Compile *Lima* as *blissadm*, including *slsDetectorPackage* using the *CMake* c
     # as blissadm
     lid10eiger1:~ % (
         . ${EIGER_HOME}/eiger_setup.sh
+        PREFIX=${CONDA_PREFIX}
+        SP_DIR=$(python -c "import sysconfig; print(sysconfig.get_paths().get('platlib'))")
+        export PREFIX SP_DIR
+        CPUS=$(lscpu | grep '^CPU(s)' | awk '{print $2}')
+        function parallel_cmake_sh
+        { sed "s/\(cmake --build build .\+\)/\1 -- -j${CPUS}/" $1 | bash -e; }
         cd ${LIMA_DIR}
-        (PREFIX=${CONDA_PREFIX} \
-         SP_DIR=$(python -c "import sysconfig; print(sysconfig.get_paths().get('platlib'))") \
-         bash -c '(cd third-party/Processlib && bash -e conda/debug/build.sh) && \
-                  (cd . && bash -e conda/debug/build.sh) && \
-                  (cd applications/tango/python && \
-                     bash -e conda/build.sh && cp scripts/Lima* ${PREFIX}/bin) && \
-                  (cd camera/slsdetector && \
-                     bash -e conda/camera/build.sh && bash -e conda/tango/build.sh)'))
+        ((cd third-party/Processlib && parallel_cmake_sh conda/debug/build.sh) \
+           && (cd . && parallel_cmake_sh conda/debug/build.sh) \
+           && (cd applications/tango/python \
+                 && parallel_cmake_sh conda/build.sh \
+                 && cp scripts/Lima* ${PREFIX}/bin) \
+           && (cd camera/slsdetector \
+                 && parallel_cmake_sh conda/camera/build.sh \
+                 && parallel_cmake_sh conda/tango/build.sh))) 2>&1
     ...
 
 Build the documentation:
@@ -1676,8 +1682,8 @@ Add LimaCCDs and SlsDetector class devices.
 +----------------------------------------------------------+------------------------------------------------------+
 | id10/slsdetector/eiger500k->apply_corrections            | 0                                                    |
 +----------------------------------------------------------+------------------------------------------------------+
-| id10/slsdetector/eiger500k->pixel_depth_cpu_affinity_map | | { 4: ((((CPU( 6), CPU( 7)), (CPU(18), CPU(19))),   |
-|                                                          | |        ((CPU( 9), CPU(10)), (CPU(21), CPU(22)))),  |
+| id10/slsdetector/eiger500k->pixel_depth_cpu_affinity_map | | { 4: (((CPU( 6), CPU( 7)), (CPU( 9), CPU(10))),    |
+|                                                          | |       (CPU(18), CPU(19), CPU(21), CPU(22)),        |
 |                                                          | |       CPU(*chain(range(0, 6), range(12, 18))),     |
 |                                                          | |       CPU(0),                                      |
 |                                                          | |       (('eth0,eth1,eth2,eth4,eth6,eth7,eth8,eth9', |
@@ -1695,7 +1701,7 @@ Add LimaCCDs and SlsDetector class devices.
    the following tasks:
 
    * Receivers' packet stream threads (passive mode equivalent to listeners): 2
-   * Eiger processing threads: 2 per receiver, configurable
+   * Eiger processing threads: 4, configurable
    * Lima processing threads
    * Other OS processes
    * Net-dev group packet dispatching for Rx queues: irq & processing
@@ -1853,3 +1859,138 @@ interfaces.
 
 .. note:: the 30 seconds timeout is necessary for large memory 
    allocations (long sequences)
+
+
+Bliss
+----
+
+Load EIGER noise pattern
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+In order to get useful images with no illumination, an *EIGER* noise pattern can
+be generated through the sensor trim bits. The *SlsDetectorEiger* Tango device
+exports the *getCmd* & *putCmd* methods, which directly interface with the SDK:
+
+::
+
+    EH2_EXP [129]: sls_detectors='/users/blissadm/local/sls_detectors'
+    EH2_EXP [130]: det_calib_dir=f'{sls_detectors}/config/eiger/detector/psi_eiger_500k_024_025/calib/2019_11_25'
+    EH2_EXP [131]: eiger_trim_settings=f'{det_calib_dir}/standard/eigernoise'
+    EH2_EXP [132]: eiger1._get_proxy('SlsDetectorEiger').putcmd(f'trimbits {eiger_trim_settings}')
+    EH2_EXP [133]: eiger1.camera.dac_threshold = [2500] * 2
+
+In order to de-activate the pattern and load the good calibration, just set the
+working photon *threshold_energy*:
+
+::
+
+    EH2_EXP [135]: eiger1.camera.threshold_energy = 8000                                                     
+
+
+
+Ethernet Switch
+---------------
+
+Some configuration must be made on the network switch in order ensure *Eiger* DAQ:
+
+* Separation of VLANs for *Control* and *Data*
+* The detector sends Ethernet/UDP data packets with the destination MAC/IP addresses.
+  This information is sent by the *slsDetector* client to the *eigerDetectorServer*
+  without the need of ARP transactions. The switch has no mean to know which ports
+  the data packets must be dispatched to, so they are sent to all the active ports.
+  This creates in important ammount of unnecessary traffic (~ N\ :superscript:`2`,
+  where N is the number of modules), with the corresponding activity on the Linux
+  network stack. A static *MAC -> port* mapping table for 10/40 Gbit backend
+  interfaces avoids this issue.
+
+Mellanox Switch
+~~~~~~~~~~~~~~~
+
+The configuration of static *MAC -> port* mapping table is performed in the
+*configure terminal* environment with the *mac-address-table static* command:
+
+::
+
+   switch-5d071c [standalone: unknown] > enable
+   switch-5d071c [standalone: unknown] # 
+   
+   switch-5d071c [standalone: unknown] # configure terminal 
+   switch-5d071c [standalone: unknown] (config) # 
+   
+   switch-5d071c [standalone: unknown] (config) # mac-address-table static E4:1D:2D:7C:18:72 vlan 1 interface ethernet 1/2
+   
+   switch-5d071c [standalone: unknown] (config) # configuration write
+
+and can be verified with the *show mac-address-table* command:
+
+::
+   
+   switch-5d071c [standalone: unknown] > show mac-address-table 
+   
+   Switch ethernet-default
+   
+   Vlan    Mac Address         Type         Port                                  
+   ----    -----------         ----         ------------                          
+   1       E4:1D:2D:7C:18:41   Static       Eth1/3                                
+   1       E4:1D:2D:7C:18:42   Static       Eth1/5                                
+   1       E4:1D:2D:7C:18:71   Static       Eth1/1                                
+   1       E4:1D:2D:7C:18:72   Static       Eth1/2                                
+   Number of unicast:    4                                                        
+   Number of multicast:    0                                                      
+
+The *no* form of the *mac-address-table* allow deleting an static entry in the table:
+
+::
+
+   switch-e4de34 [standalone: master] (config) # no mac-address-table static B8:59:9F:D4:AD:E2 vlan 1 interface ethernet 1/7
+   
+The Ethernet ports must be configured to use *Flow Control for Rx/Tx* and *Jumbo frames*:
+
+::
+   
+   switch-e4de34 [standalone: master] (config) # interface ethernet 1/7 mtu 9000 force
+   switch-e4de34 [standalone: master] (config) # interface ethernet 1/7 flowcontrol receive on force
+   switch-e4de34 [standalone: master] (config) # interface ethernet 1/7 flowcontrol send on force
+
+In case of a 40 Gbit MPO QSFP transceiver carrying 4x 10 Gbit individual links,
+the corresponding port must be configured in *split* mode:
+
+::
+   switch-e4de34 [standalone: master] (config) # interface ethernet 1/9 module-type qsfp-split-4 force
+   the following interfaces are being unmapped: 1/9
+
+Again, the *no module-type* form allows returning to the *qsfp* no-split mode.
+
+
+eXtreme Networks Switch
+~~~~~~~~~~~~~~~~~~~~~~~
+
+The configuration of static *MAC -> port* mapping table is performed by adding entries
+in the *Forwarding Database (FDB)* with the *create fdb vlan ports* command:
+
+::
+
+   * X620-16x.37 # create fdb 90:e2:ba:c9:a4:a9 vlan data ports 11 
+   * X620-16x.38 # create fdb 90:e2:ba:cb:ad:55 vlan data ports 12
+
+and can be verified with the *show fdb* command:
+
+::
+
+   * X620-16x.39 # show fdb
+   MAC                                      VLAN Name( Tag)  Age  Flags          Port / Virtual Port List
+   ------------------------------------------------------------------------------------------------------
+   90:e2:ba:c9:a4:a8                          control(1000) 0027  d m            3
+   90:e2:ba:c9:a4:a9                             data(1020) 0000  spm            11
+   90:e2:ba:cb:ad:55                             data(1020) 0000  spm            12
+   
+   Flags : d - Dynamic, s - Static, p - Permanent, n - NetLogin, m - MAC, i - IP,
+           x - IPX, l - lockdown MAC, L - lockdown-timeout MAC, M- Mirror, B - Egress Blackhole,
+           b - Ingress Blackhole, v - MAC-Based VLAN, P - Private VLAN, T - VLAN translation,
+           D - drop packet, h - Hardware Aging, o - IEEE 802.1ah Backbone MAC,
+           S - Software Controlled Deletion, r - MSRP,
+           X - VXLAN, Z - OpenFlow, E - EVPN
+   
+   Total: 3 Static: 2  Perm: 2  Dyn: 1  Dropped: 0  Locked: 0  Locked with Timeout: 0
+   FDB Aging time: 300
+   

@@ -18,19 +18,22 @@ build:
 requirements:
   host:
     - python {{ python }}
-    - sip 4.19.8              # For compatibility with pyqt 5.9.2
-    - lima-core
+    - sip >=4.19.20* # API v12.7
+    - lima-core 1.10.*
     - libnuma
     - libpng
+    - zeromq
   build:
     - git
     - cmake
+    - ninja
     - {{ compiler('cxx') }}
   run:
     - python {{ python }}
-    - sip >=4.19.4, <=4.19.8  # For compatibility with pyqt 5.9.2
-    - libpng
+    - {{ pin_compatible('sip', min_pin='x.x.x', max_pin='x') }}
     - libnuma
+    - libpng
+    - zeromq
     - {{ pin_compatible('lima-core', max_pin='x.x') }}
 
 test:

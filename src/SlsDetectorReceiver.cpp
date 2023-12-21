@@ -22,12 +22,33 @@
 
 #include "SlsDetectorCamera.h"
 
+#include "sls/Receiver.h"
+
 using namespace std;
 using namespace lima;
 using namespace lima::SlsDetector;
 
+using namespace sls::FrameAssembler;
+
+using AnyPacketBlockList = sls::AnyPacketBlockList;
+
+struct RecvImagePackets : public Receiver::ImagePackets {
+	using Receiver::ImagePackets::ImagePackets;
+	AnyPacketBlockList blocks;
+};
+
+inline
+AnyPacketBlockList& RecvImagePacketBlocks(Receiver::ImagePackets *image_data) {
+	RecvImagePackets *rd = static_cast<RecvImagePackets *>(image_data);
+	return rd->blocks;
+}
+
+struct Receiver::AssemblerImpl {
+	MPFrameAssemblerPtr m_asm;
+};
+
 Receiver::Receiver(Camera *cam, int idx, int rx_port)
-	: m_cam(cam), m_idx(idx), m_rx_port(rx_port)
+	: m_cam(cam), m_idx(idx), m_rx_port(rx_port), m_gap_pixels_enable(false)
 {
 	DEB_CONSTRUCTOR();
 
@@ -37,67 +58,94 @@ Receiver::Receiver(Camera *cam, int idx, int rx_port)
 	m_args.set(os.str());
 
 	start();
+
+	m_asm_impl = new AssemblerImpl();
 }
 
 Receiver::~Receiver()
 {
 	DEB_DESTRUCTOR();
-	m_recv->stop();
+	delete m_asm_impl;
 }
 
 void Receiver::start()
 {	
 	DEB_MEMBER_FUNCT();
-	int init_ret;
-	m_recv = new slsReceiverUsers(m_args.size(), m_args, init_ret);
-	if (init_ret == slsReceiverDefs::FAIL)
-		THROW_HW_ERROR(Error) << "Error creating slsReceiver";
+	EXC_CHECK(m_recv = new sls::Receiver(m_args.size(), m_args));
 	m_recv->setPassiveMode(true);
-	if (m_recv->start() == slsReceiverDefs::FAIL) 
-		THROW_HW_ERROR(Error) << "Error starting slsReceiver";
 }
 
 void Receiver::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
+	AssemblerType asm_type = m_gap_pixels_enable ? AsmWithGap : AsmRaw;
+	m_asm_impl->m_asm = std::move(m_recv->CreateFrameAssembler(asm_type));
 	m_stats.reset();
+	m_last_skipped = false;
 }
 
 void Receiver::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
 {
 	DEB_MEMBER_FUNCT();
 
+	using namespace sls::CPUAffinity;
 	const CPUAffinityList& aff_list = recv_affinity.listeners;
-	slsReceiverDefs::CPUMaskList cpu_masks(aff_list.size());
-	slsReceiverDefs::CPUMaskList::iterator mit = cpu_masks.begin();
+	FixedCPUSetAffinityList cpu_masks(aff_list.size());
+	FixedCPUSetAffinityList::iterator mit = cpu_masks.begin();
 	CPUAffinityList::const_iterator it, end = aff_list.end();
 	for (it = aff_list.begin(); it != end; ++it, ++mit)
-		it->initCPUSet(*mit);
-	m_recv->setThreadCPUAffinity(cpu_masks);
-
-	string deb_head;
-	if (DEB_CHECK_ANY(DebTypeTrace) || DEB_CHECK_ANY(DebTypeWarning)) {
-		ostringstream os;
-		os << "setting recv " << m_idx << " ";
-		deb_head = os.str();
-	}
-
-	CPUAffinity aff = recv_affinity.all();
-	int max_node;
-	vector<unsigned long> mlist;
-	aff.getNUMANodeMask(mlist, max_node);
-	if (mlist.size() != 1)
-		THROW_HW_ERROR(Error) << DEB_VAR1(mlist.size());
-	unsigned long& fifo_node_mask = mlist[0];
-	int c = bitset<64>(fifo_node_mask).count();
-	if (c != 1)
-		DEB_WARNING() << deb_head << "Fifo NUMA node mask has "
-			      << c << " nodes";
-	DEB_ALWAYS() << deb_head << DEB_VAR2(DEB_HEX(fifo_node_mask), max_node);
-	m_recv->setFifoNodeAffinity(fifo_node_mask, max_node);
+		it->initCPUSet(mit->cpu_mask().cpu_set());
+	m_recv->setListenersCPUAffinity(cpu_masks);
 }
 
-bool Receiver::getImage(ImageData& image_data)
+AutoPtr<Receiver::ImagePackets> Receiver::readSkippableImagePackets()
+{
+	DEB_MEMBER_FUNCT();
+	AutoPtr<ImagePackets> image_data = new RecvImagePackets(this);
+	AnyPacketBlockList& blocks = RecvImagePacketBlocks(image_data);
+	slsDetectorDefs::sls_detector_header *header = NULL;
+	FrameType& frame = image_data->frame;
+	blocks = std::move(m_recv->GetFramePacketBlocks());
+	image_data->numberOfPorts = blocks.size();
+	bool incomplete_data = (image_data->numberOfPorts == 0);
+	for (int i = 0; i < image_data->numberOfPorts; ++i) {
+		std::visit([&](auto &block) {
+			bool valid(block);
+			image_data->validPortData[i] = valid;
+			if (!valid) {
+				incomplete_data = true;
+				return;
+			}
+			if (frame == uint64_t(-1))
+				frame = block->getRecvFrameNumber();
+			if (!header)
+				header = block->getNetworkHeader();
+			incomplete_data |= !block->hasFullFrame();
+		    }, blocks[i]);
+	}
+	bool error = (incomplete_data && !m_cam->m_tol_lost_packets);
+	// missing ports indicate failure in frame-discarding policy filter
+	int valid_ports = image_data->validPortData.count();
+	bool missing_ports = (!valid_ports ||
+			      (valid_ports != image_data->numberOfPorts));
+	if ((error || missing_ports) && (m_cam->getAcqState() == Running))
+		THROW_HW_ERROR(Error) << "Recv. " << m_idx << ": "
+				      << "got incomplete data";
+	else if (missing_ports)
+		return NULL;
+	if (header)
+		DEB_TRACE() << DEB_VAR6(m_idx, frame, header->frameNumber,
+					header->modId, header->row,
+					header->column);
+	else
+		DEB_TRACE() << DEB_VAR2(m_idx, frame);
+	if (frame > m_cam->m_det_nb_frames)
+		THROW_HW_ERROR(Error) << "Invalid frame: " 
+				      << DEB_VAR3(m_idx, frame, DebHex(frame));
+	return image_data;
+}
+
+AutoPtr<Receiver::ImagePackets> Receiver::readImagePackets()
 {
 	DEB_MEMBER_FUNCT();
 
@@ -109,46 +157,84 @@ bool Receiver::getImage(ImageData& image_data)
 		m_stats.stats.recv_exec.add(t0 - m_stats.last_t1);
 	m_stats.last_t0 = t0;
 
-	FrameType det_frame;
+	AutoPtr<ImagePackets> image_data;
 	try {
-		++image_data.frame;
-		int ret = m_recv->getImage(image_data);
-		if ((ret != 0) || (m_cam->getState() == Stopping))
-			return false;
-		
-		sls_receiver_header& header = image_data.header;
-		det_frame = header.detHeader.frameNumber - 1;
-		if (det_frame >= m_cam->m_det_nb_frames)
-			THROW_HW_ERROR(Error) << "Invalid frame: " 
-					      << DEB_VAR3(m_idx,
-							  det_frame,
-							  DebHex(det_frame));
+		image_data = readSkippableImagePackets();
+		if (!image_data)
+			return NULL;
+
+		FrameType det_frame = image_data->frame;
+		bool skip_this = false;
+		bool skip_next = false;
+		bool prev_last_skipped = m_last_skipped;
 		FrameType skip_freq = m_cam->m_skip_frame_freq;
-		bool skip_frame = false;
-		FrameType lima_frame = det_frame;
 		if (skip_freq) {
-			skip_frame = ((det_frame + 1) % (skip_freq + 1) == 0);
-			lima_frame -= det_frame / (skip_freq + 1);
-			DEB_TRACE() << DEB_VAR4(m_idx, det_frame,
-						skip_frame, lima_frame);
+			skip_this = (det_frame % (skip_freq + 1) == 0);
+			FrameType last_frame = m_cam->m_det_nb_frames;
+			skip_next = ((det_frame + 1) == last_frame);
+			if (skip_this && (det_frame == last_frame))
+				m_last_skipped = true;
+			DEB_TRACE() << DEB_VAR5(m_idx, det_frame, skip_this,
+						skip_next, m_last_skipped);
 		}
-		if (skip_frame) {
-			if (det_frame == m_cam->m_det_nb_frames - 1)
-				m_cam->processLastSkippedFrame(m_idx);
-			return false;
+
+		if (skip_this) {
+			image_data = readSkippableImagePackets();
+			if (!image_data)
+				return NULL;
+			det_frame = image_data->frame;
 		}
-		image_data.frame = lima_frame;
+
+		image_data->frame = det_frame - 1; // first frame is set to 1
+		if (skip_freq)
+			image_data->frame -= det_frame / (skip_freq + 1);
+
+		if (skip_next && !m_last_skipped) {
+			AutoPtr<ImagePackets> skip = readSkippableImagePackets();
+			if (!skip)
+				return NULL;
+			m_last_skipped = true;
+		}
+		if (m_last_skipped && !prev_last_skipped)
+			m_cam->processLastSkippedFrame(m_idx);
 	} catch (Exception& e) {
 		ostringstream name;
-		name << "Receiver::getImage: " << DEB_VAR2(m_idx, det_frame);
+		name << "Receiver::getImage: " << DEB_VAR1(m_idx);
 		m_cam->reportException(e, name.str());
-		return false;
+		return NULL;
 	}
 
 	Timestamp t1 = Timestamp::now();
 	m_stats.stats.cb_exec.add(t1 - t0);
 	m_stats.last_t1 = t1;
 
-	return true;
+	return image_data;
+}
+
+bool Receiver::asmImagePackets(ImagePackets *image_data, char *buffer)
+{
+	DEB_MEMBER_FUNCT();
+	sls::FrameAssembler::Result res;
+	MPFrameAssemblerPtr::element_type *a = m_asm_impl->m_asm.get();
+	AnyPacketBlockList blks = std::move(RecvImagePacketBlocks(image_data));
+	res = a->assembleFrame(blks, buffer);
+	image_data->numberOfPorts = res.nb_ports;
+	image_data->validPortData = res.valid_data;
+	bool got_data = image_data->validPortData.any();
+	DEB_RETURN() << DEB_VAR1(got_data);
+	return got_data;
+}
+
+void Receiver::fillBadFrame(char *buf)
+{
+	DEB_MEMBER_FUNCT();
+	MPFrameAssemblerPtr::element_type *a = m_asm_impl->m_asm.get();
+	a->fillMissingFrame(buf);
+}
+
+void Receiver::clearAllBuffers()
+{
+	DEB_MEMBER_FUNCT();
+	m_recv->clearAllBuffers();
 }
 

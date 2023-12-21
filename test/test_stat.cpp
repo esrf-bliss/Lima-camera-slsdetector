@@ -57,7 +57,7 @@ void test_stat(double slope, double offset, int n)
 		THROW_HW_ERROR(Error) << DEB_VAR2(r.offset, offset);
 }
 
-int main(int argc, char *argv[])
+int main(int /*argc*/, char */*argv*/[])
 {
 	DEB_GLOBAL_FUNCT();
 

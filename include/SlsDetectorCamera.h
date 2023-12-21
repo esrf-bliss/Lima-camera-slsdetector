@@ -23,14 +23,12 @@
 #ifndef __SLS_DETECTOR_CAMERA_H
 #define __SLS_DETECTOR_CAMERA_H
 
-#include "SlsDetectorArgs.h"
 #include "SlsDetectorReceiver.h"
 #include "SlsDetectorCPUAffinity.h"
-#include "SlsDetectorBebTools.h"
+#include "SlsDetectorModel.h"
 
-#include "slsDetectorUsers.h"
+#include "sls/Detector.h"
 
-#include "lima/HwBufferMgr.h"
 #include "lima/HwMaxImageSizeCallback.h"
 #include "lima/Event.h"
 
@@ -54,7 +52,6 @@ public:
 	typedef Defs::DACIndex DACIndex;
 	typedef Defs::ADCIndex ADCIndex;
 	typedef Defs::DetStatus DetStatus;
-	typedef Defs::NetworkParameter NetworkParameter;
 
 	Camera(std::string config_fname, int det_id = 0);
 	Camera(const Camera& o) = delete;
@@ -71,19 +68,17 @@ public:
 	int getNbDetModules()
 	{ return m_input_data->host_name_list.size(); }
 
-	int getNbDetSubModules()
-	{ return m_det->getNMods(); }
-
 	int getNbRecvs()
 	{ return m_recv_list.size(); }
 
 	Receiver* getRecv(int i)
 	{ return m_recv_list[i]; }
 
-	void setBufferCtrlObj(NumaSoftBufferCtrlObj *buffer_ctrl_obj)
-	{ m_buffer_ctrl_obj = buffer_ctrl_obj; }
+	BufferMgr *getBuffer()
+	{ return &m_buffer; }
 
-	void clearAllBuffers();
+	void setModuleActive(int mod_idx, bool  active);
+	void getModuleActive(int mod_idx, bool& active);
 
 	void setPixelDepth(PixelDepth  pixel_depth);
 	void getPixelDepth(PixelDepth& pixel_depth);
@@ -91,24 +86,20 @@ public:
 	void setRawMode(bool  raw_mode);
 	void getRawMode(bool& raw_mode);
 
-	State getState();
-	void waitState(State state);
-	State waitNotState(State state);
-
-	ImageType getImageType() const
-	{ return m_image_type; }
+	AcqState getAcqState();
+	void waitAcqState(AcqState state);
+	AcqState waitNotAcqState(AcqState state);
 
 	void getFrameDim(FrameDim& frame_dim, bool raw = false)
 	{ m_model->getFrameDim(frame_dim, raw); }
-
-	FrameMap *getFrameMap()
-	{ return &m_frame_map; }
 
 	void putCmd(const std::string& s, int idx = -1);
 	std::string getCmd(const std::string& s, int idx = -1);
 
 	int getFramesCaught();
+	int getLastFrameCaught();
 	DetStatus getDetStatus();
+	DetStatus getDetTrigStatus();
 
 	void setTrigMode(TrigMode  trig_mode);
 	void getTrigMode(TrigMode& trig_mode);
@@ -124,30 +115,22 @@ public:
 	void setSkipFrameFreq(FrameType  skip_frame_freq);
 	void getSkipFrameFreq(FrameType& skip_frame_freq);
 
-	// setDAC: sub_mod_idx: 0-N=sub_module, -1=all
-	void setDAC(int sub_mod_idx, DACIndex dac_idx, int  val, 
+	// setDAC: mod_idx: 0-N=module, -1=all
+	void setDAC(int mod_idx, DACIndex dac_idx, int  val, 
 		    bool milli_volt = false);
-	void getDAC(int sub_mod_idx, DACIndex dac_idx, int& val, 
+	void getDAC(int mod_idx, DACIndex dac_idx, int& val, 
 		    bool milli_volt = false);
 	void getDACList(DACIndex dac_idx, IntList& val_list,
 			bool milli_volt = false);
 
-	void getADC(int sub_mod_idx, ADCIndex adc_idx, int& val);
+	void getADC(int mod_idx, ADCIndex adc_idx, int& val);
 	void getADCList(ADCIndex adc_idx, IntList& val_list);
 
 	void setSettings(Settings  settings);
 	void getSettings(Settings& settings);
 
-	void setNetworkParameter(NetworkParameter net_param, std::string& val);
-	void getNetworkParameter(NetworkParameter net_param, std::string& val);
-
 	void setTolerateLostPackets(bool  tol_lost_packets);
 	void getTolerateLostPackets(bool& tol_lost_packets);
-
-	int getNbBadFrames(int item_idx);
-	void getBadFrameList(int item_idx, int first_idx, int last_idx,
-			     IntList& bad_frame_list);
-	void getBadFrameList(int item_idx, IntList& bad_frame_list);
 
 	void prepareAcq();
 	void startAcq();
@@ -173,13 +156,6 @@ private:
 	typedef std::queue<int> FrameQueue;
 	typedef std::vector<AutoPtr<Receiver> > RecvList;
 
-	struct Beb {
-		BebShell shell;
-		BebFpgaMem fpga_mem;
-		Beb(const std::string& host_name);
-	};
-	typedef std::vector<AutoPtr<Beb> > BebList;
-
 	struct AppInputData
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Camera::AppInputData", 
@@ -199,9 +175,8 @@ private:
 	public:
 		AcqThread(Camera *cam);
 
-		void queueFinishedFrame(FrameType frame);
-		virtual void start();
-		void stop(bool wait);
+		virtual void start(AutoMutex& l);
+		void stop(AutoMutex& l, bool wait);
 
 	protected:
 		virtual void threadFunction();
@@ -209,30 +184,49 @@ private:
 	private:
 		typedef std::pair<bool, bool> Status;
 
+		enum StopState {
+			NoStop, StopRunning, StopFinished
+		};
+
 		class ExceptionCleanUp : Thread::ExceptionCleanUp
 		{
 			DEB_CLASS_NAMESPC(DebModCamera, 
 					  "Camera::AcqThread::ExceptionCleanUp",
 					  "SlsDetector");
 		public:
-			ExceptionCleanUp(AcqThread& thread);
+			ExceptionCleanUp(AcqThread& thread, AutoMutex& l);
 			virtual ~ExceptionCleanUp();
+			void threadFinished();
+		private:
+			AutoMutex& m_lock;
+			bool m_finished;
 		};
 
+		struct Stats {
+			SimpleStat read_packets{1e6};
+			SimpleStat wait_frame{1e6};
+			SimpleStat new_frame{1e6};
+			SimpleStat check_recv{1e6};
+		};
+
+		DetFrameImagePackets readRecvPackets(FrameType frame);
 		Status newFrameReady(FrameType frame);
 		void startAcq();
 		void stopAcq();
-		void cleanUp();
+		void onError(AutoMutex& l);
 
 		Camera *m_cam;
 		Cond& m_cond;
-		State& m_state;
-		FrameQueue m_frame_queue;
+		AcqState& m_state;
+		StopState m_stop_state;
+		Stats m_stats;
 	};
 
+	friend class BufferMgr;
 	friend class Model;
 	friend class Receiver;
 	friend class GlobalCPUAffinityMgr;
+	friend class Reconstruction;
 
 	friend class Eiger;
 
@@ -246,28 +240,25 @@ private:
 	void updateCPUAffinity(bool recv_restarted);
 	void setRecvCPUAffinity(const RecvCPUAffinityList& recv_affinity_list);
 
-	static int64_t NSec(double x)
-	{ return int64_t(x * 1e9); }
+	static sls::ns NSec(double x)
+	{
+		std::chrono::duration<double> sec(x);
+		return std::chrono::duration_cast<sls::ns>(sec);
+	}
 
-	State getEffectiveState();
+	AcqState getEffectiveState(AutoMutex& l);
 
-	StdBufferCbMgr *getBufferCbMgr()
-	{ return &m_buffer_ctrl_obj->getBuffer(); }
-
-	char *getFrameBufferPtr(FrameType frame_nb);
-	void removeSharedMem();
+	void checkDetIdleStatus();
 	void createReceivers();
 
+	void assemblePackets(DetFrameImagePackets det_frame_packets);
+
 	bool checkLostPackets();
-	FrameType getLastReceivedFrame();
 
 	void waitLastSkippedFrame();
 	void processLastSkippedFrame(int recv_idx);
 
-	void getSortedBadFrameList(IntList first_idx, IntList last_idx,
-				   IntList& bad_frame_list );
-	void getSortedBadFrameList(IntList& bad_frame_list)
-	{ getSortedBadFrameList(IntList(), IntList(), bad_frame_list); }
+	std::string execCmd(const std::string& s, bool put, int idx = -1);
 
 	template <class T>
 	void putNbCmd(const std::string& cmd, T val, int idx = -1)
@@ -287,18 +278,15 @@ private:
 		return val;
 	}
 
-	void setReceiverFifoDepth(int fifo_depth);
-	bool isTenGigabitEthernetEnabled();
-	void setFlowControl10G(bool enabled);
+	void setReceiverFifoDepth(int  fifo_depth);
+	void getReceiverFifoDepth(int& fifo_depth);
 	void resetFramesCaught();
 
 	int m_det_id;
 	Model *m_model;
 	Cond m_cond;
 	AutoPtr<AppInputData> m_input_data;
-	AutoPtr<slsDetectorUsers> m_det;
-	BebList m_beb_list;
-	FrameMap m_frame_map;
+	AutoPtr<sls::Detector> m_det;
 	RecvList m_recv_list;
 	TrigMode m_trig_mode;
 	FrameType m_lima_nb_frames;
@@ -310,11 +298,11 @@ private:
 	double m_lat_time;
 	double m_frame_period;
 	Settings m_settings;
-	NumaSoftBufferCtrlObj *m_buffer_ctrl_obj;
+	BufferMgr m_buffer;
 	PixelDepth m_pixel_depth;
-	ImageType m_image_type;
 	bool m_raw_mode;
-	State m_state;
+	AcqState m_state;
+	Timestamp m_next_ready_ts;
 	double m_new_frame_timeout;
 	double m_abort_sleep_time;
 	bool m_tol_lost_packets;
@@ -322,6 +310,7 @@ private:
 	TimeRangesChangedCallback *m_time_ranges_cb;
 	PixelDepthCPUAffinityMap m_cpu_affinity_map;
 	GlobalCPUAffinityMgr m_global_cpu_affinity_mgr;
+	CPUAffinity m_acq_thread_cpu_affinity;
 	AutoPtr<AcqThread> m_acq_thread;
 };
 

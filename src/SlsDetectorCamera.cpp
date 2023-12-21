@@ -22,11 +22,12 @@
 
 #include "SlsDetectorCamera.h"
 
-#include "multiSlsDetectorCommand.h"
-
 #include <limits.h>
 #include <algorithm>
+#include <numeric>
 #include <cmath>
+#include <iostream>
+#include <fstream>
 
 using namespace std;
 using namespace lima;
@@ -44,7 +45,7 @@ void Camera::AppInputData::parseConfigFile()
 {
 	DEB_MEMBER_FUNCT();
 
-	ifstream config_file(config_file_name.c_str());
+	ifstream config_file(config_file_name);
 	while (config_file) {
 		string s;
 		config_file >> s;
@@ -65,32 +66,53 @@ void Camera::AppInputData::parseConfigFile()
 				const SingleMatch& single_match = full_match[1];
 				host_name_list.push_back(single_match);
 			}
+			DEB_TRACE() << DEB_VAR1(host_name_list);
 			continue;
 		}
 
-		re = "([0-9]+):rx_tcpport";
+		re = "(([0-9]+):)?rx_tcpport";
 		if (re.match(s, full_match)) {
-			istringstream is(full_match[1]);
-			int id;
-			is >> id;
-			if (id < 0)
-				THROW_HW_FATAL(InvalidValue) << 
-					"Invalid detector id: " << id;
+			int id = 0;
+			if (full_match[2].found()) {
+				istringstream is(full_match[2]);
+				is >> id;
+				if (id < 0)
+					THROW_HW_FATAL(InvalidValue) <<
+						"Invalid detector id: " << id;
+			}
 			int rx_tcpport;
 			config_file >> rx_tcpport;
 			recv_port_map[id] = rx_tcpport;
 			continue;
 		}
+
+		re = "(([0-9]+):)?rx_hostname";
+		if (re.match(s, full_match)) {
+			int id = 0;
+			if (full_match[2].found()) {
+				istringstream is(full_match[2]);
+				is >> id;
+				if (id < 0)
+					THROW_HW_FATAL(InvalidValue) <<
+						"Invalid detector id: " << id;
+			}
+			string host_port;
+			config_file >> host_port;
+			re = "([^:]+):([0-9]+)\\+?";
+			if (re.match(host_port, full_match)) {
+				istringstream is(full_match[2]);
+				int rx_tcpport;
+				is >> rx_tcpport;
+				recv_port_map[id] = rx_tcpport;
+			}
+			continue;
+		}
 	}
 }
 
-Camera::Beb::Beb(const std::string& host_name)
-	: shell(host_name), fpga_mem(shell)
-{
-}
-
-Camera::AcqThread::ExceptionCleanUp::ExceptionCleanUp(AcqThread& thread)
-	: Thread::ExceptionCleanUp(thread)
+Camera::AcqThread::ExceptionCleanUp::ExceptionCleanUp(AcqThread& thread,
+						      AutoMutex& l)
+	: Thread::ExceptionCleanUp(thread), m_lock(l), m_finished(false)
 {
 	DEB_CONSTRUCTOR();
 }
@@ -98,19 +120,30 @@ Camera::AcqThread::ExceptionCleanUp::ExceptionCleanUp(AcqThread& thread)
 Camera::AcqThread::ExceptionCleanUp::~ExceptionCleanUp()
 {
 	DEB_DESTRUCTOR();
+	if (m_finished)
+		return;
 	AcqThread *thread = static_cast<AcqThread *>(&m_thread);
-	thread->cleanUp();
+	thread->onError(m_lock);
+}
+
+void Camera::AcqThread::ExceptionCleanUp::threadFinished()
+{
+	DEB_MEMBER_FUNCT();
+	m_finished = true;
 }
 
 Camera::AcqThread::AcqThread(Camera *cam)
-	: m_cam(cam), m_cond(m_cam->m_cond), m_state(m_cam->m_state)
+	: m_cam(cam), m_cond(m_cam->m_cond), m_state(m_cam->m_state),
+	  m_stop_state(NoStop)
 {
 	DEB_CONSTRUCTOR();
 }
 
-void Camera::AcqThread::start()
+void Camera::AcqThread::start(AutoMutex& l)
 {
 	DEB_MEMBER_FUNCT();
+
+	CheckLockedAutoMutex(m_cond, l, DEB_PTR());
 
 	m_state = Starting;
 	Thread::start();
@@ -121,177 +154,342 @@ void Camera::AcqThread::start()
 	if (ret != 0)
 		DEB_ERROR() << "Could not set AcqThread real-time priority!!";
 
-	while (m_state != Running)
+	while (m_state == Starting)
+		m_cond.wait();
+
+	const CPUAffinity& acq_affinity = m_cam->m_acq_thread_cpu_affinity;
+	if (!acq_affinity.isDefault()) {
+		DEB_ALWAYS() << "Setting CPUAffinity for AcqThread to "
+			     << acq_affinity;
+		acq_affinity.applyToTask(getThreadID(), false, false);
+	}
+}
+
+void Camera::AcqThread::stop(AutoMutex& l, bool wait)
+{
+	DEB_MEMBER_FUNCT();
+
+	CheckLockedAutoMutex(m_cond, l, DEB_PTR());
+
+	m_state = StopReq;
+	m_cond.broadcast();
+
+	{
+		AutoMutexUnlock u(l);
+		stopAcq();
+	}
+
+	while (wait && (m_state != Stopped) && (m_state != Idle))
 		m_cond.wait();
 }
 
-void Camera::AcqThread::stop(bool wait)
+inline
+Camera::AcqThread::Status Camera::AcqThread::newFrameReady(FrameType frame)
 {
 	DEB_MEMBER_FUNCT();
-	m_state = StopReq;
-	m_cond.broadcast();
-	while (wait && (m_state != Stopped) && (m_state != Idle))
-		m_cond.wait();
+	HwFrameInfoType frame_info;
+	frame_info.acq_frame_nb = frame;
+	StdBufferCbMgr *cb_mgr = m_cam->m_buffer.getBufferCbMgr();
+	bool cont_acq = cb_mgr->newFrameReady(frame_info);
+	bool acq_end = (frame == m_cam->m_lima_nb_frames - 1);
+	cont_acq &= !acq_end;
+	return Status(cont_acq, acq_end);
 }
 
 void Camera::AcqThread::threadFunction()
 {
 	DEB_MEMBER_FUNCT();
 
-	ExceptionCleanUp cleanup(*this);
-
 	AutoMutex l = m_cam->lock();
 
-	GlobalCPUAffinityMgr& affinity_mgr = m_cam->m_global_cpu_affinity_mgr;
+	// cleanup is executed with lock, once state goes to Stopped
+	// thread will be deleted in getEffectiveState without releasing lock
+	ExceptionCleanUp cleanup(*this, l);
+
+	class Acq
 	{
-		AutoMutexUnlock u(l);
-		affinity_mgr.startAcq();
-		startAcq();
-	}
-	m_state = Running;
-	DEB_TRACE() << DEB_VAR1(m_state);
-	m_cond.broadcast();
+		DEB_CLASS_NAMESPC(DebModCamera, "Camera::AcqThread::Acq", 
+				  "SlsDetector");
+	public:
+		Acq(AcqThread& thread, AutoMutex& l)
+			: m_thread(thread), m_state(m_thread.m_state),
+			  m_cond(m_thread.m_cond), m_lock(l)
+		{
+			DEB_CONSTRUCTOR();
+			CheckLockedAutoMutex(m_cond, m_lock, DEB_PTR());
+			{
+				AutoMutexUnlock u(m_lock);
+				m_thread.startAcq();
+			}
+			m_state = Running;
+			DEB_TRACE() << DEB_VAR1(m_state);
+			m_cond.broadcast();
+		}
+
+		~Acq()
+		{
+			DEB_DESTRUCTOR();
+			DEB_TRACE() << DEB_VAR1(m_state);
+			m_state = Stopping;
+
+			typedef StateCleanUpHelper<AcqState> StateCleanUp;
+			StateCleanUp state_cleanup(m_state, Stopped, m_cond,
+						   m_lock, DEB_PTR());
+
+			AutoMutexUnlock u(m_lock);
+			m_thread.stopAcq();
+
+			SlsDetector::Stats stats;
+			m_thread.m_cam->getStats(stats);
+			DEB_ALWAYS() << DEB_VAR1(stats);
+		}
+
+		bool stopReq() { return (m_state == StopReq); }
+
+	private:
+		AcqThread& m_thread;
+		AcqState& m_state;
+		Cond& m_cond;
+		AutoMutex& m_lock;
+	};
+
+	class AffinityMgrProxy
+	{
+	public:
+		AffinityMgrProxy(GlobalCPUAffinityMgr& mgr, AutoMutex& l)
+			: m_mgr(mgr), m_lock(l), m_recv_finished(false)
+		{
+			AutoMutexUnlock u(m_lock);
+			m_mgr.startAcq();
+		}
+
+		~AffinityMgrProxy()
+		{
+			AutoMutexUnlock u(m_lock);
+			if (m_recv_finished)
+				m_mgr.waitLimaFinished();
+			else
+				m_mgr.cleanUp();
+		}
+
+		bool needCheckRecv()
+		{
+			return !m_recv_finished;
+		}
+
+		void recvFinished()
+		{
+			AutoMutexUnlock u(m_lock);
+			m_mgr.recvFinished();
+			m_recv_finished = true;
+		}
+
+	private:
+		GlobalCPUAffinityMgr& m_mgr;
+		AutoMutex& m_lock;
+		bool m_recv_finished;
+	};
+
+	Acq acq(*this, l);
+
+	AffinityMgrProxy affinity_mgr(m_cam->m_global_cpu_affinity_mgr, l);
+
+	Reconstruction *reconstruct = m_cam->m_model->getReconstruction();
 
 	SeqFilter seq_filter;
-	bool had_frames = false;
 	bool cont_acq = true;
 	bool acq_end = false;
-	do {
-		while ((m_state != StopReq) && m_frame_queue.empty()) {
-			if (!m_cond.wait(m_cam->m_new_frame_timeout)) {
-				AutoMutexUnlock u(l);
-				try {
-					m_cam->checkLostPackets();
-				} catch (Exception& e) {
-					string name = ("Camera::AcqThread: "
-						       "checkLostPackets");
-					m_cam->reportException(e, name);
-				}
-			}
+	FrameType next_frame = 0;
+	FrameType acq_nb_frames = m_cam->m_lima_nb_frames;
+
+	const double check_recv_finished_time = 1.0;
+	Timestamp last_check_ts = Timestamp::now();
+
+	auto get_next_frame = [&]() {
+		DetFrameImagePackets packets = readRecvPackets(next_frame++);
+		FrameType frame = packets.first;
+		if (!reconstruct->addFramePackets(std::move(packets)))
+			frame = -1;
+		return frame;
+	};
+
+	auto need_check_recv = [&] { return affinity_mgr.needCheckRecv(); };
+	auto check_recv_finished = [&] {
+		int last_frame;
+		{
+			AutoMutexUnlock u(l);
+			last_frame = m_cam->getLastFrameCaught();
 		}
-		if (!m_frame_queue.empty()) {
-			FrameType frame = m_frame_queue.front();
-			m_frame_queue.pop();
-			DEB_TRACE() << DEB_VAR1(frame);
-			seq_filter.addVal(frame);
-			SeqFilter::Range frames = seq_filter.getSeqRange();
-			if (frames.nb > 0) {
-				AutoMutexUnlock u(l);
-				int f = frames.first;
-				do {
-					DEB_TRACE() << DEB_VAR1(f);
-					Status status = newFrameReady(f);
-					cont_acq = status.first;
-					acq_end = status.second;
-					had_frames = true;
-				} while ((++f != frames.end()) && cont_acq);
-			}
+		if (last_frame == acq_nb_frames - 1)
+			affinity_mgr.recvFinished();
+	};
+
+	while (!acq.stopReq() && cont_acq && (next_frame < acq_nb_frames)) {
+		Timestamp t0 = Timestamp::now();
+		FrameType frame;
+		{
+			AutoMutexUnlock u(l);
+			frame = get_next_frame();
+			DEB_TRACE() << DEB_VAR2(next_frame, frame);
 		}
-	} while ((m_state != StopReq) && cont_acq);
-	State prev_state = m_state;
+		Timestamp t1 = Timestamp::now();
+		m_stats.read_packets.add(t1 - t0);
+		if ((frame == -1) || acq.stopReq())
+			break;
+		while (!acq.stopReq()) {
+			AutoMutexUnlock u(l);
+			if (m_cam->m_buffer.waitFrame(frame))
+				break;
+		}
+		Timestamp t2 = Timestamp::now();
+		m_stats.wait_frame.add(t2 - t1);
+		if (acq.stopReq())
+			break;
+		{
+			AutoMutexUnlock u(l);
+			Status status = newFrameReady(frame);
+			cont_acq = status.first;
+			acq_end = status.second;
+		}
+		Timestamp t3 = Timestamp::now();
+		m_stats.new_frame.add(t3 - t2);
+		if (need_check_recv() &&
+		    (t3 - last_check_ts > check_recv_finished_time)) {
+			check_recv_finished();
+			last_check_ts = Timestamp::now();
+			m_stats.check_recv.add(Timestamp::now() - t3);
+		}
+	}
+
+	check_recv_finished();
 
 	if (acq_end && m_cam->m_skip_frame_freq) {
 		AutoMutexUnlock u(l);
 		m_cam->waitLastSkippedFrame();
 	}
-		
-	m_state = Stopping;
-	DEB_TRACE() << DEB_VAR2(prev_state, m_state);
-	{
-		AutoMutexUnlock u(l);
-		stopAcq();
 
-		IntList bfl;
-		m_cam->getSortedBadFrameList(bfl);
-		DEB_ALWAYS() << "bad_frames=" << bfl.size() << ": "
-			     << PrettyIntList(bfl);
+	cleanup.threadFinished();
 
-		Stats stats;
-		m_cam->getStats(stats);
-		DEB_ALWAYS() << DEB_VAR1(stats);
-
-		FrameMap& m = m_cam->m_frame_map;
-		XYStat::LinRegress delay_stat = m.calcDelayStat();
-		DEB_ALWAYS() << DEB_VAR1(delay_stat);
-
-		if (had_frames) {
-			affinity_mgr.recvFinished();
-			affinity_mgr.waitLimaFinished();
-		} else {
-			affinity_mgr.cleanUp();
-		}
-	}
-
-	m_state = Stopped;
-	DEB_TRACE() << DEB_VAR1(m_state);
-	m_cond.broadcast();
+	DEB_ALWAYS() << DEB_VAR1(m_stats.read_packets);
+	DEB_ALWAYS() << DEB_VAR1(m_stats.wait_frame);
+	DEB_ALWAYS() << DEB_VAR1(m_stats.new_frame);
+	DEB_ALWAYS() << DEB_VAR1(m_stats.check_recv);
 }
 
-void Camera::AcqThread::queueFinishedFrame(FrameType frame)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(frame);
-	AutoMutex l = m_cam->lock();
-	m_frame_queue.push(frame);
-	m_cond.broadcast();
-}
-
-void Camera::AcqThread::cleanUp()
+DetFrameImagePackets Camera::AcqThread::readRecvPackets(FrameType frame)
 {
 	DEB_MEMBER_FUNCT();
 
-	AutoMutex l = m_cam->lock();
+	DetFrameImagePackets det_frame_packets{frame, {}};
+	DetImagePackets& det_packets = det_frame_packets.second;
 
-	if ((m_state == Stopped) || (m_state == Idle))
-		return;
+	auto stopped = [&]() { return (m_cam->getAcqState() == StopReq); };
 
-	State prev_state = m_state;
-	if ((m_state == Running) || (m_state == StopReq)) {
-		m_state = Stopping;
-		AutoMutexUnlock u(l);
-		stopAcq();
+	int nb_recvs = m_cam->getNbRecvs();
+	for (int i = 0; i < nb_recvs; ++i) {
+		if (stopped())
+			return {};
+		AutoPtr<Receiver::ImagePackets> image_packets;
+		Receiver *recv = m_cam->m_recv_list[i];
+		image_packets = recv->readImagePackets();
+		if (stopped())
+			return {};
+		else if (!image_packets)
+			THROW_HW_ERROR(Error) << "Recv. " << i << ": "
+					      << "missing frame " << frame;
+		FrameType f = image_packets->frame;
+		if (f != frame)
+			THROW_HW_ERROR(Error) << "Recv. " << i << ": "
+					      << "unexpected frame " << f
+					      << " instead of " << frame;
+		typedef DetImagePackets::value_type MapEntry;
+		det_packets.emplace(MapEntry(i, image_packets));
 	}
 
-	{
-		AutoMutexUnlock u(l);
-		ostringstream err_msg;
-		err_msg << "AcqThread: exception thrown: "
-			<< "m_state=" << prev_state;
-		Event::Code err_code = Event::CamFault;
-		Event *event = new Event(Hardware, Event::Error, Event::Camera, 
-					 err_code, err_msg.str());
-		DEB_EVENT(*event) << DEB_VAR1(*event);
-		m_cam->reportEvent(event);
+	return det_frame_packets;
+}
+
+void Camera::AcqThread::onError(AutoMutex& l)
+{
+	DEB_MEMBER_FUNCT();
+
+	CheckLockedAutoMutex(m_cond, l, DEB_PTR());
+
+	if ((m_state != Stopped) && (m_state != Idle)) {
+		DEB_ERROR() << DEB_VAR1(m_state);
+		m_state = Stopped;
 	}
 
-	m_state = Stopped;
-	m_cond.broadcast();
+	AutoMutexUnlock u(l);
+	ostringstream err_msg;
+	err_msg << "AcqThread: exception thrown!";
+	Event::Code err_code = Event::CamFault;
+	Event *event = new Event(Hardware, Event::Error, Event::Camera, 
+				 err_code, err_msg.str());
+	DEB_EVENT(*event) << DEB_VAR1(*event);
+	m_cam->reportEvent(event);
 }
 
 void Camera::AcqThread::startAcq()
 {
 	DEB_MEMBER_FUNCT();
-	slsDetectorUsers *det = m_cam->m_det;
+	sls::Detector *det = m_cam->m_det;
 	DEB_TRACE() << "calling startReceiver";
 	det->startReceiver();
 	DEB_TRACE() << "calling Model::startAcq";
 	m_cam->m_model->startAcq();
-	DEB_TRACE() << "calling startAcquisition";
-	det->startAcquisition();
+	DEB_TRACE() << "calling startDetector";
+	det->startDetector();
 }
 
 void Camera::AcqThread::stopAcq()
 {
 	DEB_MEMBER_FUNCT();
-	slsDetectorUsers *det = m_cam->m_det;
+
+	class Sync
+	{
+	public:
+		Sync(StopState& stop_state, Cond& cond, DebObj *deb_ptr)
+			: m_stop_state(stop_state), m_lock(cond.mutex()),
+			  m_was_not_stopped(m_stop_state == NoStop),
+			  m_cleanup(m_stop_state, StopFinished, cond, m_lock,
+				    deb_ptr)
+		{
+			if (m_was_not_stopped) {
+				m_stop_state = StopRunning;
+			} else {
+				while (m_stop_state != StopFinished)
+					cond.wait();
+			}
+			m_unlock = new AutoMutexUnlock(m_lock);
+		}
+
+		bool stopDone() { return !m_was_not_stopped; }
+
+	private:
+		typedef StateCleanUpHelper<StopState> StateCleanUp;
+
+		StopState& m_stop_state;
+		AutoMutex m_lock;
+		bool m_was_not_stopped;
+		StateCleanUp m_cleanup;
+		AutoPtr<AutoMutexUnlock> m_unlock;
+	};
+
+	Sync sync(m_stop_state, m_cond, DEB_PTR());
+	if (sync.stopDone())
+		return;
+
+	sls::Detector *det = m_cam->m_det;
 	DetStatus det_status = m_cam->getDetStatus();
 	bool xfer_active = m_cam->m_model->isXferActive();
 	DEB_ALWAYS() << DEB_VAR2(det_status, xfer_active);
-	if ((det_status == Defs::Running) || xfer_active) {
-		DEB_TRACE() << "calling stopAcquisition";
-		det->stopAcquisition();
+	if ((det_status == Defs::Running) || (det_status == Defs::Waiting) ||
+	    xfer_active) {
+		DEB_TRACE() << "calling stopDetector";
+		det->stopDetector();
 		Timestamp t0 = Timestamp::now();
-		while (m_cam->getDetStatus() != Defs::Idle)
+		while (m_cam->m_model->isAcqActive())
 			Sleep(m_cam->m_abort_sleep_time);
 		double milli_sec = (Timestamp::now() - t0) * 1e3;
 		DEB_TRACE() << "Abort -> Idle: " << DEB_VAR1(milli_sec);
@@ -302,77 +500,57 @@ void Camera::AcqThread::stopAcq()
 	m_cam->m_model->stopAcq();
 }
 
-Camera::AcqThread::Status Camera::AcqThread::newFrameReady(FrameType frame)
-{
-	DEB_MEMBER_FUNCT();
-	HwFrameInfoType frame_info;
-	frame_info.acq_frame_nb = frame;
-	StdBufferCbMgr *cb_mgr = m_cam->getBufferCbMgr();
-	bool cont_acq = cb_mgr->newFrameReady(frame_info);
-	bool acq_end = (frame == m_cam->m_lima_nb_frames - 1);
-	cont_acq &= !acq_end;
-	return Status(cont_acq, acq_end);
-}
-
 Camera::Camera(string config_fname, int det_id) 
 	: m_det_id(det_id),
 	  m_model(NULL),
-	  m_frame_map(this),
 	  m_lima_nb_frames(1),
 	  m_det_nb_frames(1),
 	  m_skip_frame_freq(0),
 	  m_last_skipped_frame_timeout(0.5),
 	  m_lat_time(0),
+	  m_buffer(this),
 	  m_pixel_depth(PixelDepth16), 
-	  m_image_type(Bpp16), 
 	  m_raw_mode(false),
 	  m_state(Idle),
 	  m_new_frame_timeout(0.5),
 	  m_abort_sleep_time(0.1),
-	  m_tol_lost_packets(true),
+	  m_tol_lost_packets(false),
 	  m_time_ranges_cb(NULL),
 	  m_global_cpu_affinity_mgr(this)
 {
 	DEB_CONSTRUCTOR();
+	DEB_PARAM() << DEB_VAR1(m_det_id);
 
 	CPUAffinity::getNbSystemCPUs();
 
 	m_input_data = new AppInputData(config_fname);
 
-	bool remove_shmem = false;
-	if (remove_shmem)
-		removeSharedMem();
 	createReceivers();
 
-	DEB_TRACE() << "Creating the slsDetectorUsers object";
-	int ret;
-	m_det = new slsDetectorUsers(ret, m_det_id);
+	DEB_TRACE() << "Creating the sls::Detector object";
+	m_det = new sls::Detector(m_det_id);
+	try {
+		// This should fail if the detector is not idle
+		m_det->setHostname(m_input_data->host_name_list);
+	} catch (...) {
+		checkDetIdleStatus();
+	}
+
 	DEB_TRACE() << "Reading configuration file";
 	const char *fname = m_input_data->config_file_name.c_str();
-	m_det->readConfigurationFile(fname);
+	EXC_CHECK(m_det->loadConfig(fname));
 
-	m_det->setReceiverSilentMode(1);
-	m_det->setReceiverFramesDiscardPolicy("discardpartial");
-	setReceiverFifoDepth(1);
+	EXC_CHECK(m_det->setRxSilentMode(1));
 
-	m_pixel_depth = PixelDepth(m_det->setBitDepth(-1));
+	sls::Result<int> dr_res;
+	EXC_CHECK(dr_res = m_det->getDynamicRange());
+	m_pixel_depth = PixelDepth(dr_res.squash(-1));
 
-	setSettings(Defs::Standard);
 	setTrigMode(Defs::Auto);
 	setNbFrames(1);
 	setExpTime(0.99);
 	setFramePeriod(1.0);
-
-	if (isTenGigabitEthernetEnabled()) {
-		DEB_TRACE() << "Forcing 10G Ethernet flow control";
-		setFlowControl10G(true);
-	}
-
-	for (int i = 0; i < getNbDetModules(); ++i) {
-		const string& host_name = m_input_data->host_name_list[i];
-		Beb *beb = new Beb(host_name);
-		m_beb_list.push_back(beb);
-	}
+	setTolerateLostPackets(true);
 }
 
 Camera::~Camera()
@@ -392,22 +570,22 @@ Camera::~Camera()
 Type Camera::getType()
 {
 	DEB_MEMBER_FUNCT();
-	string type_resp = m_det->getDetectorType();
-	ostringstream os;
-	os << "(([^+]+)\\+){" << getNbDetModules() << "}";
-	DEB_TRACE() << DEB_VAR1(os.str());
-	RegEx re(os.str());
-	FullMatch full_match;
-	if (!re.match(type_resp, full_match))
-		THROW_HW_ERROR(Error) << "Invalid type response: " << type_resp;
-	string type_str = full_match[2];
-	Type det_type = UnknownDet;
-	if (type_str == "Generic") {
+	slsDetectorDefs::detectorType sls_type;
+	const char *err_msg = "Detector types are different";
+	EXC_CHECK(sls_type = m_det->getDetectorType().tsquash(err_msg));
+	Type det_type;
+	switch (sls_type) {
+	case slsDetectorDefs::GENERIC:
 		det_type = GenericDet;
-	} else if (type_str == "Eiger") {
+		break;
+	case slsDetectorDefs::EIGER:
 		det_type = EigerDet;
-	} else if (type_str == "Jungfrau") {
+		break;
+	case slsDetectorDefs::JUNGFRAU:
 		det_type = JungfrauDet;
+		break;
+	default:
+		det_type = UnknownDet;
 	}
 	DEB_RETURN() << DEB_VAR1(det_type);
 	return det_type;
@@ -429,34 +607,40 @@ void Camera::setModel(Model *model)
 	if (!m_model)
 		return;
 
-	int nb_items = m_model->getNbFrameMapItems();
-	m_frame_map.setNbItems(nb_items);
-	m_model->updateFrameMapItems(&m_frame_map);
+	int nb_udp_ifaces;
+	m_model->getNbUDPInterfaces(nb_udp_ifaces);
+	DEB_ALWAYS() << "Using " << m_model->getName()
+		     << " with " << getNbDetModules() << "x" << nb_udp_ifaces
+		     << " UDP interfaces (det_id=" << m_det_id << ")";
 
 	setPixelDepth(m_pixel_depth);
-	setSettings(m_settings);
 }
 
-char *Camera::getFrameBufferPtr(FrameType frame_nb)
+void Camera::checkDetIdleStatus()
 {
 	DEB_MEMBER_FUNCT();
 
-	StdBufferCbMgr *cb_mgr = getBufferCbMgr();
-	if (!cb_mgr)
-		THROW_HW_ERROR(InvalidValue) << "No BufferCbMgr defined";
-	void *ptr = cb_mgr->getFrameBufferPtr(frame_nb);
-	return static_cast<char *>(ptr);
-}
+	const NameList& config_host_list = m_input_data->host_name_list;
+	NameList shm_host_list;
+	if (m_det->size() > 0)
+		shm_host_list = m_det->getHostname();
+	DEB_TRACE() << DEB_VAR1(config_host_list);
+	DEB_TRACE() << DEB_VAR1(shm_host_list);
+	if (shm_host_list != config_host_list) {
+		DEB_WARNING() << "Cannot check detector status!";
+		return;
+	}
 
-void Camera::removeSharedMem()
-{
-	DEB_MEMBER_FUNCT();
-	ostringstream cmd;
-	cmd << "sls_detector_get " << m_det_id << "-free";
-	string cmd_str = cmd.str();
-	int ret = system(cmd_str.c_str());
-	if (ret != 0)
-		THROW_HW_ERROR(Error) << "Error executing " << DEB_VAR1(cmd_str);
+	DEB_TRACE() << "Checking that the detector is Idle";
+	typedef slsDetectorDefs::runStatus RunStatus;
+	sls::Result<RunStatus> det_status = m_det->getDetectorStatus();
+	RunStatus mod0_status = det_status[0];
+	bool stopped = ((mod0_status == Defs::Idle) ||
+			(mod0_status == Defs::Stopped));
+	if (!det_status.equal() || !stopped) {
+		DEB_ALWAYS() << "Detector not (completely) idle: stopping";
+		m_det->stopDetector();
+	}
 }
 
 void Camera::createReceivers()
@@ -481,21 +665,56 @@ void Camera::createReceivers()
 	}
 }
 
+string Camera::execCmd(const string& s, bool put, int idx)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << "s=\"" << s << "\", " << DEB_VAR2(put, idx);
+
+	string prog_name = string("sls_detector_") + (put ? "put" : "get");
+	ostringstream os;
+	os << prog_name << " " << m_det_id << '-';
+	if (idx >= 0)
+		os << idx << ':';
+	os << s;
+	SystemCmdPipe cmd(os.str(), prog_name, false);
+	cmd.setPipe(SystemCmdPipe::StdOut, SystemCmdPipe::DoPipe);
+	cmd.setPipe(SystemCmdPipe::StdErr, SystemCmdPipe::DoPipe);
+	StringList out, err;
+	int ret = cmd.execute(out, err);
+	DEB_TRACE() << DEB_VAR3(ret, out, err);
+	string err_str = accumulate(err.begin(), err.end(), string());
+	if ((ret != 0) || (err_str.find("ERROR") != string::npos))
+		THROW_HW_ERROR(Error) << prog_name << "(" << ret << "): "
+				      << err_str;
+	else if (!err_str.empty())
+		cerr << err_str;
+	string out_str = accumulate(out.begin(), out.end(), string());
+	DEB_RETURN() << DEB_VAR1(out_str);
+	return out_str;
+}
+
 void Camera::putCmd(const string& s, int idx)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << "s=\"" << s << "\"";
-	Args args(s);
-	m_det->putCommand(args.size(), args, idx);
+	execCmd(s, true, idx);
 }
 
 string Camera::getCmd(const string& s, int idx)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << "s=\"" << s << "\"";
-	Args args(s);
-	string r = m_det->getCommand(args.size(), args, idx);
-	DEB_RETURN() << "r=\"" << r << "\"";
+	string r = execCmd(s, false, idx);
+	string::size_type p = s.find(':');
+	string raw_s = s.substr((p == string::npos) ? 0 : (p + 1));
+	DEB_TRACE() << DEB_VAR2(s, raw_s);
+	bool multi_line = ((s == "list") || (s == "versions"));
+	if (!multi_line) {
+		if (r.find(raw_s + ' ') != 0)
+			THROW_HW_ERROR(Error) << "Invalid response: " << r;
+		string::size_type e = raw_s.size() + 1;
+		p = r.find('\n', e);
+		r = r.substr(e, (p == string::npos) ? p : (p - e));
+	}
+	DEB_RETURN() << DEB_VAR1(r);
 	return r;
 }
 
@@ -503,13 +722,14 @@ void Camera::setTrigMode(TrigMode trig_mode)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(trig_mode);
-	waitState(Idle);
+	waitAcqState(Idle);
 	TrigMode cam_trig_mode = trig_mode;
-	if (trig_mode == Defs::SoftTriggerExposure)
+	if ((trig_mode == Defs::SoftTriggerExposure) ||
+	    ((trig_mode == Defs::BurstTrigger) && (getType() != EigerDet)))
 		cam_trig_mode = Defs::TriggerExposure;
-	typedef slsDetectorDefs::externalCommunicationMode ExtComMode;
-	ExtComMode mode = static_cast<ExtComMode>(cam_trig_mode);
-	m_det->setTimingMode(mode);
+	typedef slsDetectorDefs::timingMode TimingMode;
+	TimingMode mode = static_cast<TimingMode>(cam_trig_mode);
+	EXC_CHECK(m_det->setTimingMode(mode));
 	m_trig_mode = trig_mode;
 	setNbFrames(m_lima_nb_frames);
 }
@@ -532,15 +752,16 @@ void Camera::setNbFrames(FrameType nb_frames)
 		THROW_HW_ERROR(InvalidValue) << "too high " 
 					     <<	DEB_VAR2(nb_frames, MaxFrames);
 
-	waitState(Idle);
+	waitAcqState(Idle);
 	FrameType det_nb_frames = nb_frames;
 	if (m_skip_frame_freq)
 		det_nb_frames += nb_frames / m_skip_frame_freq;
-	bool trig_exp = (m_trig_mode == Defs::TriggerExposure);
+	bool trig_exp = ((m_trig_mode == Defs::TriggerExposure) ||
+			 (m_trig_mode == Defs::SoftTriggerExposure));
 	int cam_frames = trig_exp ? 1 : det_nb_frames;
 	int cam_triggers = trig_exp ? det_nb_frames : 1;
-	m_det->setNumberOfFrames(cam_frames);
-	m_det->setNumberOfCycles(cam_triggers);
+	EXC_CHECK(m_det->setNumberOfFrames(cam_frames));
+	EXC_CHECK(m_det->setNumberOfTriggers(cam_triggers));
 	m_lima_nb_frames = nb_frames;
 	m_det_nb_frames = det_nb_frames;
 }
@@ -556,8 +777,6 @@ void Camera::setSkipFrameFreq(FrameType skip_frame_freq)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(skip_frame_freq);
-	if (skip_frame_freq)
-		THROW_HW_ERROR(NotSupported) << "Skip frame not supported yet";
 	m_skip_frame_freq = skip_frame_freq;
 	setNbFrames(m_lima_nb_frames);
 }
@@ -573,8 +792,8 @@ void Camera::setExpTime(double exp_time)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(exp_time);
-	waitState(Idle);
-	m_det->setExposureTime(NSec(exp_time));
+	waitAcqState(Idle);
+	EXC_CHECK(m_det->setExptime(NSec(exp_time)));
 	m_exp_time = exp_time;
 }
 
@@ -616,8 +835,8 @@ void Camera::setFramePeriod(double frame_period)
 					    time_ranges.max_frame_period);
 	}
 
-	waitState(Idle);
-	m_det->setExposurePeriod(NSec(frame_period));
+	waitAcqState(Idle);
+	EXC_CHECK(m_det->setPeriod(NSec(frame_period)));
 	m_frame_period = frame_period;
 }
 
@@ -631,7 +850,9 @@ void Camera::getFramePeriod(double& frame_period)
 void Camera::updateImageSize()
 {
 	DEB_MEMBER_FUNCT();
-	m_det->enableGapPixels(!m_raw_mode);
+	RecvList::iterator it, end = m_recv_list.end();
+	for (it = m_recv_list.begin(); it != end; ++it)
+		(*it)->setGapPixelsEnable(!m_raw_mode);
 	m_model->updateImageSize();
 	FrameDim frame_dim;
 	getFrameDim(frame_dim, m_raw_mode);
@@ -673,31 +894,37 @@ void Camera::updateCPUAffinity(bool recv_restarted)
 void Camera::setRecvCPUAffinity(const RecvCPUAffinityList& recv_affinity_list)
 {
 	DEB_MEMBER_FUNCT();
-	unsigned int nb_recv = m_model->getNbRecvs();
 	unsigned int nb_aff = recv_affinity_list.size();
-	DEB_PARAM() << DEB_VAR2(nb_recv, nb_aff);
-	if (nb_aff != nb_recv)
-		THROW_HW_ERROR(InvalidValue) << "invalid affinity list size: "
-					     <<  DEB_VAR2(nb_recv, nb_aff);
-
+	DEB_PARAM() << DEB_VAR1(nb_aff);
 	RecvCPUAffinityList::const_iterator ait = recv_affinity_list.begin();
 	RecvList::iterator rit = m_recv_list.begin();
-	for (unsigned int i = 0; i < nb_recv; ++i, ++ait, ++rit) {
-		Model::Recv *recv = m_model->getRecv(i);
-		const RecvCPUAffinity& aff = *ait;
-		recv->setNbProcessingThreads(aff.recv_threads.size());
-		recv->setCPUAffinity(aff);
-		(*rit)->setCPUAffinity(aff);
-	}
+	for (unsigned int i = 0; i < nb_aff; ++i, ++ait, ++rit)
+		(*rit)->setCPUAffinity(*ait);
 }
 
-void Camera::clearAllBuffers()
+void Camera::setModuleActive(int mod_idx, bool  active)
 {
-	getBufferCbMgr()->clearAllBuffers();
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR2(mod_idx, active);
 
-	RecvList::iterator it, end = m_recv_list.end();
-	for (it = m_recv_list.begin(); it != end; ++it)
-		(*it)->clearAllBuffers();
+	if ((mod_idx < 0) || (mod_idx >= getNbDetModules()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(mod_idx);
+
+	Positions pos = Idx2Pos(mod_idx);
+	EXC_CHECK(m_det->setActive(active, pos));
+}
+
+void Camera::getModuleActive(int mod_idx, bool& active)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(mod_idx);
+
+	if ((mod_idx < 0) || (mod_idx >= getNbDetModules()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(mod_idx);
+
+	Positions pos = Idx2Pos(mod_idx);
+	EXC_CHECK(active = m_det->getActive(pos).front());
+	DEB_RETURN() << DEB_VAR1(active);
 }
 
 void Camera::setPixelDepth(PixelDepth pixel_depth)
@@ -705,22 +932,12 @@ void Camera::setPixelDepth(PixelDepth pixel_depth)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(pixel_depth);
 
-	if (getState() != Idle)
+	if (getAcqState() != Idle)
 		THROW_HW_FATAL(Error) << "Camera is not idle";
 
-	waitState(Idle);
-	switch (pixel_depth) {
-	case PixelDepth4:
-	case PixelDepth8:
-		m_image_type = Bpp8;	break;
-	case PixelDepth16:
-		m_image_type = Bpp16;	break;
-	case PixelDepth32:
-		m_image_type = Bpp32;	break;
-	default:
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(pixel_depth);
-	}
-	m_det->setBitDepth(pixel_depth);
+	waitAcqState(Idle);
+
+	EXC_CHECK(m_det->setDynamicRange(pixel_depth));
 	m_pixel_depth = pixel_depth;
 
 	if (m_model) {
@@ -756,17 +973,21 @@ void Camera::getRawMode(bool& raw_mode)
 	DEB_RETURN() << DEB_VAR1(raw_mode);
 }
 
-State Camera::getState()
+AcqState Camera::getAcqState()
 {
 	DEB_MEMBER_FUNCT();
 	AutoMutex l = lock();
-	State state = getEffectiveState();
+	AcqState state = getEffectiveState(l);
 	DEB_RETURN() << DEB_VAR1(state);
 	return state;
 }
 
-State Camera::getEffectiveState()
+AcqState Camera::getEffectiveState(AutoMutex& l)
 {
+	DEB_MEMBER_FUNCT();
+
+	CheckLockedAutoMutex(m_cond, l, DEB_PTR());
+
 	if (m_state == Stopped) {
 		m_acq_thread = NULL;
 		m_state = Idle;
@@ -774,23 +995,23 @@ State Camera::getEffectiveState()
 	return m_state;
 }
 
-void Camera::waitState(State state)
+void Camera::waitAcqState(AcqState state)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(state);
 	AutoMutex l = lock();
-	while (getEffectiveState() != state)
+	while (getEffectiveState(l) != state)
 		m_cond.wait();
 }
 
-State Camera::waitNotState(State state)
+AcqState Camera::waitNotAcqState(AcqState state)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(state);
 	AutoMutex l = lock();
-	while (getEffectiveState() == state)
+	while (getEffectiveState(l) == state)
 		m_cond.wait();
-	state = getEffectiveState();
+	state = getEffectiveState(l);
 	DEB_RETURN() << DEB_VAR1(state);
 	return state;
 }
@@ -799,14 +1020,16 @@ void Camera::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
 
-	StdBufferCbMgr *cb_mgr = getBufferCbMgr();
+	StdBufferCbMgr *cb_mgr = m_buffer.getBufferCbMgr();
 	if (!cb_mgr)
-		THROW_HW_ERROR(Error) << "No BufferCbMgr defined";
+		THROW_HW_ERROR(Error) << "No Acq BufferCbMgr defined";
 	if (!m_model)
-		THROW_HW_ERROR(Error) << "No BufferCbMgr defined";
+		THROW_HW_ERROR(Error) << "No Model defined";
 
-	waitNotState(Stopping);
-	if (getState() != Idle)
+	m_buffer.prepareAcq();
+
+	waitNotAcqState(Stopping);
+	if (getAcqState() != Idle)
 		THROW_HW_ERROR(Error) << "Camera is not idle";
 
 	bool need_period = !m_lima_nb_frames || (m_lima_nb_frames > 1);
@@ -820,8 +1043,6 @@ void Camera::prepareAcq()
 
 	{
 		AutoMutex l = lock();
-		m_frame_map.setBufferSize(nb_buffers);
-		m_frame_map.clear();
 		m_prev_ifa.clear();
 		RecvList::iterator it, end = m_recv_list.end();
 		for (it = m_recv_list.begin(); it != end; ++it)
@@ -831,13 +1052,21 @@ void Camera::prepareAcq()
 		if (m_skip_frame_freq)
 			for (int i = 0; i < getNbRecvs(); ++i)
 				m_missing_last_skipped_frame.insert(i);
+
+		m_next_ready_ts = Timestamp();
 	}
+
+	RecvList::iterator rit, rend = m_recv_list.end();
+	for (rit = m_recv_list.begin(); rit != rend; ++rit)
+		(*rit)->prepareAcq();
 
 	m_model->prepareAcq();
 	m_global_cpu_affinity_mgr.prepareAcq();
+	m_model->getReconstruction()->prepare();
 
 	resetFramesCaught();
-	m_det->enableWriteToFile(0);
+	EXC_CHECK(m_det->setFileWrite(0));
+	EXC_CHECK(m_det->setNextFrameNumber(1));
 }
 
 void Camera::startAcq()
@@ -848,25 +1077,28 @@ void Camera::startAcq()
 	if (m_acq_thread)
 		THROW_HW_ERROR(Error) << "Must call prepareAcq first";
 
-	StdBufferCbMgr *cb_mgr = getBufferCbMgr();
+	StdBufferCbMgr *cb_mgr = m_buffer.getBufferCbMgr();
 	cb_mgr->setStartTimestamp(Timestamp::now());
 
 	m_acq_thread = new AcqThread(this);
-	m_acq_thread->start();
+	m_acq_thread->start(l);
 }
 
 void Camera::stopAcq()
 {
 	DEB_MEMBER_FUNCT();
 
+	Reconstruction *r = m_model ? m_model->getReconstruction() : NULL;
+	if (r)
+		r->stop();
 	m_global_cpu_affinity_mgr.stopAcq();
 
 	AutoMutex l = lock();
-	if (getEffectiveState() != Running)
+	if (getEffectiveState(l) != Running)
 		return;
 
-	m_acq_thread->stop(true);
-	if (getEffectiveState() != Idle)
+	m_acq_thread->stop(l, true);
+	if (getEffectiveState(l) != Idle)
 		THROW_HW_ERROR(Error) << "Camera not Idle";
 }
 
@@ -878,74 +1110,49 @@ void Camera::triggerFrame()
 		THROW_HW_ERROR(InvalidValue) << "Wrong trigger mode";
 
 	AutoMutex l = lock();
-	if (getEffectiveState() != Running)
+	if (getEffectiveState(l) != Running)
 		THROW_HW_ERROR(Error) << "Camera not Running";
 
-	m_det->sendSoftwareTrigger();
+	EXC_CHECK(m_det->sendSoftwareTrigger());
+	m_next_ready_ts = Timestamp::now();
+	m_next_ready_ts += m_exp_time;
 }
 
-bool Camera::checkLostPackets()
+Camera::DetStatus Camera::getDetTrigStatus()
 {
 	DEB_MEMBER_FUNCT();
 
-	FrameArray ifa = m_frame_map.getItemFrameArray();
-	if (ifa != m_prev_ifa) {
-		m_prev_ifa = ifa;
-		return false;
-	}
+	if (m_trig_mode != Defs::SoftTriggerExposure)
+		THROW_HW_ERROR(InvalidValue) << "Wrong trigger mode";
 
-	FrameType last_frame = getLatestFrame(ifa);
-	if (getOldestFrame(ifa) == last_frame) {
-		DEB_RETURN() << DEB_VAR1(false);
-		return false;
-	}
+	Timestamp t = Timestamp::now();
 
-	if (!m_tol_lost_packets) {
-		ostringstream err_msg;
-		err_msg << "checkLostPackets: frame_map=" << m_frame_map;
-		Event::Code err_code = Event::CamOverrun;
-		Event *event = new Event(Hardware, Event::Error, Event::Camera, 
-					 err_code, err_msg.str());
-		DEB_EVENT(*event) << DEB_VAR1(*event);
-		reportEvent(event);
-		DEB_RETURN() << DEB_VAR1(true);
-		return true;
-	}
-
-	int nb_items = m_model->getNbFrameMapItems();
-	IntList first_bad(nb_items);
-	if (DEB_CHECK_ANY(DebTypeWarning)) {
-		for (int i = 0; i < nb_items; ++i) {
-			FrameMap::Item *item = m_frame_map.getItem(i);
-			first_bad[i] = item->getNbBadFrames();
-		}
-	}
-	for (int i = 0; i < nb_items; ++i) {
-		if (ifa[i] != last_frame) {
-			char *bptr = getFrameBufferPtr(last_frame);
-			m_model->processBadItemFrame(last_frame, i, bptr);
-		}
-	}
-	if (DEB_CHECK_ANY(DebTypeWarning)) {
-		IntList last_bad(nb_items);
-		for (int i = 0; i < nb_items; ++i)
-			last_bad[i] = m_frame_map.getItem(i)->getNbBadFrames();
-		IntList bfl;
-		getSortedBadFrameList(first_bad, last_bad, bfl);
-		DEB_WARNING() << "bad_frames=" << bfl.size() << ": " 
-			      << PrettyIntList(bfl);
-	}
-
-	DEB_RETURN() << DEB_VAR1(false);
-	return false;
+	AutoMutex l = lock();
+	bool ready = !m_next_ready_ts.isSet() || (m_next_ready_ts < t);
+	DetStatus trig_status = ready ? Defs::Waiting : Defs::Running;
+	DEB_RETURN() << DEB_VAR1(trig_status);
+	return trig_status;
 }
 
-FrameType Camera::getLastReceivedFrame()
+void Camera::assemblePackets(DetFrameImagePackets det_frame_packets)
 {
 	DEB_MEMBER_FUNCT();
-	FrameType last_frame = m_frame_map.getLastItemFrame();
-	DEB_RETURN() << DEB_VAR1(last_frame);
-	return last_frame;
+
+	const FrameType& frame = det_frame_packets.first;
+	DetImagePackets& det_packets = det_frame_packets.second;
+
+	Data frame_data = m_buffer.getBufferCtrlObj()->getFrameData(frame);
+	Reconstruction *reconstruct = m_model->getReconstruction();
+	Data raw_data = reconstruct->getRawData(frame_data);
+	char *bptr = (char *) raw_data.data();
+
+	int nb_recvs = getNbRecvs();
+	for (int i = 0; i < nb_recvs; ++i) {
+		if (!det_packets[i])
+			THROW_HW_ERROR(Error) << DEB_VAR2(frame, i) << ": "
+					      << "Missing data packets";
+		det_packets[i]->assemble(bptr);
+	}
 }
 
 void Camera::waitLastSkippedFrame()
@@ -990,63 +1197,77 @@ void Camera::processLastSkippedFrame(int recv_idx)
 int Camera::getFramesCaught()
 {
 	DEB_MEMBER_FUNCT();
-	// recv->getTotalFramesCaught()
-	int frames_caught = getNbCmd<int>("framescaught");
+	sls::Result<int64_t> res;
+	EXC_CHECK(res = m_det->getFramesCaught());
+	int64_t frames_caught = 0;
+	sls::Result<int64_t>::iterator it, end = res.end();
+	for (it = res.begin(); it != end; ++it)
+		frames_caught = max(frames_caught, *it);
 	DEB_RETURN() << DEB_VAR1(frames_caught);
 	return frames_caught;
+}
+
+int Camera::getLastFrameCaught()
+{
+	DEB_MEMBER_FUNCT();
+	sls::Result<uint64_t> res;
+	EXC_CHECK(res = m_det->getRxCurrentFrameIndex());
+	uint64_t last_frame_caught = ULONG_MAX;
+	sls::Result<uint64_t>::iterator it, end = res.end();
+	for (it = res.begin(); it != end; ++it)
+		last_frame_caught = min(last_frame_caught, *it);
+	DEB_RETURN() << DEB_VAR1(last_frame_caught);
+	return last_frame_caught - 1;
 }
 
 Camera::DetStatus Camera::getDetStatus()
 {
 	DEB_MEMBER_FUNCT();
-	DetStatus status = DetStatus(m_det->getDetectorStatus());
-	DEB_RETURN() << DEB_VAR1(status);
-	return status;
+	typedef slsDetectorDefs::runStatus RunStatus;
+	sls::Result<RunStatus> det_status;
+	const int nb_retries = 5;
+	for (int i = 0; i < nb_retries; ++i) {
+		det_status = m_det->getDetectorStatus();
+		if (!det_status.equal()) {
+			Sleep(0.1);
+			DEB_ALWAYS() << "Status are different, retrying ...";
+			continue;
+		}
+		DetStatus status = DetStatus(det_status.squash());
+		DEB_RETURN() << DEB_VAR1(status);
+		return status;
+	}
+	static string err_msg = ("Detector status are different after " +
+				 to_string(nb_retries) + " retries");
+	EXC_CHECK(det_status.tsquash(err_msg));
 }
 
-void Camera::setDAC(int sub_mod_idx, DACIndex dac_idx, int val, bool milli_volt)
+void Camera::setDAC(int mod_idx, DACIndex dac_idx, int val, bool milli_volt)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR4(sub_mod_idx, dac_idx, val, milli_volt);
+	DEB_PARAM() << DEB_VAR4(mod_idx, dac_idx, val, milli_volt);
 
-	if (milli_volt)
-		THROW_HW_ERROR(InvalidValue) << "milli-volt not supported";
-	if ((sub_mod_idx < -1) || (sub_mod_idx >= getNbDetSubModules()))
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(sub_mod_idx);
+	if ((mod_idx < -1) || (mod_idx >= getNbDetModules()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(mod_idx);
 
-	Defs::DACCmdMapType::const_iterator it = Defs::DACCmdMap.find(dac_idx);
-	if (it == Defs::DACCmdMap.end())
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(dac_idx);
-	const string& dac_cmd = it->second;
-	dacs_t ret = m_det->setDAC(dac_cmd, val, sub_mod_idx);
-	if (ret == MultiSlsDetectorErr)
-		THROW_HW_ERROR(Error) << "Error setting DAC " << dac_idx 
-				      << " on (sub)module " << sub_mod_idx;
-	else if (ret == SlsDetectorBadIndexErr)
-		THROW_HW_ERROR(Error) << "Bad value: " << DEB_VAR1(dac_idx);
+	typedef slsDetectorDefs::dacIndex DAC;
+	DAC sls_idx = DAC(dac_idx);
+	Positions pos = Idx2Pos(mod_idx);
+	EXC_CHECK(m_det->setDAC(sls_idx, val, milli_volt, pos));
 }
 
-void Camera::getDAC(int sub_mod_idx, DACIndex dac_idx, int& val, bool milli_volt)
+void Camera::getDAC(int mod_idx, DACIndex dac_idx, int& val, bool milli_volt)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR3(sub_mod_idx, dac_idx, milli_volt);
+	DEB_PARAM() << DEB_VAR3(mod_idx, dac_idx, milli_volt);
 
-	if (milli_volt)
-		THROW_HW_ERROR(InvalidValue) << "milli-volt not supported";
-	if ((sub_mod_idx < 0) || (sub_mod_idx >= getNbDetSubModules()))
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(sub_mod_idx);
+	if ((mod_idx < 0) || (mod_idx >= getNbDetModules()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(mod_idx);
 
-	Defs::DACCmdMapType::const_iterator it = Defs::DACCmdMap.find(dac_idx);
-	if (it == Defs::DACCmdMap.end())
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(dac_idx);
-	const string& dac_cmd = it->second;
-	dacs_t ret = m_det->setDAC(dac_cmd, -1, sub_mod_idx);
-	if (ret == MultiSlsDetectorErr)
-		THROW_HW_ERROR(Error) << "Error getting DAC " << dac_idx 
-				      << " on (sub)module " << sub_mod_idx;
-	else if (ret == SlsDetectorBadIndexErr)
-		THROW_HW_ERROR(Error) << "Bad value: " << DEB_VAR1(dac_idx);
-	val = ret;
+	typedef slsDetectorDefs::dacIndex DAC;
+	DAC sls_idx = DAC(dac_idx);
+	Positions pos = Idx2Pos(mod_idx);
+	EXC_CHECK(val = m_det->getDAC(sls_idx, milli_volt, pos).squash(-1));
 	DEB_RETURN() << DEB_VAR1(val);
 }
 
@@ -1055,31 +1276,24 @@ void Camera::getDACList(DACIndex dac_idx, IntList& val_list, bool milli_volt)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR2(dac_idx, milli_volt);
 
-	int nb_sub_modules = getNbDetSubModules();
-	val_list.resize(nb_sub_modules);
-	for (int i = 0; i < nb_sub_modules; ++i)
+	int nb_modules = getNbDetModules();
+	val_list.resize(nb_modules);
+	for (int i = 0; i < nb_modules; ++i)
 		getDAC(i, dac_idx, val_list[i], milli_volt);
 }
 
-void Camera::getADC(int sub_mod_idx, ADCIndex adc_idx, int& val)
+void Camera::getADC(int mod_idx, ADCIndex adc_idx, int& val)
 {
 	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(sub_mod_idx, adc_idx);
+	DEB_PARAM() << DEB_VAR2(mod_idx, adc_idx);
 
-	if ((sub_mod_idx < 0) || (sub_mod_idx >= getNbDetSubModules()))
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(sub_mod_idx);
+	if ((mod_idx < 0) || (mod_idx >= getNbDetModules()))
+		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(mod_idx);
 
-	Defs::ADCCmdMapType::const_iterator it = Defs::ADCCmdMap.find(adc_idx);
-	if (it == Defs::ADCCmdMap.end())
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(adc_idx);
-	const string& adc_cmd = it->second;
-	dacs_t ret = m_det->getADC(adc_cmd, sub_mod_idx);
-	if (ret == MultiSlsDetectorErr)
-		THROW_HW_ERROR(Error) << "Error getting ADC " << adc_idx 
-				      << " on (sub)module " << sub_mod_idx;
-	else if (ret == SlsDetectorBadIndexErr)
-		THROW_HW_ERROR(Error) << "Bad value: " << DEB_VAR1(adc_idx);
-	val = ret;
+	typedef slsDetectorDefs::dacIndex DAC;
+	DAC sls_idx = DAC(adc_idx);
+	Positions pos = Idx2Pos(mod_idx);
+	EXC_CHECK(val = m_det->getTemperature(sls_idx, pos).squash(-1));
 	DEB_RETURN() << DEB_VAR1(val);
 }
 
@@ -1088,9 +1302,9 @@ void Camera::getADCList(ADCIndex adc_idx, IntList& val_list)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(adc_idx);
 
-	int nb_sub_modules = getNbDetSubModules();
-	val_list.resize(nb_sub_modules);
-	for (int i = 0; i < nb_sub_modules; ++i)
+	int nb_modules = getNbDetModules();
+	val_list.resize(nb_modules);
+	for (int i = 0; i < nb_modules; ++i)
 		getADC(i, adc_idx, val_list[i]);
 }
 
@@ -1101,9 +1315,9 @@ void Camera::setSettings(Settings settings)
 	if (m_model) {
 		if (!m_model->checkSettings(settings))
 			THROW_HW_ERROR(InvalidValue) << DEB_VAR1(settings);
-		typedef slsDetectorDefs::detectorSettings  DetSettings;
+		typedef slsDetectorDefs::detectorSettings DetSettings;
 		DetSettings cam_settings = DetSettings(settings);
-		m_det->setSettings(cam_settings);
+		EXC_CHECK(m_det->setSettings(cam_settings));
 	}
 	m_settings = settings;
 }
@@ -1115,24 +1329,14 @@ void Camera::getSettings(Settings& settings)
 	DEB_RETURN() << DEB_VAR1(settings);
 }
 
-void Camera::setNetworkParameter(NetworkParameter net_param, string& val)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR2(net_param, val);
-	THROW_HW_ERROR(NotSupported) << "Not implemented by slsDetector API";
-}
-
-void Camera::getNetworkParameter(NetworkParameter net_param, string& val)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(net_param);
-	THROW_HW_ERROR(NotSupported) << "Not implemented by slsDetector API";
-}
-
 void Camera::setTolerateLostPackets(bool tol_lost_packets)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(tol_lost_packets);
+	slsDetectorDefs::frameDiscardPolicy fdp;
+	fdp = tol_lost_packets ? slsDetectorDefs::NO_DISCARD :
+				 slsDetectorDefs::DISCARD_PARTIAL_FRAMES;
+	EXC_CHECK(m_det->setRxFrameDiscardPolicy(fdp));
 	m_tol_lost_packets = tol_lost_packets;
 }
 
@@ -1141,73 +1345,6 @@ void Camera::getTolerateLostPackets(bool& tol_lost_packets)
 	DEB_MEMBER_FUNCT();
 	tol_lost_packets = m_tol_lost_packets;
 	DEB_RETURN() << DEB_VAR1(tol_lost_packets);
-}
-
-int Camera::getNbBadFrames(int item_idx)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(item_idx);
-	if ((item_idx < -1) || (item_idx >= m_model->getNbFrameMapItems()))
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(item_idx);
-	int nb_bad_frames;
-	if (item_idx == -1) {
-		IntList bfl;
-		getBadFrameList(item_idx, bfl);
-		nb_bad_frames = bfl.size();
-	} else {
-		FrameMap::Item *item = m_frame_map.getItem(item_idx);
-		nb_bad_frames = item->getNbBadFrames();
-	}
-	DEB_RETURN() << DEB_VAR1(nb_bad_frames);
-	return nb_bad_frames;
-}
-
-void Camera::getSortedBadFrameList(IntList first_idx, IntList last_idx,
-				   IntList& bad_frame_list)
-{
-	bool all = first_idx.empty();
-	IntList bfl;
-	int nb_recvs = getNbRecvs();
-	for (int i = 0; i < nb_recvs; ++i) {
-		FrameMap::Item *item = m_frame_map.getItem(i);
-		int first = all ? 0 : first_idx[i];
-		int last = all ? item->getNbBadFrames() : last_idx[i];
-		IntList l;
-		item->getBadFrameList(first, last, l);
-		bfl.insert(bfl.end(), l.begin(), l.end());
-	}
-	IntList::iterator first = bfl.begin();
-	IntList::iterator last = bfl.end();
-	sort(first, last);
-	bad_frame_list.resize(last - first);
-	IntList::iterator bfl_end, bfl_begin = bad_frame_list.begin();
-	bfl_end = unique_copy(first, last, bfl_begin);
-	bad_frame_list.resize(bfl_end - bfl_begin);
-}
-
-void Camera::getBadFrameList(int item_idx, int first_idx, int last_idx, 
-			     IntList& bad_frame_list)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR3(item_idx, first_idx, last_idx);
-	if ((item_idx < 0) || (item_idx >= m_model->getNbFrameMapItems()))
-		THROW_HW_ERROR(InvalidValue) << DEB_VAR1(item_idx);
-
-	FrameMap::Item *item = m_frame_map.getItem(item_idx);
-	item->getBadFrameList(first_idx, last_idx, bad_frame_list);
-
-	DEB_RETURN() << DEB_VAR1(PrettyIntList(bad_frame_list));
-}
-
-void Camera::getBadFrameList(int item_idx, IntList& bad_frame_list)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(item_idx);
-	if (item_idx == -1)
-		getSortedBadFrameList(bad_frame_list);
-	else
-		getBadFrameList(item_idx, 0, getNbBadFrames(item_idx), 
-				bad_frame_list);
 }
 
 void Camera::registerTimeRangesChangedCallback(TimeRangesChangedCallback& cb)
@@ -1276,30 +1413,21 @@ void Camera::setReceiverFifoDepth(int fifo_depth)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(fifo_depth);
-	// recv->setFifoDepth()
-	putNbCmd<int>("rx_fifodepth", fifo_depth);
+	EXC_CHECK(m_det->setRxFifoDepth(fifo_depth));
 }
 
-bool Camera::isTenGigabitEthernetEnabled()
+void Camera::getReceiverFifoDepth(int& fifo_depth)
 {
 	DEB_MEMBER_FUNCT();
-	bool enabled = getNbCmd<int>("tengiga");
-	DEB_RETURN() << DEB_VAR1(enabled);
-	return enabled;
-}
-
-void Camera::setFlowControl10G(bool enabled)
-{
-	DEB_MEMBER_FUNCT();
-	DEB_PARAM() << DEB_VAR1(enabled);
-	putNbCmd<int>("flowcontrol_10g", enabled);
+	const char *err_msg = "Rx fifo_depth are different";
+	EXC_CHECK(fifo_depth = m_det->getRxFifoDepth().tsquash(err_msg));
+	DEB_RETURN() << DEB_VAR1(fifo_depth);
 }
 
 void Camera::resetFramesCaught()
 {
 	DEB_MEMBER_FUNCT();
-	// recv->resetAcquisitionCount()
-	putCmd("resetframescaught");
+	// nothing to do
 }
 
 void Camera::reportException(Exception& e, string name)

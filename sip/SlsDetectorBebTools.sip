@@ -34,6 +34,9 @@ class BebShell
 	~BebShell();
 
 	std::string exec(std::string cmd);
+
+ private:
+	BebShell(const SlsDetector::BebShell& o);
 };
 
 class BebFpgaMem
@@ -43,6 +46,9 @@ class BebFpgaMem
 
 	unsigned long read(unsigned long addr);
 	void write(unsigned long addr, unsigned long val);
+
+ private:
+        BebFpgaMem(const SlsDetector::BebFpgaMem& o);
 };
 
 

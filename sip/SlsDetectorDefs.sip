@@ -164,12 +164,11 @@ namespace Defs
 %End
 
 enum TrigMode {
-	Auto            = AUTO_TIMING,
-	TriggerExposure = TRIGGER_EXPOSURE,
-	TriggerReadout  = TRIGGER_READOUT,
-	Gating          = GATE_FIX_NUMBER,
-	TriggeredGating = GATE_WITH_START_TRIGGER,
+	Auto            = AUTO_TIMING, 
+	TriggerExposure = TRIGGER_EXPOSURE, 
+	Gated           = GATED,
 	BurstTrigger    = BURST_TRIGGER,
+	TriggeredGated  = TRIGGER_GATED,
 	SoftTriggerExposure,
 };
 
@@ -181,72 +180,28 @@ enum Settings {
 	LowGain       = LOWGAIN,
 	MediumGain    = MEDIUMGAIN,
 	VeryHighGain  = VERYHIGHGAIN,
-	LowNoise      = LOWNOISE,
-	DynamicHG0    = DYNAMICHG0,
 	FixGain1      = FIXGAIN1,
 	FixGain2      = FIXGAIN2,
-	ForceSwitchG1 = FORCESWITCHG1,
-	ForceSwitchG2 = FORCESWITCHG2,
 	VeryLowGain   = VERYLOWGAIN,
 	Undefined     = UNDEFINED,
 	Unitialized   = UNINITIALIZED,
 };
 
+enum GainMode {
+	Dynamic       = DYNAMIC,
+        ForceSwitchG1 = FORCE_SWITCH_G1,
+        ForceSwitchG2 = FORCE_SWITCH_G2,
+        FixG1         = FIX_G1,
+        FixG2         = FIX_G2,
+        FixG0         = FIX_G0,
+};
+
 enum DACIndex {
-	Threshold        = THRESHOLD,
-	CalibPulse       = CALIBRATION_PULSE,
-	TrimBitSize      = TRIMBIT_SIZE,
-	PreAmp           = PREAMP,
-	Shaper1          = SHAPER1,
-	Shaper2          = SHAPER2,
-	Humidity         = HUMIDITY,
-	DetectorBias     = DETECTOR_BIAS,
-	PowerVa          = VA_POT,
-	PowerVdd         = VDD_POT,
-	PowerVsh         = VSH_POT,
-	PowerVio         = VIO_POT,
-	PowerHV          = HV_POT,
-	GotthardVrefDS   = G_VREF_DS,
-	GotthardVcascnPB = G_VCASCN_PB,
-	GotthardVcascpPB = G_VCASCP_PB,
-	GotthardVoutCM   = G_VOUT_CM,
-	GotthardVcascOut = G_VCASC_OUT,
-	GotthardVinCM    = G_VIN_CM,
-	GotthardVrefComp = G_VREF_COMP,
-	GotthardIBTestC  = G_IB_TESTC,
-	VoltDAC0         = V_DAC0,
-	VoltDAC1         = V_DAC1,
-	VoltDAC2         = V_DAC2,
-	VoltDAC3         = V_DAC3,
-	VoltDAC4         = V_DAC4,
-	VoltDAC5         = V_DAC5,
-	VoltDAC6         = V_DAC6,
-	VoltDAC7         = V_DAC7,
-	EigerSvP         = E_SvP,
-	EigerSvN         = E_SvN,
-	EigerVtr         = E_Vtr,
-	EigerVrf         = E_Vrf,
-	EigerVrs         = E_Vrs,
-	EigerVtgstv      = E_Vtgstv,
-	EigerVcmpLL      = E_Vcmp_ll,
-	EigerVcmpLR      = E_Vcmp_lr,
-	EigerVcal        = E_cal,
-	EigerVcmpRL      = E_Vcmp_rl,
-	EigerVcmpRR      = E_Vcmp_rr,
-	EigerRxbRB       = E_rxb_rb,
-	EigerRxbLB       = E_rxb_lb,
-	EigerVcp         = E_Vcp,
-	EigerVcn         = E_Vcn,
-	EigerVis         = E_Vis,
-	IODelay          = IO_DELAY,
-	ADCVpp           = ADC_VPP,
-	HVNew            = HV_NEW,
-	PowerA           = V_POWER_A,
-	PowerB           = V_POWER_B,
-	PowerC           = V_POWER_C,
-	PowerD           = V_POWER_D,
-	PowerIO          = V_POWER_IO,
-	PowerChip        = V_POWER_CHIP,
+	EigerVcmpLL = VCMP_LL,
+	EigerVcmpLR = VCMP_LR,
+	EigerVcmpRL = VCMP_RL,
+	EigerVcmpRR = VCMP_RR,
+	Threshold   = VTHRESHOLD,
 };
 
 enum ADCIndex {
@@ -265,7 +220,6 @@ enum ClockDiv {
 	FullSpeed,
 	HalfSpeed,
 	QuarterSpeed,
-	SuperSlowSpeed, 
 };
 
 enum DetStatus {
@@ -278,26 +232,10 @@ enum DetStatus {
 	Stopped      = STOPPED,
 };
 
-enum NetworkParameter {
-	DetectorMAC     = DETECTOR_MAC,
-	DetectorIP      = DETECTOR_IP,
-	RecvHostName    = RECEIVER_HOSTNAME,
-	RecvUDPIP       = RECEIVER_UDP_IP,
-	RecvUDPPort     = RECEIVER_UDP_PORT,
-	RecvUDPMAC      = RECEIVER_UDP_MAC,
-	RecvUDPPort2    = RECEIVER_UDP_PORT2,
-	DetTxDelayLeft  = DETECTOR_TXN_DELAY_LEFT,
-	DetTxDelayRight = DETECTOR_TXN_DELAY_RIGHT,
-	DetTxDelayFrame = DETECTOR_TXN_DELAY_FRAME,
-	FlowCtrl10G     = FLOW_CONTROL_10G,
-	FlowCtrlWrPtr   = FLOW_CONTROL_WR_PTR,
-	FlowCtrlRdPtr   = FLOW_CONTROL_RD_PTR,
-};
-
 }; // namespace Defs
 
 
-enum State {
+enum AcqState {
 	Idle, Init, Starting, Running, StopReq, Stopping, Stopped,
 };
 
@@ -340,7 +278,7 @@ struct SimpleStat {
 	double xacc2;
 	int xn;
 	double factor;
-	Mutex lock;
+	// Mutex lock;
 
 	// typedef std::map<int, int> Histogram
 	SlsDetector::SimpleStat::Histogram hist;
@@ -349,7 +287,7 @@ struct SimpleStat {
 	SimpleStat(double f = 1, int b = 5);
 	void reset();
 	void add(double x, bool do_hist = false);
-	// SimpleStat& operator =(const SimpleStat& o);
+
 	SlsDetector::SimpleStat& operator += (const SlsDetector::SimpleStat& o);
 
 	int n() const;
@@ -357,6 +295,9 @@ struct SimpleStat {
 	double max() const;
 	double ave() const;
 	double std() const;
+
+private:
+	SimpleStat(const SlsDetector::SimpleStat& o);
 };
 
 
@@ -367,6 +308,9 @@ struct Stats {
 	SlsDetector::SimpleStat recv_exec;
 	Stats();
 	void reset();
+
+private:
+	Stats(const SlsDetector::Stats& o);
 };
 
 

@@ -34,7 +34,11 @@ BebShell::BebShell(string hostname, string user)
 
 	const string user_host = user + "@" + hostname;
 
-	string cmd = string("ssh -xatt " + user_host); // -tt -> force TTY
+	string ssh_opts = " -xatt "; // -tt -> force TTY
+	char *env = getenv("EIGER_SSH_CONFIG");
+	if (env && env[0])
+		ssh_opts += string("-F ") + env + " ";
+	string cmd = "ssh" + ssh_opts + user_host;
 	m_cmd = new SystemCmdPipe(cmd, string("BebShell") + user_host, false);
 	m_cmd->setPipe(SystemCmdPipe::StdIn, SystemCmdPipe::DoPipe);
 	m_cmd->setPipe(SystemCmdPipe::StdOut, SystemCmdPipe::DoPipe);
@@ -110,7 +114,8 @@ unsigned long BebFpgaMem::read(unsigned long addr)
 	is >> hex >> phys_addr >> virt_addr >> val;
 	if (phys_addr != addr)
 		THROW_HW_ERROR(Error) << "addr mismatch: " 
-				      << DEB_VAR2(phys_addr, addr);
+				      << DEB_VAR2(DebHex(phys_addr),
+						  DebHex(addr));
 	DEB_RETURN() << DEB_VAR1(DEB_HEX(val));
 	return val;
 }

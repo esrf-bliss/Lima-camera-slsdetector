@@ -35,4 +35,4 @@ if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
   include(LimaTools)
 endif()
 
-limatools_install_camera_tango("SlsDetector.py")
+limatools_install_camera_tango("SlsDetector.py SlsDetectorEiger.py SlsDetectorJungfrau.py")
