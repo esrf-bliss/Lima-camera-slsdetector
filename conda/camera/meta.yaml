@@ -19,18 +19,21 @@ requirements:
   host:
     - python {{ python }}
     - sip >=4.19.20* # API v12.7
-    - lima-core
+    - lima-core 1.10.*
     - libnuma
     - libpng
+    - zeromq
   build:
     - git
     - cmake
+    - ninja
     - {{ compiler('cxx') }}
   run:
     - python {{ python }}
     - {{ pin_compatible('sip', min_pin='x.x.x', max_pin='x') }}
-    - libpng
     - libnuma
+    - libpng
+    - zeromq
     - {{ pin_compatible('lima-core', max_pin='x.x') }}
 
 test:
