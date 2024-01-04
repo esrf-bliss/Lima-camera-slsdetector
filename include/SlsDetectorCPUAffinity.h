@@ -674,6 +674,8 @@ class GlobalCPUAffinityMgr
 		{}
 	};
 
+	CPUAffinity getAllRecvCPUAffinity();
+
 	void setLimaThreadAffinity(CPUAffinity lima_affinity);
 	void setLimaBufferAffinity(CPUAffinity lima_affinity);
 	void setRecvAffinity(const RecvCPUAffinityList& recv_affinity_list);
