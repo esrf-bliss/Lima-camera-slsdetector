@@ -148,11 +148,13 @@ void Camera::AcqThread::start(AutoMutex& l)
 	m_state = Starting;
 	Thread::start();
 
-	struct sched_param param;
-	param.sched_priority = sched_get_priority_min(SCHED_RR);
-	int ret = pthread_setschedparam(m_thread, SCHED_RR, &param);
-	if (ret != 0)
-		DEB_ERROR() << "Could not set AcqThread real-time priority!!";
+	if (false) {
+		struct sched_param param;
+		param.sched_priority = sched_get_priority_min(SCHED_RR);
+		int ret = pthread_setschedparam(m_thread, SCHED_RR, &param);
+		if (ret != 0)
+			DEB_ERROR() << "Could not set AcqThread real-time priority!!";
+	}
 
 	while (m_state == Starting)
 		m_cond.wait();
