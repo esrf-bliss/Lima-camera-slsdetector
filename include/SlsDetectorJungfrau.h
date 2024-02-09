@@ -30,6 +30,7 @@
 
 #include <array>
 #include <variant>
+#include <memory>
 
 namespace lima 
 {
@@ -242,98 +243,42 @@ class Jungfrau : public Model
 	typedef std::vector<ImgProcBase *> ImgProcList;
 
 	template <class T>
-	class ReadHelper : public Buffer::Callback {
+	class ReadHelper {
 		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::ReadHelper", 
 				  "SlsDetector");
 	public:
 		typedef DoubleBuffer<T> DBuffer;
-		typedef DoubleBufferReader<T> DBufferReader;
+		typedef DoubleBufferReader<T> Reader;
+		typedef std::shared_ptr<Reader> ReaderPtr;
 
-		class Reader : public DBufferReader {
-			DEB_CLASS_NAMESPC(DebModCamera,
-					  "Jungfrau::ReadHelper::Reader", 
-					  "SlsDetector");
-		public:
-			Reader(DBuffer& db, FrameType f, ReadHelper *h)
-				: DBufferReader(db, f),	m_helper(h)
-			{ DEB_CONSTRUCTOR(); }
-
-			~Reader()
-			{ DEB_DESTRUCTOR(); }
-
-			void addData(Data& src, Data& ref) {
-				DEB_MEMBER_FUNCT();
-				makeDataRef(src, ref, m_helper);
-				m_buffer_list.insert(ref.data());
-				DEB_TRACE() << DEB_VAR1(m_buffer_list.size());
-			}
-
-		private:
-			friend class ReadHelper;
-			typedef std::set<void *> BufferList;
-
-			std::pair<bool, bool> destroy(void *buffer) {
-				DEB_MEMBER_FUNCT();
-				DEB_PARAM() << DEB_VAR1(m_buffer_list.size());
-				typedef typename BufferList::iterator BufferIt;
-				BufferIt it, end = m_buffer_list.end();
-				it = find(m_buffer_list.begin(), end, buffer);
-				bool found = (it != end);
-				if (found)
-					m_buffer_list.erase(it);
-				return {found, m_buffer_list.empty()};
-			}
-
-			ReadHelper *m_helper;
-			BufferList m_buffer_list;
-		};
-
-		~ReadHelper() {
-			DEB_DESTRUCTOR();
-			AutoMutex l(m_mutex);
-			while (!m_reader_list.empty())
-				deleteReader(m_reader_list.begin(), l);
-		}
-
-		Reader *addRead(DBuffer& b, FrameType& frame) {
+		ReaderPtr createReader(DBuffer& b, FrameType& frame) {
 			DEB_MEMBER_FUNCT();
-			Reader *r = new Reader(b, frame, this);
+			ReaderPtr r = std::make_shared<Reader>(b, frame);
 			frame = r->getCounter();
-			AutoMutex l(m_mutex);
-			m_reader_list.insert(r);
 			return r;
 		}
 
+		void addReaderData(ReaderPtr reader, Data& src, Data& ref) {
+			DEB_MEMBER_FUNCT();
+			ReaderBuffer *buffer = new ReaderBuffer(reader);
+			makeDataRef(buffer, src, ref);
+		}
+
 	protected:
-		virtual void destroy(void *buffer) {
-			DEB_MEMBER_FUNCT();
-			AutoMutex l(m_mutex);
-			ReaderIt it, end = m_reader_list.end();
-			for (it = m_reader_list.begin(); it != end; ++it) {
-				auto [found, empty] = (*it)->destroy(buffer);
-				if (!found)
-					continue;
-				else if (empty)
-					deleteReader(it, l);
-				return;
-			}
-			DEB_ERROR() << "Bad " << DEB_VAR1(buffer);
-		}
+		class ReaderBuffer : public Buffer {
+			DEB_CLASS_NAMESPC(DebModCamera,
+					  "Jungfrau::ReadHelper::ReaderBuffer", 
+					  "SlsDetector");
+		public:
+			ReaderBuffer(ReaderPtr reader) : m_reader(reader)
+			{ DEB_CONSTRUCTOR(); }
 
-	private:
-		typedef std::set<Reader *> ReaderList;
-		typedef typename ReaderList::iterator ReaderIt;
+			virtual ~ReaderBuffer()
+			{ DEB_DESTRUCTOR(); }
 
-		void deleteReader(ReaderIt it, AutoMutex& l) {
-			DEB_MEMBER_FUNCT();
-			Reader *r = *it;
-			m_reader_list.erase(it);
-			AutoMutexUnlock u(l);
-			delete r;
-		}
-
-		Mutex m_mutex;
-		ReaderList m_reader_list;
+		private:
+			ReaderPtr m_reader;
+		};
 	};
 
 	class GainADCMapImgProc : public ImgProcBase
@@ -492,15 +437,13 @@ class Jungfrau : public Model
 			memset(p, 0, d.size());
 	}
 
-	static void makeDataRef(Data& src, Data& ref, Buffer::Callback *cb) {
+	static void makeDataRef(Buffer *b, Data& src, Data& ref) {
 		ref.type = src.type;
 		ref.dimensions = src.dimensions;
 		ref.frameNumber = src.frameNumber;
 		ref.timestamp = src.timestamp;
 		ref.header = src.header;
-		Buffer *b = new Buffer;
 		b->owner = Buffer::MAPPED;
-		b->callback = cb;
 		b->data = src.data();
 		ref.setBuffer(b);
 		b->unref();

@@ -377,10 +377,10 @@ void Jungfrau::GainADCMapImgProc::readGainADCMaps(Data& gain_map, Data& adc_map,
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(frame);
-	Helper::Reader *r = m_helper->addRead(m_buffer, frame);
+	Helper::ReaderPtr r = m_helper->createReader(m_buffer, frame);
 	MapData &m = r->getBuffer();
-	r->addData(m.gain_map, gain_map);
-	r->addData(m.adc_map, adc_map);
+	m_helper->addReaderData(r, m.gain_map, gain_map);
+	m_helper->addReaderData(r, m.adc_map, adc_map);
 	DEB_RETURN() << DEB_VAR3(gain_map, adc_map, frame);
 }
 
@@ -445,9 +445,9 @@ void Jungfrau::GainPedImgProc::readProcMap(Data& proc_map, FrameType& frame)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(frame);
-	Helper::Reader *r = m_helper->addRead(m_buffer, frame);
+	Helper::ReaderPtr r = m_helper->createReader(m_buffer, frame);
 	MapData &m = r->getBuffer();
-	r->addData(m.proc_map, proc_map);
+	m_helper->addReaderData(r, m.proc_map, proc_map);
 	DEB_RETURN() << DEB_VAR2(proc_map, frame);
 }
 
@@ -524,9 +524,9 @@ void Jungfrau::AveImgProc::readAveMap(Data& ave_map, FrameType& nb_frames,
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(frame);
-	Helper::Reader *r = m_helper->addRead(m_buffer, frame);
+	Helper::ReaderPtr r = m_helper->createReader(m_buffer, frame);
 	MapData &m = r->getBuffer();
-	r->addData(m.ave_map, ave_map);
+	m_helper->addReaderData(r, m.ave_map, ave_map);
 	nb_frames = m.nb_frames;
 	DEB_RETURN() << DEB_VAR3(ave_map, nb_frames, frame);
 }
