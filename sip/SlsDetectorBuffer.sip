@@ -31,7 +31,7 @@ class BufferMgr
 {
 public:
 	enum ResizePolicy {
-		Auto, Manual
+		Auto, Manual, Max,
 	};
 
 	void setMaxMemory(short  max_memory);

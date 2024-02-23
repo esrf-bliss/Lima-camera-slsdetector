@@ -82,7 +82,7 @@ class BufferMgr
 
 public:
 	enum ResizePolicy {
-		Auto, Manual
+		Auto, Manual, Max,
 	};
 
 	void setBufferCtrlObj(BufferCtrlObj *buffer_ctrl_obj);
