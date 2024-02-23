@@ -28,8 +28,8 @@ using namespace lima::SlsDetector;
 
 
 BufferMgr::BufferMgr(Camera *cam)
-	: m_cam(cam), m_resize_policy(Auto), m_buffer_ctrl_obj(NULL),
-	  m_max_memory(70)
+	: m_cam(cam), m_cond(cam->m_cond), m_resize_policy(Auto),
+	  m_buffer_ctrl_obj(NULL), m_max_memory(70)
 {
 	DEB_CONSTRUCTOR();
 }
