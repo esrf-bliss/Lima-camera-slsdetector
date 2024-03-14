@@ -265,7 +265,7 @@ class Jungfrau : public Model
 		}
 
 	protected:
-		class ReaderBuffer : public Buffer {
+		class ReaderBuffer : public BufferBase {
 			DEB_CLASS_NAMESPC(DebModCamera,
 					  "Jungfrau::ReadHelper::ReaderBuffer", 
 					  "SlsDetector");
@@ -275,6 +275,9 @@ class Jungfrau : public Model
 
 			virtual ~ReaderBuffer()
 			{ DEB_DESTRUCTOR(); }
+
+			const char *type() const override
+			{ return "JungfrauReader"; }
 
 		private:
 			ReaderPtr m_reader;
@@ -437,13 +440,12 @@ class Jungfrau : public Model
 			memset(p, 0, d.size());
 	}
 
-	static void makeDataRef(Buffer *b, Data& src, Data& ref) {
+	static void makeDataRef(BufferBase *b, Data& src, Data& ref) {
 		ref.type = src.type;
 		ref.dimensions = src.dimensions;
 		ref.frameNumber = src.frameNumber;
 		ref.timestamp = src.timestamp;
 		ref.header = src.header;
-		b->owner = Buffer::MAPPED;
 		b->data = src.data();
 		ref.setBuffer(b);
 		b->unref();

@@ -47,9 +47,8 @@ inline Data GetMappedData(void *buffer, const FrameDim& frame_dim)
 	}
 	const Size& size = frame_dim.getSize();
 	d.dimensions = {size.getWidth(), size.getHeight()};
-	Buffer *b = new Buffer;
-	b->owner = Buffer::MAPPED;
-	b->data = buffer;
+	std::function<void(void *)> empty_deleter;
+	MappedBuffer *b = new MappedBuffer(buffer, empty_deleter);
 	d.setBuffer(b);
 	b->unref();
 	return d;
