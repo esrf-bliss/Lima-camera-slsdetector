@@ -1177,12 +1177,16 @@ void Camera::processLastSkippedFrame(int recv_idx)
 int Camera::getFramesCaught()
 {
 	DEB_MEMBER_FUNCT();
-	sls::Result<int64_t> res;
+	typedef std::vector<int64_t> PortFrameList;
+	sls::Result<PortFrameList> res;
 	EXC_CHECK(res = m_det->getFramesCaught());
 	int64_t frames_caught = 0;
-	sls::Result<int64_t>::iterator it, end = res.end();
-	for (it = res.begin(); it != end; ++it)
-		frames_caught = max(frames_caught, *it);
+	sls::Result<PortFrameList>::iterator it, end = res.end();
+	for (it = res.begin(); it != end; ++it) {
+		PortFrameList::iterator pit, pend = it->end();
+		for (pit = it->begin(); pit != pend; ++pit)
+			frames_caught = max(frames_caught, *pit);
+	}
 	DEB_RETURN() << DEB_VAR1(frames_caught);
 	return frames_caught;
 }
@@ -1190,12 +1194,16 @@ int Camera::getFramesCaught()
 int Camera::getLastFrameCaught()
 {
 	DEB_MEMBER_FUNCT();
-	sls::Result<uint64_t> res;
+	typedef std::vector<int64_t> PortFrameList;
+	sls::Result<PortFrameList> res;
 	EXC_CHECK(res = m_det->getRxCurrentFrameIndex());
-	uint64_t last_frame_caught = ULONG_MAX;
-	sls::Result<uint64_t>::iterator it, end = res.end();
-	for (it = res.begin(); it != end; ++it)
-		last_frame_caught = min(last_frame_caught, *it);
+	int64_t last_frame_caught = LONG_MAX;
+	sls::Result<PortFrameList>::iterator it, end = res.end();
+	for (it = res.begin(); it != end; ++it) {
+		PortFrameList::iterator pit, pend = it->end();
+		for (pit = it->begin(); pit != pend; ++pit)
+			last_frame_caught = min(last_frame_caught, *pit);
+	}
 	DEB_RETURN() << DEB_VAR1(last_frame_caught);
 	return last_frame_caught - 1;
 }
