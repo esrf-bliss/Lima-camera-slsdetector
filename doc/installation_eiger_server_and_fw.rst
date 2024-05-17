@@ -156,18 +156,31 @@ the current versions stored on the modules:
     754a871d0608c28aa7544230ca728f86  md5sum_executables_eigerDetectorServer_beb024.out
     754a871d0608c28aa7544230ca728f86  md5sum_executables_eigerDetectorServer_beb025.out
 
-Kill the running servers and disable the automatic startup:
+Backup startup script before modifying it:
 
 ::
 
     lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
         for m in ${SLS_DETECTOR_MODULES}; do
-            ssh -x root@${m} killall ${server_name}
+            scp root@${m}:/etc/init.d/board_com.sh etc-init.d-board_com.sh_${m}
         done
-        for m in ${SLS_DETECTOR_MODULES}; do
-            ssh -x root@${m} sed -i '"s:^#\?\('${full_server}'\).*$:#\1 \&:"' \
-                                 /etc/init.d/board_com.sh
-        done
+
+Kill the running servers and disable the automatic startup:
+
+::
+
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
+        if [ -z "${full_server}" ]; then
+	    echo "Server variables empty: run initialization code"
+        else
+            for m in ${SLS_DETECTOR_MODULES}; do
+                ssh -x root@${m} killall ${server_name}
+            done
+            for m in ${SLS_DETECTOR_MODULES}; do
+                ssh -x root@${m} sed -i '"s:^#\?\('${full_server}'\).*$:#\1 \&:"' \
+                                     /etc/init.d/board_com.sh
+            done
+        fi
 
 Force a filesystem *sync* on each host to make the changes persistent,
 just before power-cycling:
@@ -486,31 +499,43 @@ Start the *eigerDetectorServer* and check that everything is OK:
 ::
 
     lisgeiger1:~ % \
-        for m in ${SLS_DETECTOR_MODULES}; do
-            ssh -x root@${m} 'nohup '${server}' > /dev/null 2>&1 &'
-        done
+        if [ -z "${server}" ]; then
+	    echo "Server variables empty: run initialization code"
+        else
+            for m in ${SLS_DETECTOR_MODULES}; do
+                ssh -x root@${m} 'nohup '${server}' > /dev/null 2>&1 &'
+            done
+        fi
 
 Once verified that the new server runs fine with the new firmware, restore automatic startup:
 
 ::
 
     lisgeiger1:~ % \
-        for m in ${SLS_DETECTOR_MODULES}; do
-            ssh -x root@${m} sed -i '"s:^#\?\('${full_server}'\).*$:\1 \&:"' \
-                                 /etc/init.d/board_com.sh
-        done
-        for m in ${SLS_DETECTOR_MODULES}; do
-            ssh -x root@${m} sync
-        done
+        if [ -z "${full_server}" ]; then
+	    echo "Server variables empty: run initialization code"
+        else
+            for m in ${SLS_DETECTOR_MODULES}; do
+                ssh -x root@${m} sed -i '"s:^#\?\('${full_server}'\).*$:\1 \&:"' \
+                                     /etc/init.d/board_com.sh
+            done
+            for m in ${SLS_DETECTOR_MODULES}; do
+                ssh -x root@${m} sync
+            done
+        fi
 
 Power-cycle the detector and verify that the servers start automatically:
 
 ::
 
     lisgeiger1:~ % \
-        for m in ${SLS_DETECTOR_MODULES}; do \
-            ssh -x root@${m} 'ps -ef | grep '${server}' | grep -v grep'; \
-        done
+        if [ -z "${server}" ]; then
+	    echo "Server variables empty: run initialization code"
+        else
+            for m in ${SLS_DETECTOR_MODULES}; do \
+                ssh -x root@${m} 'ps -ef | grep '${server}' | grep -v grep'; \
+            done
+        fi
       961 root       0:00 /home/root/executables/eigerDetectorServer
       965 root       0:00 /home/root/executables/eigerDetectorServer -stopserver
       961 root       0:00 /home/root/executables/eigerDetectorServer
