@@ -28,8 +28,8 @@ using namespace lima::SlsDetector;
 
 
 BufferMgr::BufferMgr(Camera *cam)
-	: m_cam(cam), m_cond(cam->m_cond), m_resize_policy(Auto),
-	  m_buffer_ctrl_obj(NULL), m_max_memory(70)
+	: m_cam(cam), m_cond(cam->m_cond), m_resize_policy(Max),
+	  m_buffer_ctrl_obj(NULL), m_max_memory(30)
 {
 	DEB_CONSTRUCTOR();
 }
@@ -127,9 +127,9 @@ void BufferMgr::setPacketFifoDepth(int fifo_depth)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(fifo_depth);
-	if (m_resize_policy == Auto)
-		THROW_HW_ERROR(Error) << "Cannot set PacketFifoDepth "
-				      << "with Auto ResizePolicy";
+	if (m_resize_policy != Manual)
+		THROW_HW_ERROR(Error) << "Can only set PacketFifoDepth "
+				      << "with Manual ResizePolicy";
 	const int min_nb_buffers = 128;
 	long max_nb_buffers;
 	getMaxNbBuffers(max_nb_buffers);
@@ -152,13 +152,14 @@ void BufferMgr::prepareAcq()
 {
 	DEB_MEMBER_FUNCT();
 
-	if (m_resize_policy == Auto) {
+	if ((m_resize_policy == Auto) || (m_resize_policy == Max)) {
 		FrameType nb_frames;
 		m_cam->getNbFrames(nb_frames);
 		long max_nb_buffers;
 		getMaxNbBuffers(max_nb_buffers);
-		int nb_buffers = (nb_frames < max_nb_buffers) ? nb_frames :
-								max_nb_buffers;
+		int nb_buffers = max_nb_buffers;
+		if ((m_resize_policy == Auto) && (nb_frames < max_nb_buffers))
+			nb_buffers = nb_frames;
 		const int min_nb_buffers = 128;
 		if (nb_buffers < min_nb_buffers)
 			nb_buffers = min_nb_buffers;

@@ -47,18 +47,25 @@ inline Data GetMappedData(void *buffer, const FrameDim& frame_dim)
 	}
 	const Size& size = frame_dim.getSize();
 	d.dimensions = {size.getWidth(), size.getHeight()};
-	Buffer *b = new Buffer;
-	b->owner = Buffer::MAPPED;
-	b->data = buffer;
+	std::function<void(void *)> empty_deleter;
+	MappedBuffer *b = new MappedBuffer(buffer, empty_deleter);
 	d.setBuffer(b);
 	b->unref();
 	return d;
 }
 
-class BufferCtrlObj : public NumaSoftBufferCtrlObj {
+class BufferCtrlObj : public SoftBufferCtrlObj {
 
  public:
+	typedef NumaAllocator::CPUMask CPUMask;
+
 	void releaseBuffers() { getBuffer().releaseBuffers(); }
+
+	void setCPUAffinityMask(const CPUMask& mask)
+	{
+		Allocator::Ref alloc = std::make_shared<NumaAllocator>(mask);
+		Allocator::setDefaultAllocator(alloc);
+	}
 
 	Data getFrameData(FrameType frame)
 	{
@@ -75,7 +82,7 @@ class BufferMgr
 
 public:
 	enum ResizePolicy {
-		Auto, Manual
+		Auto, Manual, Max,
 	};
 
 	void setBufferCtrlObj(BufferCtrlObj *buffer_ctrl_obj);

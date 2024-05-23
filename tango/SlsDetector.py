@@ -152,13 +152,22 @@ class SlsDetector(PyTango.Device_4Impl):
         if self.buffer_max_memory:
             deb.Always("Setting buffer_max_memory: %s" % self.buffer_max_memory)
             self.buffer.setMaxMemory(int(self.buffer_max_memory))
+        buffer_resize_policy = self.buffer_resize_policy
         packet_fifo_depth = self.buffer_packet_fifo_depth
         if packet_fifo_depth:
+            if buffer_resize_policy and buffer_resize_policy.title() != "Manual":
+                    raise ValueError("buffer_packet_fifo_depth requires "
+                                     "Manual ResizePolicy")
             deb.Always("Setting Manual buffer_resize_policy")
             self.buffer.setResizePolicy(self.buffer.Manual)
             deb.Always("Setting buffer_packet_fifo_depth: %s" %
                        packet_fifo_depth)
             self.buffer.setPacketFifoDepth(int(packet_fifo_depth))
+        elif buffer_resize_policy:
+            deb.Always("Setting %s buffer_resize_policy" %
+                       buffer_resize_policy.title())
+            pol = self.__ResizePolicy[buffer_resize_policy.upper()]
+            self.buffer.setResizePolicy(pol)
 
     def init_list_attr(self):
         nl = ['GenericDet', 'EigerDet', 'JungfrauDet']
@@ -563,6 +572,9 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [PyTango.DevString,
          "The maximum memory (percent) for image packet buffers (Fifo length), "
          "similar to LimaCCDs.BufferMaxMemory", []],
+        'buffer_resize_policy':
+        [PyTango.DevString,
+         "The initial packet Fifo Resize Policy [Auto|Manual|Max]", []],
         'buffer_packet_fifo_depth':
         [PyTango.DevString,
          "The initial packet Fifo length (implies Manual ResizePolicy)", []],
