@@ -177,7 +177,7 @@ class SlsDetector(PyTango.Device_4Impl):
         bdl = map(lambda x: getattr(SlsDetectorHw, x), nl)
         self.__PixelDepth = OrderedDict([(str(bd), int(bd)) for bd in bdl])
 
-        nl = ['Auto', 'Manual']
+        nl = ['Auto', 'Manual', 'Max']
         BufferMgr = SlsDetectorHw.BufferMgr
         self.__ResizePolicy = ConstListAttr(nl, namespc=BufferMgr)
 
