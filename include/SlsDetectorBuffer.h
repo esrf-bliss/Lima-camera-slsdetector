@@ -64,7 +64,7 @@ class BufferCtrlObj : public SoftBufferCtrlObj {
 	void setCPUAffinityMask(const CPUMask& mask)
 	{
 		Allocator::Ref alloc = std::make_shared<NumaAllocator>(mask);
-		Allocator::setDefaultAllocator(alloc);
+		AllocatorFactory::get().setDefaultAllocator(alloc);
 	}
 
 	Data getFrameData(FrameType frame)
