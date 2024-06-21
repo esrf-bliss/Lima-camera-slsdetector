@@ -57,8 +57,6 @@ inline Data GetMappedData(void *buffer, const FrameDim& frame_dim)
 class BufferCtrlObj : public SoftBufferCtrlObj {
 
  public:
-	typedef NumaAllocator::CPUMask CPUMask;
-
 	void releaseBuffers() { getBuffer().releaseBuffers(); }
 
 	void setCPUAffinityMask(const CPUMask& mask)
