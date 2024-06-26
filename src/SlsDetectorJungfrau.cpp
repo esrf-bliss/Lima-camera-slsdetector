@@ -28,6 +28,7 @@
 
 #include <emmintrin.h>
 #include <sched.h>
+#include <cmath>
 
 using namespace std;
 using namespace lima;
@@ -125,14 +126,14 @@ void Jungfrau::GainPed::Impl<M>::processFrame(Data& data, Data& proc)
 			if (gain == 3)
 				gain = 2;
 			else if (gain == 2) {
-				*dst = std::numeric_limits<P>::max() - 0x10;
+				*dst = 0;
 				continue;
 			}
 			if (coeffs[gain][0][i] != 0)
-				*dst = ((adc - coeffs[gain][1][i]) / coeffs[gain][0][i]
-					+ 0.5);
+				*dst = std::round((adc - coeffs[gain][1][i]) /
+						  coeffs[gain][0][i]);
 			else
-				*dst = std::numeric_limits<P>::min() + 0x10;
+				*dst = 0;
 			DEB_TRACE() << DEB_VAR1(*dst);
 		}
 	}
