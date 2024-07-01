@@ -141,11 +141,11 @@ class CPUAffinity
 {
 	DEB_CLASS_NAMESPC(DebModCamera, "CPUAffinity", "SlsDetector");
  public:
-	static constexpr int MaxNbCPUs = NumaSoftBufferAllocMgr::MaxNbCPUs;
-	static constexpr int NbULongBits = sizeof(unsigned long) * 8;
-	static constexpr int NbULongs = MaxNbCPUs / NbULongBits;
+	static constexpr int MaxNbCPUs = CPUMask::MaxNbCPUs;
+	static constexpr int NbULongBits = CPUMask::NbULongBits;
+	static constexpr int NbULongs = CPUMask::NbULongs;
 
-	typedef std::bitset<MaxNbCPUs> Mask;
+	typedef CPUMask::BitMask Mask;
 	typedef unsigned long ULongArray[NbULongs];
 
 	CPUAffinity() {}
@@ -179,24 +179,17 @@ class CPUAffinity
 	static std::string getProcDir(bool local_threads);
 	static std::string getTaskProcDir(pid_t task, bool is_thread);
 
-	static void maskToULongArray(const Mask& mask, ULongArray& array);
-	static Mask maskFromULongArray(const ULongArray& array);
-
-	static std::string maskToString(const Mask& mask, int base = 16,
-					bool comma_sep = false);
-	static Mask maskFromString(std::string aff_str, int base = 16);
-
 	void toULongArray(ULongArray& array) const
-	{ maskToULongArray(getMask(), array); }
+	{ CPUMask(getMask()).toULongArray(array); }
 
 	static CPUAffinity fromULongArray(const ULongArray& array)
-	{ return maskFromULongArray(array); }
+	{ return CPUMask::fromULongArray(array).m_mask; }
 
 	std::string toString(int base = 16, bool comma_sep = false) const
-	{ return maskToString(getMask(), base, comma_sep); }
+	{ return CPUMask(getMask()).toString(base, comma_sep); }
 
 	static CPUAffinity fromString(std::string aff_str, int base = 16)
-	{ return maskFromString(aff_str, base);	}
+	{ return CPUMask::fromString(aff_str, base).m_mask; }
 
  private:
 	static Mask internalMask(Mask m)

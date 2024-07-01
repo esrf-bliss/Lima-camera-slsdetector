@@ -452,94 +452,6 @@ void CPUAffinity::applyWithSetAffinity(pid_t task, bool incl_threads) const
 	}
 }
 
-void CPUAffinity::maskToULongArray(const Mask& mask, ULongArray& array)
-{
-	constexpr Mask ULongMask(std::numeric_limits<unsigned long>::max());
-	for (int i = 0; i < NbULongs; ++i)
-		array[i] = ((mask >> (i * NbULongBits)) & ULongMask).to_ulong();
-}
-
-CPUAffinity::Mask CPUAffinity::maskFromULongArray(const ULongArray& array)
-{
-	Mask mask;
-	for (int i = 0; i < NbULongs; ++i)
-		mask |= Mask(array[i]) << (i * NbULongBits);
-	return mask;
-}
-
-string CPUAffinity::maskToString(const Mask& mask, int base, bool comma_sep)
-{
-	if (base == 2)
-		return mask.to_string();
-	else if (base != 16)
-		throw LIMA_HW_EXC(InvalidValue, "Invalid base: ") << base;
-		
-	ostringstream os;
-	ULongArray array;
-	maskToULongArray(mask, array);
-	os << hex << setfill('0');
-	string sep;
-	for (int i = NbULongs - 1; i >= 0; --i) {
-		unsigned long ul_val = array[i];
-		constexpr int NbULongInts = NbULongBits / 32;
-		for (int j = NbULongInts - 1; j >= 0; --j) {
-			uint32_t ui_val = (ul_val >> (j * 32)) & 0xffffffff;
-			os << sep << setw(32 / 4) << ui_val;
-			if (sep.empty() && comma_sep)
-				sep = ",";
-		}
-	}
-	return os.str();
-}
-
-CPUAffinity::Mask CPUAffinity::maskFromString(string aff_str, int base)
-{
-	if ((base != 2) && (base != 16))
-		throw LIMA_HW_EXC(InvalidValue, "Invalid base: ") << base;
-	
-	if (!aff_str.empty() && (base == 16) && (aff_str.find("0x") == 0))
-		aff_str.erase(0, 2);
-	size_t len = aff_str.size();
-	if (len && (aff_str.rfind('L') == len - 1))
-		aff_str.erase(len - 1);
-
-#define convert_to_ulong(s, v)						\
-	do {								\
-		size_t pos;						\
-		v = stoul(s, &pos, base);				\
-		if (pos != s.size())					\
-			throw LIMA_HW_EXC(InvalidValue, "Invalid mask: ") \
-						<< aff_str;		\
-	} while (0)
-
-	ULongArray array;
-	const size_t bits_per_char = (base == 16) ? 4 : 1;
-	const size_t chars_per_ulong = NbULongBits / bits_per_char;
-	int idx = 0;
-	string val;
-	string::const_reverse_iterator it, end = aff_str.rend();
-	for (it = aff_str.rbegin(); it != end; ++it) {
-		if (*it == ',')
-			continue;
-		else if (idx == NbULongs)
-			throw LIMA_HW_EXC(InvalidValue, "Invalid mask: ")
-							<< aff_str;
-		val.insert(0, 1, *it);
-		if (val.size() == chars_per_ulong) {
-			convert_to_ulong(val, array[idx++]);
-			val.clear();
-		}
-	}
-	if (!val.empty())
-		convert_to_ulong(val, array[idx++]);
-	while (idx < NbULongs)
-		array[idx++] = 0;
-
-#undef convert_to_ulong
-
-	return maskFromULongArray(array);
-}
-
 
 bool IrqMgr::m_irqbalance_stopped = false;
 StringList IrqMgr::m_dev_list;
@@ -904,7 +816,7 @@ bool NetDevRxQueueMgr::applyWithSetter(Task task, const string& irq_queue,
 	ConstStr task_opt = (task == Irq) ? "-i" : "-r";
 	const CPUAffinity::Mask& mask = a.getZeroDefaultMask();
 	setter.args() << task_opt << " " << m_dev << " " << irq_queue << " "
-		      << CPUAffinity::maskToString(mask, 16, true);
+		      << CPUMask(mask).toString(16, true);
 	bool setter_ok = (setter.execute() == 0);
 	DEB_RETURN() << DEB_VAR1(setter_ok);
 	return setter_ok;

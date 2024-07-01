@@ -210,11 +210,9 @@ public:
 class CPUAffinity
 {
 %TypeCode
-	typedef ::SlsDetector::CPUAffinity::Mask CPUMask;
-
 	PyObject *maskToPyLong(const CPUMask& mask)
 	{
-		std::string r = mask.to_string();
+		std::string r = mask.m_mask.to_string();
 		return PyLong_FromString(r.c_str(), NULL, 2);
 	}
 
@@ -227,7 +225,7 @@ class CPUAffinity
 		Py_ssize_t len = PyBytes_Size(py_bytes);
 		if ((len > 2) && (strncmp(r, "0x", 2) == 0))
 			base = 16;
-		return ::SlsDetector::CPUAffinity::maskFromString(r, base);
+		return CPUMask::fromString(r, base);
 	}
 %End
 
@@ -242,7 +240,7 @@ public:
 			throw LIMA_HW_EXC(InvalidValue, "CPUAffinity accepts "
 							"PyBytes objects only");
 		CPUMask mask = pyBytesToCPUMask(a0);
-		sipCpp = new ::SlsDetector::CPUAffinity(mask);
+		sipCpp = new ::SlsDetector::CPUAffinity(mask.m_mask);
 	}
 	catch (...)
 	{
