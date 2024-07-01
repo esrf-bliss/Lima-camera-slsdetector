@@ -281,7 +281,7 @@ class Eiger : public Model
 			  m_eiger(eiger)
 		{ setActive(true); }
 
-		virtual Data processModel(Data& data);
+		virtual Data processModel(Data& data, const FrameMetadata& md);
 
 	private:
 		friend class Eiger;

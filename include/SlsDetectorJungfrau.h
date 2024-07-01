@@ -47,6 +47,9 @@ class Jungfrau : public Model
  public:
 	typedef Defs::GainMode GainMode;
 
+	static constexpr int NbStorageCells = 16;
+	static constexpr int DefaultStorageCell = 15;
+
 	class GainPed
 	{
 		DEB_CLASS_NAMESPC(DebModCamera, "Jungfrau::GainPed",
@@ -96,7 +99,11 @@ class Jungfrau : public Model
 
 		Data::TYPE getDataType();
 
-		void processFrame(Data& data, Data& proc);
+		void processFrame(Data& data, Data& proc,
+				  const FrameMetadata& md);
+
+		void setCurrStorageCell(int  sc);
+		void getCurrStorageCell(int& sc);
 
 		void setCalib(const Calib& calib);
 		void getCalib(Calib& calib);
@@ -108,17 +115,37 @@ class Jungfrau : public Model
 					  "SlsDetector");
 		public:
 			using Map = M;
-			Impl(Jungfrau *j) : m_jungfrau(j) {}
+			using CalibMap = std::map<int, Calib>;
+
+			Impl(Jungfrau *j) : m_jungfrau(j)
+			{ setCurrStorageCell(DefaultStorageCell); }
+
+			void setCurrStorageCell(int sc);
+			int getCurrStorageCell() { return m_curr_sc; }
+
 			void updateImageSize(Size size, bool raw);
+			CalibMap::iterator checkCalib(int sc);
 			void getDefaultCalib(Calib& calib);
-			void setDefaultCalib() { getDefaultCalib(m_calib); }
-			void processFrame(Data& data, Data& proc);
+			void setDefaultCalib();
+			void processFrame(Data& data, Data& proc,
+					  const FrameMetadata& md);
+
+			Calib& getCalib(int sc)
+			{ return m_calib_map.at(sc); }
+			const Calib& getCalib(int sc) const
+			{ return m_calib_map.at(sc); }
+
+			Calib& currCalib()
+			{ return getCalib(m_curr_sc); }
+			const Calib& currCalib() const
+			{ return getCalib(m_curr_sc); }
 
 			Jungfrau *m_jungfrau;
 			Size m_size;
 			bool m_raw;
 			int m_pixels{0};
-			Calib m_calib;
+			int m_curr_sc;
+			CalibMap m_calib_map;
 		};
 		using AnyImpl = std::variant<Impl<Map16Data>, Impl<Map32Data>>;
 
@@ -163,6 +190,8 @@ class Jungfrau : public Model
 
 	virtual bool checkTrigMode(TrigMode trig_mode);
 
+	virtual FrameType getSdkNbFrames(FrameType nb_frames);
+
 	// the returned object must be deleted by the caller
 	ImgProcTask *createImgProcTask();
 
@@ -188,6 +217,25 @@ class Jungfrau : public Model
 	void getGainPedCalib(GainPed::Calib& calib)
 	{ m_gain_ped_img_proc->m_gain_ped.getCalib(calib); }
 
+	void setGainPedCalibCurrStorageCell(int  sc)
+	{ m_gain_ped_img_proc->m_gain_ped.setCurrStorageCell(sc); }
+	void getGainPedCalibCurrStorageCell(int& sc)
+	{ m_gain_ped_img_proc->m_gain_ped.getCurrStorageCell(sc); }
+
+	void setAveCurrStorageCell(int  sc)
+	{ m_ave_img_proc->setCurrStorageCell(sc); }
+	void getAveCurrStorageCell(int& sc)
+	{ m_ave_img_proc->getCurrStorageCell(sc); }
+
+	void setStorageCellStart(int  sc);
+	void getStorageCellStart(int& sc);
+
+	void setNbAdditionalStorageCells(int  add_sc);
+	void getNbAdditionalStorageCells(int& add_sc);
+
+	void setStorageCellDelay(double  sc_delay);
+	void getStorageCellDelay(double& sc_delay);
+
 	void setImgSrc(ImgSrc  img_src);
 	void getImgSrc(ImgSrc& img_src);
 
@@ -195,6 +243,15 @@ class Jungfrau : public Model
 
 	virtual Reconstruction *getReconstruction()
 	{ return m_reconstruction; }
+
+	static int getStorageCell(const slsDetectorDefs::sls_detector_header *h)
+	{
+		DEB_STATIC_FUNCT();
+		if (h->detType != slsDetectorDefs::JUNGFRAU)
+			THROW_HW_ERROR(Error) << "Detector is not a Jungfrau";
+		auto& daq_info = h->detSpec3;
+		return (daq_info >> 8) & 0xf;
+	}
 
  protected:
 	virtual void updateImageSize();
@@ -227,7 +284,8 @@ class Jungfrau : public Model
 		virtual void prepareAcq();
 		virtual void clear();
 		virtual bool consumesRawData() = 0;
-		virtual void processFrame(Data& data) = 0;
+		virtual void processFrame(Data& data,
+					  const FrameMetadata& md) = 0;
 
 	protected:
 		friend class Jungfrau;
@@ -294,7 +352,7 @@ class Jungfrau : public Model
 		virtual void updateImageSize(Size size, bool raw);
 		virtual void clear();
 		virtual bool consumesRawData() { return true; }
-		virtual void processFrame(Data& data);
+		virtual void processFrame(Data& data, const FrameMetadata& md);
 
 		void readGainADCMaps(Data& gain_map, Data& adc_map,
 				     FrameType& frame);
@@ -335,7 +393,7 @@ class Jungfrau : public Model
 		virtual void updateImageSize(Size size, bool raw);
 		virtual void clear();
 		virtual bool consumesRawData() { return true; }
-		virtual void processFrame(Data& data);
+		virtual void processFrame(Data& data, const FrameMetadata& md);
 
 		void readProcMap(Data& proc_map, FrameType& frame);
 
@@ -370,14 +428,17 @@ class Jungfrau : public Model
 		virtual void updateImageSize(Size size, bool raw);
 		virtual void clear();
 		virtual bool consumesRawData() { return true; }
-		virtual void processFrame(Data& data);
+		virtual void processFrame(Data& data, const FrameMetadata& md);
+
+		void setCurrStorageCell(int  sc);
+		void getCurrStorageCell(int& sc) { sc = m_curr_sc; }
 
 		void readAveMap(Data& ave_map, FrameType& nb_frames,
 				FrameType& frame);
 
 	private:
 		template <class M>
-		void processFrameFunct(Data& data);
+		void processFrameFunct(Data& data, const FrameMetadata& md);
 
 		struct MapData {
 			Data ave_map;
@@ -394,10 +455,16 @@ class Jungfrau : public Model
 		typedef ReadHelper<MapData> Helper;
 		typedef typename Helper::DBuffer DBuffer;
 
-		DBuffer m_buffer;
-		AutoPtr<Helper> m_helper;
-		Data m_acc;
-		int m_nb_frames;
+		struct SCData {
+			DBuffer buffer;
+			AutoPtr<Helper> helper;
+			Data acc;
+			int nb_frames;
+			SCData();
+		};
+
+		int m_curr_sc;
+		std::array<SCData, NbStorageCells> m_sc_data;
 	};
 
 	class ModelReconstruction : public SlsDetector::Reconstruction
@@ -410,7 +477,7 @@ class Jungfrau : public Model
 			  m_jungfrau(jungfrau)
 		{}
 
-		virtual Data processModel(Data& data);
+		virtual Data processModel(Data& data, const FrameMetadata& md);
 
 	private:
 		friend class Jungfrau;
@@ -477,6 +544,8 @@ class Jungfrau : public Model
 	int getNbRecvs()
 	{ return getCamera()->getNbRecvs(); }
 
+	int m_nb_sc;
+	int m_sc_start;
 	AutoPtr<GainPedImgProc> m_gain_ped_img_proc;
 	AutoPtr<GainADCMapImgProc> m_gain_adc_map_img_proc;
 	AutoPtr<AveImgProc> m_ave_img_proc;

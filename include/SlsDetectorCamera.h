@@ -151,6 +151,20 @@ public:
 
 	void reportException(Exception& e, std::string name);
 
+	static sls::ns NSec(double x)
+	{
+		std::chrono::duration<double> sec(x);
+		return std::chrono::duration_cast<sls::ns>(sec);
+	}
+
+	static double Sec(sls::ns ns)
+	{
+		std::chrono::duration<double> sec(ns);
+		return sec.count();
+	}
+
+	static const std::string packet_sideband_data_key;
+
 private:
 	typedef std::map<int, int> RecvPortMap;
 	typedef std::queue<int> FrameQueue;
@@ -239,12 +253,6 @@ private:
 	void updateTimeRanges();
 	void updateCPUAffinity(bool recv_restarted);
 	void setRecvCPUAffinity(const RecvCPUAffinityList& recv_affinity_list);
-
-	static sls::ns NSec(double x)
-	{
-		std::chrono::duration<double> sec(x);
-		return std::chrono::duration_cast<sls::ns>(sec);
-	}
 
 	AcqState getEffectiveState(AutoMutex& l);
 

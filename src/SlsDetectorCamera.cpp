@@ -34,6 +34,8 @@ using namespace lima;
 using namespace lima::SlsDetector;
 
 
+const std::string Camera::packet_sideband_data_key = "packet_data";
+
 Camera::AppInputData::AppInputData(string cfg_fname) 
 	: config_file_name(cfg_fname)
 {
@@ -192,8 +194,7 @@ Camera::AcqThread::newFrameReady(DetFrameImagePackets&& packets)
 	HwFrameInfoType frame_info;
 	FrameType frame = packets.first;
 	frame_info.acq_frame_nb = frame;
-	static const std::string key = "packet_data";
-	HwAddData(key, frame_info,
+	HwAddData(packet_sideband_data_key, frame_info,
 		  std::make_shared<PacketData>(std::move(packets)));
 	DEB_TRACE() << DEB_VAR1(frame_info);
 	StdBufferCbMgr *cb_mgr = m_cam->m_buffer.getBufferCbMgr();
@@ -755,12 +756,19 @@ void Camera::setNbFrames(FrameType nb_frames)
 
 	waitAcqState(Idle);
 	FrameType det_nb_frames = nb_frames;
-	if (m_skip_frame_freq)
-		det_nb_frames += nb_frames / m_skip_frame_freq;
+	FrameType sdk_nb_frames = det_nb_frames;
+	if (m_model)
+		sdk_nb_frames = m_model->getSdkNbFrames(det_nb_frames);
+	if (m_skip_frame_freq) {
+		if (sdk_nb_frames != det_nb_frames)
+			THROW_HW_ERROR(Error) << "Cannot skip reduced frames";
+		det_nb_frames += det_nb_frames / m_skip_frame_freq;
+		sdk_nb_frames = det_nb_frames;
+	}
 	bool trig_exp = ((m_trig_mode == Defs::TriggerExposure) ||
 			 (m_trig_mode == Defs::SoftTriggerExposure));
-	int cam_frames = trig_exp ? 1 : det_nb_frames;
-	int cam_triggers = trig_exp ? det_nb_frames : 1;
+	int cam_frames = trig_exp ? 1 : sdk_nb_frames;
+	int cam_triggers = trig_exp ? sdk_nb_frames : 1;
 	EXC_CHECK(m_det->setNumberOfFrames(cam_frames));
 	EXC_CHECK(m_det->setNumberOfTriggers(cam_triggers));
 	m_lima_nb_frames = nb_frames;

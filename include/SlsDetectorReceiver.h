@@ -49,6 +49,8 @@ class Receiver
 public:
 	class ImagePackets {
 	public:
+		typedef slsDetectorDefs::sls_detector_header *HeaderPtr;
+
 		FrameType frame;
 		int numberOfPorts;
 		std::bitset<MAX_NUM_PORTS> validPortData;
@@ -57,6 +59,9 @@ public:
 
 		bool assemble(char *buf)
 		{ return recv->asmImagePackets(this, buf); }
+
+		virtual HeaderPtr getNetworkHeader() const
+		{ return nullptr; }
 
 	protected:
 		friend class Receiver;

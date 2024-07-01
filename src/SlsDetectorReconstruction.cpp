@@ -26,6 +26,7 @@ using namespace lima::SlsDetector;
 using namespace std;
 
 #include "SlsDetectorCamera.h"
+#include "SlsDetectorJungfrau.h"
 
 /*******************************************************************
  * \brief ReconstructionCtrlObj constructor
@@ -174,18 +175,23 @@ Data Reconstruction::process(Data& data)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(data);
 
-	static const std::string key = "packet_data";
+	const std::string& packet_key = Camera::packet_sideband_data_key;
 	Data::SidebandContainer::Optional plugin_data;
-	plugin_data = data.sideband.get(key);
+	plugin_data = data.sideband.get(packet_key);
 	if (!plugin_data)
 		THROW_HW_ERROR(Error) << "Cannot get packet_data from " << data;
-	data.sideband.erase(key);
+	data.sideband.erase(packet_key);
 
-	typedef std::shared_ptr<PacketData> Ptr;
-	Ptr packet_data = sideband::DataCast<PacketData>(*plugin_data);
+	typedef std::shared_ptr<PacketData> PacketPtr;
+	PacketPtr packet_data = sideband::DataCast<PacketData>(*plugin_data);
+
+	// Extract the metadata before the UDP packets are consumed
+	FrameMetadata md;
+	Model *model = m_cam->getModel();
+	model->initFrameMetadata(packet_data->packets, md);
 
 	Data raw_data = getRawData(data);
 	assemblePackets(raw_data, packet_data->packets);
 
-	return m_active ? processModel(data) : data;
+	return m_active ? processModel(data, md) : data;
 }

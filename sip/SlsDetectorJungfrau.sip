@@ -107,6 +107,9 @@ class Jungfrau : public SlsDetector::Model
 %End
 
  public:
+	static const int NbStorageCells;
+	static const int DefaultStorageCell;
+
 	class GainPed
 	{
 	public:
@@ -130,12 +133,16 @@ class Jungfrau : public SlsDetector::Model
 		void getDefaultCalib(
 			SlsDetector::Jungfrau::GainPed::Calib& calib /Out/);
 
+		void setCurrStorageCell(int  sc);
+		void getCurrStorageCell(int& sc /Out/);
+
 		void setCalib(
 			const SlsDetector::Jungfrau::GainPed::Calib& calib);
 		void getCalib(
 			SlsDetector::Jungfrau::GainPed::Calib& calib /Out/);
 
-		void processFrame(Data& data, Data& proc /In,Out/);
+		void processFrame(Data& data, Data& proc /In,Out/,
+				  const SlsDetector::FrameMetadata& md);
 	};
 
 	enum ImgSrc { Raw, GainPedCorr };
@@ -187,6 +194,21 @@ class Jungfrau : public SlsDetector::Model
 
 	void setGainPedCalib(const SlsDetector::Jungfrau::GainPed::Calib& calib);
 	void getGainPedCalib(SlsDetector::Jungfrau::GainPed::Calib& calib /Out/);
+
+	void setGainPedCalibCurrStorageCell(int  sc);
+	void getGainPedCalibCurrStorageCell(int& sc /Out/);
+
+	void setAveCurrStorageCell(int  sc);
+	void getAveCurrStorageCell(int& sc /Out/);
+
+	void setStorageCellStart(int  sc);
+	void getStorageCellStart(int& sc /Out/);
+
+	void setNbAdditionalStorageCells(int  add_sc);
+	void getNbAdditionalStorageCells(int& add_sc /Out/);
+
+	void setStorageCellDelay(double  sc_delay);
+	void getStorageCellDelay(double& sc_delay /Out/);
 
 	void setImgSrc(Jungfrau::ImgSrc  img_src);
 	void getImgSrc(Jungfrau::ImgSrc& img_src /Out/);

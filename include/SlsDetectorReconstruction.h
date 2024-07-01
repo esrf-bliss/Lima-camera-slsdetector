@@ -78,7 +78,7 @@ public:
 	void assemblePackets(Data& data, DetFrameImagePackets& packets);
 
 	virtual Data process(Data& data);
-	virtual Data processModel(Data& data) = 0;
+	virtual Data processModel(Data& data, const FrameMetadata& md) = 0;
 
 	virtual void stop();
 

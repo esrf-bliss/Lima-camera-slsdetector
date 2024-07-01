@@ -60,10 +60,17 @@ class SlsDetectorJungfrau(SlsDetector):
                   'img_proc_config',
                   'img_src',
                   'gain_ped_map_type',
+                  'storage_cell_start',
+                  'nb_additional_storage_cells',
+                  'storage_cell_delay',
+                  'gain_ped_calib_curr_storage_cell',
+                  'ave_curr_storage_cell',
     ]
 
     NbGains = 3
-
+    NbStorageCells = SlsDetectorHw.Jungfrau.NbStorageCells
+    DefaultStorageCell = SlsDetectorHw.Jungfrau.DefaultStorageCell
+    
     GainPedCalibAttrRe = re.compile('((?P<action>read|write)_)?'
                                     '(?P<select>gain|ped)_'
                                     '(?P<gain>[0-2])_calib_map')
@@ -102,23 +109,31 @@ class SlsDetectorJungfrau(SlsDetector):
                 deb.Always("Loading calibration file: '%s'" % calib_file)
                 with h5.File(calib_file, 'r') as f:
                     d = f['/data']
-                    nb_gains, height, width = d.shape
-                    if nb_gains != self.NbGains:
-                        raise ValueError('Bad nb of calib gains: %s' % nb_gains)
-                    valid_pixels = (d[0] != 0) 
-                    deb.Always("size=(%dx%d), valid_pixels=%d" %
-                               (width, height, valid_pixels.sum()))
-                    g0_ave = d[0][valid_pixels].mean()
-                    deb.Always("OrigGain[0].ave=%.8f" % g0_ave)
-                    for i, gd in enumerate(d):
-                        gd[valid_pixels] /= g0_ave
-                        gd_ave = gd[valid_pixels].mean()
-                        factor = (f' [x{int(abs(prev_ave / gd_ave))}]'
-                                  if i > 0 else '')
-                        deb.Always("NormGain[%d].ave=%.8f%s" % (i, gd_ave,
-                                                                factor))
-                        self.setGainPedCalibMap('gain', i, gd)
-                        prev_ave = gd_ave
+                    nb_frames, height, width = d.shape
+                    nb_sc, aux = divmod(nb_frames, self.NbGains)
+                    if aux != 0 or nb_sc not in [1, self.NbStorageCells]:
+                        raise ValueError('Bad nb of calib gains: %s' % nb_frames)
+                    deb.Always("Calibration storage cells: %d" % nb_sc)
+                    sc_list = ([self.DefaultStorageCell]
+                               if nb_sc == 1 else range(nb_sc))
+                    gain_offset_list = range(0, nb_frames, self.NbGains)
+                    for sc, go in zip(sc_list, gain_offset_list):
+                        deb.Always("Storage cell #%d:" % sc)
+                        self.model.setGainPedCalibCurrStorageCell(sc)
+                        valid_pixels = (d[go] != 0) 
+                        deb.Always("size=(%dx%d), valid_pixels=%d" %
+                                   (width, height, valid_pixels.sum()))
+                        g0_ave = d[go][valid_pixels].mean()
+                        deb.Always("OrigGain[0].ave=%.8f" % g0_ave)
+                        for i, gd in enumerate(d[go:go+self.NbGains]):
+                            gd[valid_pixels] /= g0_ave
+                            gd_ave = gd[valid_pixels].mean()
+                            factor = (f' [x{int(abs(prev_ave / gd_ave))}]'
+                                      if i > 0 else '')
+                            deb.Always("NormGain[%d].ave=%.8f%s" % (i, gd_ave,
+                                                                    factor))
+                            self.setGainPedCalibMap('gain', i, gd)
+                            prev_ave = gd_ave
             except Exception as e:
                 deb.Error("Error loading calibration: %s" % e)
         sys.stderr.flush()
@@ -308,6 +323,26 @@ class SlsDetectorJungfrauClass(SlsDetectorClass):
         [[PyTango.DevDouble,
           PyTango.IMAGE,
           PyTango.READ, 8192, 8192]],
+        'ave_curr_storage_cell':
+        [[PyTango.DevLong,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'storage_cell_start':
+        [[PyTango.DevLong,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'nb_additional_storage_cells':
+        [[PyTango.DevLong,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'storage_cell_delay':
+        [[PyTango.DevDouble,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'gain_ped_calib_curr_storage_cell':
+        [[PyTango.DevLong,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
         'gain_0_calib_map':
         [[PyTango.DevDouble,
           PyTango.IMAGE,

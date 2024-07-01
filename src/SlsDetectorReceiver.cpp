@@ -35,6 +35,20 @@ using AnyPacketBlockList = sls::AnyPacketBlockList;
 struct RecvImagePackets : public Receiver::ImagePackets {
 	using Receiver::ImagePackets::ImagePackets;
 	AnyPacketBlockList blocks;
+
+	HeaderPtr getNetworkHeader() const override
+	{
+		for (int i = 0; i < numberOfPorts; ++i) {
+			if (i >= blocks.size())
+				return nullptr;
+			else if (!validPortData[i])
+				continue;
+			return std::visit([](auto &b) {
+				return b ? b->getNetworkHeader() : nullptr;
+			}, blocks[i]);
+		}
+		return nullptr;
+	}
 };
 
 inline

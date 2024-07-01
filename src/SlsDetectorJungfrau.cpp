@@ -58,14 +58,35 @@ using namespace lima::SlsDetector::Defs;
  */
 
 template <class M>
-void Jungfrau::GainPed::GainPed::Impl<M>::updateImageSize(Size size, bool raw)
+void Jungfrau::GainPed::Impl<M>::setCurrStorageCell(int sc)
 {
+	m_curr_sc = sc;
+	checkCalib(sc);
+}
+
+template <class M>
+void Jungfrau::GainPed::Impl<M>::updateImageSize(Size size, bool raw)
+{
+	DEB_MEMBER_FUNCT();
 	m_size = size;
 	m_raw = raw;
 	m_pixels = Point(m_size).getArea();
 	std::vector<int> dims = {m_size.getWidth(), m_size.getHeight()};
-	if (m_calib.gain_map[0].dimensions != dims)
+	if (currCalib().gain_map[0].dimensions != dims)
 		setDefaultCalib();
+}
+
+template <class M>
+Jungfrau::GainPed::Impl<M>::CalibMap::iterator
+Jungfrau::GainPed::Impl<M>::checkCalib(int sc)
+{
+	CalibMap::iterator it = m_calib_map.find(sc);
+	if (it == m_calib_map.end()) {
+		it = m_calib_map.emplace(std::make_pair(sc, Calib())).first;
+		if (m_pixels > 0)
+			getDefaultCalib(it->second);
+	}
+	return it;
 }
 
 template <class M>
@@ -101,13 +122,31 @@ void Jungfrau::GainPed::Impl<M>::getDefaultCalib(Calib& calib)
 }
 
 template <class M>
-void Jungfrau::GainPed::Impl<M>::processFrame(Data& data, Data& proc)
+void Jungfrau::GainPed::GainPed::Impl<M>::setDefaultCalib()
+{
+	CalibMap::iterator it, end = m_calib_map.end();
+	for (it = m_calib_map.begin(); it != end; ++it)
+		getDefaultCalib(it->second);
+}
+
+template <class M>
+void Jungfrau::GainPed::Impl<M>::processFrame(Data& data, Data& proc,
+					      const FrameMetadata& md)
 {
 	DEB_MEMBER_FUNCT();
 
+	int sc = getStorageCell(&md.network_header);
+	DEB_PARAM() << DEB_VAR2(proc.frameNumber, sc);
+
+	CalibMap::iterator it = m_calib_map.find(sc);
+	if (it == m_calib_map.end())
+		THROW_HW_ERROR(Error) << "No calib available for "
+				      << DEB_VAR1(sc);
+	Calib& calib = it->second;
+
 	auto calib_coeff = [&](auto gain, auto type) {
-		Data& d = (type == 0) ? m_calib.gain_map[gain] :
-					m_calib.ped_map[gain];
+		Data& d = (type == 0) ? calib.gain_map[gain] :
+					calib.ped_map[gain];
 		return (double *) d.data();
 	};
 	double *coeffs[3][2] = {{calib_coeff(0, 0), calib_coeff(0, 1)},
@@ -181,13 +220,25 @@ void Jungfrau::GainPed::getMapType(MapType& map_type)
 void Jungfrau::GainPed::setCalib(const Calib& calib)
 {
 	DEB_MEMBER_FUNCT();
-	std::visit([&](auto& impl) { impl.m_calib = calib; }, m_impl);
+	std::visit([&](auto& impl) { impl.currCalib() = calib; }, m_impl);
 }
 
 void Jungfrau::GainPed::getCalib(Calib& calib)
 {
 	DEB_MEMBER_FUNCT();
-	std::visit([&](auto& impl) { calib = impl.m_calib; }, m_impl);
+	std::visit([&](auto& impl) { calib = impl.currCalib(); }, m_impl);
+}
+
+void Jungfrau::GainPed::setCurrStorageCell(int sc)
+{
+	DEB_MEMBER_FUNCT();
+	std::visit([&](auto& impl) { impl.setCurrStorageCell(sc); }, m_impl);
+}
+
+void Jungfrau::GainPed::getCurrStorageCell(int& sc)
+{
+	DEB_MEMBER_FUNCT();
+	std::visit([&](auto& impl) { sc = impl.getCurrStorageCell(); }, m_impl);
 }
 
 void Jungfrau::GainPed::updateImageSize(Size size, bool raw)
@@ -214,10 +265,11 @@ Data::TYPE Jungfrau::GainPed::getDataType()
 }
 
 
-void Jungfrau::GainPed::processFrame(Data& data, Data& proc)
+void Jungfrau::GainPed::processFrame(Data& data, Data& proc,
+				     const FrameMetadata& md)
 {
 	DEB_MEMBER_FUNCT();
-	std::visit([&](auto& impl) { impl.processFrame(data, proc); }, m_impl);
+	std::visit([&](auto& impl) { impl.processFrame(data, proc, md); }, m_impl);
 }
 
 std::ostream& lima::SlsDetector::operator <<(std::ostream& os,
@@ -341,7 +393,8 @@ void Jungfrau::GainADCMapImgProc::clear()
 	m_buffer.reset();
 }
 
-void Jungfrau::GainADCMapImgProc::processFrame(Data& data)
+void Jungfrau::GainADCMapImgProc::processFrame(Data& data,
+					       const FrameMetadata& md)
 {
 	DEB_MEMBER_FUNCT();
 	long frame = data.frameNumber;
@@ -425,7 +478,7 @@ void Jungfrau::GainPedImgProc::clear()
 	m_buffer.reset();
 }
 
-void Jungfrau::GainPedImgProc::processFrame(Data& data)
+void Jungfrau::GainPedImgProc::processFrame(Data& data, const FrameMetadata& md)
 {
 	DEB_MEMBER_FUNCT();
 	long frame = data.frameNumber;
@@ -436,7 +489,7 @@ void Jungfrau::GainPedImgProc::processFrame(Data& data)
 	DoubleBufferWriter<MapData> w(m_buffer);
 	MapData& m = w.getBuffer();
 	DEB_TRACE() << DEB_VAR1(&m);
-	m_gain_ped.processFrame(raw, m.proc_map);
+	m_gain_ped.processFrame(raw, m.proc_map, md);
 	m.proc_map.frameNumber = frame;
 	w.setCounter(frame);
 }
@@ -455,11 +508,16 @@ void Jungfrau::GainPedImgProc::readProcMap(Data& proc_map, FrameType& frame)
  * Jungfrau::AveImgProc class
  */
 
+Jungfrau::AveImgProc::SCData::SCData()
+	: helper(new Helper), nb_frames(0)
+{
+	acc.type = Data::UINT32;
+}
+
 Jungfrau::AveImgProc::AveImgProc(Jungfrau *jungfrau)
-	: ImgProcBase(jungfrau, "ave"), m_helper(new Helper), m_nb_frames(0)
+	: ImgProcBase(jungfrau, "ave"), m_curr_sc(DefaultStorageCell)
 {
 	DEB_CONSTRUCTOR();
-	m_acc.type = Data::UINT32;
 }
 
 void Jungfrau::AveImgProc::updateImageSize(Size size, bool raw)
@@ -468,10 +526,21 @@ void Jungfrau::AveImgProc::updateImageSize(Size size, bool raw)
 	DEB_PARAM() << DEB_VAR3(m_name, size, raw);
 	ImgProcBase::updateImageSize(size, raw);
 
-	for (auto& d : m_buffer)
-		d.updateSize(size);
+	for (auto& sc_d : m_sc_data) {
+		for (auto& d : sc_d.buffer)
+			d.updateSize(size);
 
-	updateDataSize(m_acc, size);
+		updateDataSize(sc_d.acc, size);
+	}
+}
+
+void Jungfrau::AveImgProc::setCurrStorageCell(int sc)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(sc);
+	if ((sc < 0) || (sc >= NbStorageCells))
+		THROW_HW_ERROR(InvalidValue) << "Invalid " << DEB_VAR1(sc);
+	m_curr_sc = sc;
 }
 
 void Jungfrau::AveImgProc::clear()
@@ -479,44 +548,49 @@ void Jungfrau::AveImgProc::clear()
 	DEB_MEMBER_FUNCT();
 	ImgProcBase::clear();
 
-	for (auto& d : m_buffer)
-		d.clear();
-	m_buffer.reset();
-
-	clearData(m_acc);
-	m_nb_frames = 0;
+	for (auto& sc_d : m_sc_data) {
+		for (auto& d : sc_d.buffer)
+			d.clear();
+		sc_d.buffer.reset();
+	
+		clearData(sc_d.acc);
+		sc_d.nb_frames = 0;
+	}
 }
 
 template <class M>
-void Jungfrau::AveImgProc::processFrameFunct(Data& data)
+void Jungfrau::AveImgProc::processFrameFunct(Data& data,
+					     const FrameMetadata& md)
 {
 	DEB_MEMBER_FUNCT();
 	long frame = data.frameNumber;
 	DEB_PARAM() << DEB_VAR1(frame);
 
-	DoubleBufferWriter<MapData> w(m_buffer);
+	int sc = getStorageCell(&md.network_header);
+	SCData& sc_d = m_sc_data[sc];
+	DoubleBufferWriter<MapData> w(sc_d.buffer);
 	MapData& m = w.getBuffer();
 	DEB_TRACE() << DEB_VAR1(&m);
-	++m_nb_frames;
+	++sc_d.nb_frames;
 
 	using S = typename M::Pixel;
 	S *src = (S *) data.data();
-	unsigned int *acc = (unsigned int *) m_acc.data();
+	unsigned int *acc = (unsigned int *) sc_d.acc.data();
 	double *ave = (double *) m.ave_map.data();
 	for (int i = 0; i < m_pixels; ++i, ++src, ++acc, ++ave) {
 		*acc += *src & 0x3fff;
-		*ave = *acc / m_nb_frames;
+		*ave = *acc / sc_d.nb_frames;
 	}
 	m.ave_map.frameNumber = frame;
-	m.nb_frames = m_nb_frames;
+	m.nb_frames = sc_d.nb_frames;
 	w.setCounter(frame);
 }
 
-void Jungfrau::AveImgProc::processFrame(Data& data)
+void Jungfrau::AveImgProc::processFrame(Data& data, const FrameMetadata& md)
 {
 	DEB_MEMBER_FUNCT();
 	Data raw = m_jungfrau->getRawData(data);
-	processFrameFunct<GainPed::Map16Data>(raw);
+	processFrameFunct<GainPed::Map16Data>(raw, md);
 }
 
 void Jungfrau::AveImgProc::readAveMap(Data& ave_map, FrameType& nb_frames,
@@ -524,9 +598,10 @@ void Jungfrau::AveImgProc::readAveMap(Data& ave_map, FrameType& nb_frames,
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(frame);
-	Helper::ReaderPtr r = m_helper->createReader(m_buffer, frame);
+	SCData& sc_d = m_sc_data[m_curr_sc];
+	Helper::ReaderPtr r = sc_d.helper->createReader(sc_d.buffer, frame);
 	MapData &m = r->getBuffer();
-	m_helper->addReaderData(r, m.ave_map, ave_map);
+	sc_d.helper->addReaderData(r, m.ave_map, ave_map);
 	nb_frames = m.nb_frames;
 	DEB_RETURN() << DEB_VAR3(ave_map, nb_frames, frame);
 }
@@ -535,7 +610,7 @@ void Jungfrau::AveImgProc::readAveMap(Data& ave_map, FrameType& nb_frames,
  * Jungfrau::ModelReconstruction class
  */
 
-Data Jungfrau::ModelReconstruction::processModel(Data& data)
+Data Jungfrau::ModelReconstruction::processModel(Data& data, const FrameMetadata& md)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR4(m_jungfrau, data.frameNumber,
@@ -549,7 +624,7 @@ Data Jungfrau::ModelReconstruction::processModel(Data& data)
 	ImgProcList::iterator it, end = img_proc_list.end();
 	for (it = img_proc_list.begin(); it != end; ++it)
 		if ((*it)->consumesRawData())
-			(*it)->processFrame(data);
+			(*it)->processFrame(data, md);
 
 	if (m_jungfrau->m_img_src == Raw)
 		return data;
@@ -557,12 +632,12 @@ Data Jungfrau::ModelReconstruction::processModel(Data& data)
 	Data raw = m_jungfrau->getRawData(data);
 	DEB_TRACE() << DEB_VAR1(raw);
 	GainPed& gain_ped = m_jungfrau->m_gain_ped_img_proc->m_gain_ped;
-	gain_ped.processFrame(raw, ret);
+	gain_ped.processFrame(raw, ret, md);
 	DEB_TRACE() << DEB_VAR1(ret);
 
 	for (it = img_proc_list.begin(); it != end; ++it)
 		if (!(*it)->consumesRawData())
-			(*it)->processFrame(ret);
+			(*it)->processFrame(ret, md);
 
 	return ret;
 }
@@ -586,6 +661,15 @@ Jungfrau::Jungfrau(Camera *cam)
 	m_ave_img_proc = new AveImgProc(this);
 
 	m_reconstruction = new ModelReconstruction(this);
+
+	int add_sc;
+	const char *err_msg = "Detector Additional SC are different";
+	EXC_CHECK(add_sc =
+		  m_det->getNumberOfAdditionalStorageCells().tsquash(err_msg));
+	m_nb_sc = add_sc + 1;
+
+	err_msg = "Detector SC start are different";
+	EXC_CHECK(m_sc_start = m_det->getStorageCellStart().tsquash(err_msg));
 
 	updateCameraModel();
 }
@@ -807,6 +891,12 @@ void Jungfrau::getTimeRanges(TimeRanges& time_ranges)
 	time_ranges.max_lat_time = 1e3;
 	time_ranges.min_frame_period = min_period * 1e-6;
 	time_ranges.max_frame_period = 1e3;
+}
+
+FrameType Jungfrau::getSdkNbFrames(FrameType nb_frames)
+{
+	DEB_MEMBER_FUNCT();
+	return (nb_frames - 1) / m_nb_sc + 1;
 }
 
 void Jungfrau::updateImageSize()
@@ -1040,6 +1130,54 @@ void Jungfrau::getGainPedMapType(GainPed::MapType& map_type)
 	GainPed& gain_ped = m_gain_ped_img_proc->m_gain_ped;
 	gain_ped.getMapType(map_type);
 	DEB_RETURN() << DEB_VAR1(map_type);
+}
+
+void Jungfrau::setStorageCellStart(int sc)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(sc);
+	EXC_CHECK(m_det->setStorageCellStart(sc));
+	m_sc_start = sc;
+}
+
+void Jungfrau::getStorageCellStart(int& sc)
+{
+	DEB_MEMBER_FUNCT();
+	sc = m_sc_start;
+	DEB_RETURN() << DEB_VAR1(sc);
+}
+
+void Jungfrau::setNbAdditionalStorageCells(int add_sc)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(add_sc);
+	EXC_CHECK(m_det->setNumberOfAdditionalStorageCells(add_sc));
+	m_nb_sc = add_sc + 1;
+}
+
+void Jungfrau::getNbAdditionalStorageCells(int& add_sc)
+{
+	DEB_MEMBER_FUNCT();
+	add_sc = m_nb_sc - 1;
+	DEB_RETURN() << DEB_VAR1(add_sc);
+}
+
+void Jungfrau::setStorageCellDelay(double sc_delay)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(sc_delay);
+	sls::ns sc_delay_ns = Camera::NSec(sc_delay);
+	EXC_CHECK(m_det->setStorageCellDelay(sc_delay_ns));
+}
+
+void Jungfrau::getStorageCellDelay(double& sc_delay)
+{
+	DEB_MEMBER_FUNCT();
+	sls::ns sc_delay_ns;
+	const char *err_msg = "Detector SC delay are different";
+	EXC_CHECK(sc_delay_ns = m_det->getStorageCellDelay().tsquash(err_msg));
+	sc_delay = Camera::Sec(sc_delay_ns);
+	DEB_RETURN() << DEB_VAR1(sc_delay);
 }
 
 std::ostream& lima::SlsDetector::operator <<(std::ostream& os,
