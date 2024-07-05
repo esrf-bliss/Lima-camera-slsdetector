@@ -177,18 +177,27 @@ AutoPtr<Receiver::ImagePackets> Receiver::readImagePackets()
 		if (!image_data)
 			return NULL;
 
-		FrameType det_frame = image_data->frame;
+		FrameType frame = image_data->frame - 1; // 1st frame set to 1
 		bool skip_this = false;
 		bool skip_next = false;
 		bool prev_last_skipped = m_last_skipped;
-		FrameType skip_freq = m_cam->m_skip_frame_freq;
-		if (skip_freq) {
-			skip_this = (det_frame % (skip_freq + 1) == 0);
-			FrameType last_frame = m_cam->m_det_nb_frames;
-			skip_next = ((det_frame + 1) == last_frame);
-			if (skip_this && (det_frame == last_frame))
+		FrameType skip_freq = m_cam->m_skip_frame_freq + 1;
+		FrameType skip_idx = m_cam->m_skip_frame_idx;
+		bool check_skip = (skip_freq > 1);
+		if (check_skip) {
+			auto must_skip = [&](FrameType f) {
+				return f % skip_freq == skip_idx;
+			};
+			auto is_last = [&](FrameType f) {
+				return f == m_cam->m_det_nb_frames - 1;
+			};
+			skip_this = must_skip(frame);
+			if (is_last(frame) || (skip_this && is_last(frame + 1)))
 				m_last_skipped = true;
-			DEB_TRACE() << DEB_VAR5(m_idx, det_frame, skip_this,
+			FrameType next_offset = skip_this ? 2 : 1;
+			skip_next = (must_skip(frame + next_offset) &&
+				     is_last(frame + next_offset));
+			DEB_TRACE() << DEB_VAR5(m_idx, frame, skip_this,
 						skip_next, m_last_skipped);
 		}
 
@@ -196,12 +205,15 @@ AutoPtr<Receiver::ImagePackets> Receiver::readImagePackets()
 			image_data = readSkippableImagePackets();
 			if (!image_data)
 				return NULL;
-			det_frame = image_data->frame;
+			frame = image_data->frame - 1;
 		}
 
-		image_data->frame = det_frame - 1; // first frame is set to 1
-		if (skip_freq)
-			image_data->frame -= det_frame / (skip_freq + 1);
+		image_data->frame = frame; // Inject 0-based Lima frame
+		if (check_skip) {
+			FrameType offset = skip_freq - skip_idx;
+			image_data->frame -= (frame + offset) / skip_freq;
+			DEB_TRACE() << DEB_VAR1(image_data->frame);
+		}
 
 		if (skip_next && !m_last_skipped) {
 			AutoPtr<ImagePackets> skip = readSkippableImagePackets();

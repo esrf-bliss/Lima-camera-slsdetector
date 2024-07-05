@@ -641,6 +641,14 @@ class SlsDetectorClass(PyTango.DeviceClass):
         [[PyTango.DevDouble,
           PyTango.SCALAR,
           PyTango.READ]],
+        'skip_frame_freq':
+        [[PyTango.DevULong,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'skip_frame_idx':
+        [[PyTango.DevULong,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
         'tolerate_lost_packets':
         [[PyTango.DevBoolean,
           PyTango.SCALAR,

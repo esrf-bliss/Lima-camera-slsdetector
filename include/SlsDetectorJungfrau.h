@@ -190,6 +190,7 @@ class Jungfrau : public Model
 
 	virtual bool checkTrigMode(TrigMode trig_mode);
 
+	// Jungfrau sends one frame per active SC per trigger
 	virtual FrameType getSdkNbFrames(FrameType nb_frames);
 
 	// the returned object must be deleted by the caller

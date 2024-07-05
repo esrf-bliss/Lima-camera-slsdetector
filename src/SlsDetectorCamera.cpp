@@ -508,6 +508,7 @@ Camera::Camera(string config_fname, int det_id)
 	  m_lima_nb_frames(1),
 	  m_det_nb_frames(1),
 	  m_skip_frame_freq(0),
+	  m_skip_frame_idx(0),
 	  m_last_skipped_frame_timeout(0.5),
 	  m_lat_time(0),
 	  m_buffer(this),
@@ -757,13 +758,15 @@ void Camera::setNbFrames(FrameType nb_frames)
 	waitAcqState(Idle);
 	FrameType det_nb_frames = nb_frames;
 	FrameType sdk_nb_frames = det_nb_frames;
-	if (m_model)
+	if (m_model) {
+		if (m_skip_frame_freq) {
+			det_nb_frames += det_nb_frames / m_skip_frame_freq;
+			if (det_nb_frames % (m_skip_frame_freq + 1) != 0)
+				THROW_HW_ERROR(InvalidValue)
+					<< "Total nb frames not multiple of "
+					<< "effective skip_frame_freq";
+		}
 		sdk_nb_frames = m_model->getSdkNbFrames(det_nb_frames);
-	if (m_skip_frame_freq) {
-		if (sdk_nb_frames != det_nb_frames)
-			THROW_HW_ERROR(Error) << "Cannot skip reduced frames";
-		det_nb_frames += det_nb_frames / m_skip_frame_freq;
-		sdk_nb_frames = det_nb_frames;
 	}
 	bool trig_exp = ((m_trig_mode == Defs::TriggerExposure) ||
 			 (m_trig_mode == Defs::SoftTriggerExposure));
@@ -786,7 +789,13 @@ void Camera::setSkipFrameFreq(FrameType skip_frame_freq)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(skip_frame_freq);
+	bool idx_was_last = (m_skip_frame_idx == m_skip_frame_freq);
 	m_skip_frame_freq = skip_frame_freq;
+	if (idx_was_last || (m_skip_frame_idx > m_skip_frame_freq))
+		m_skip_frame_idx = m_skip_frame_freq;
+	FrameType misalign = m_lima_nb_frames % (m_skip_frame_freq + 1);
+	if (misalign != m_skip_frame_freq)
+		m_lima_nb_frames += m_skip_frame_freq - misalign;
 	setNbFrames(m_lima_nb_frames);
 }
 
@@ -795,6 +804,23 @@ void Camera::getSkipFrameFreq(FrameType& skip_frame_freq)
 	DEB_MEMBER_FUNCT();
 	skip_frame_freq = m_skip_frame_freq;
 	DEB_RETURN() << DEB_VAR1(skip_frame_freq);
+}
+
+void Camera::setSkipFrameIdx(FrameType skip_frame_idx)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(skip_frame_idx);
+	if (skip_frame_idx > m_skip_frame_freq)
+		THROW_HW_ERROR(InvalidValue) << "Skip Frame Idx too high";
+	m_skip_frame_idx = skip_frame_idx;
+	setNbFrames(m_lima_nb_frames);
+}
+
+void Camera::getSkipFrameIdx(FrameType& skip_frame_idx)
+{
+	DEB_MEMBER_FUNCT();
+	skip_frame_idx = m_skip_frame_idx;
+	DEB_RETURN() << DEB_VAR1(skip_frame_idx);
 }
 
 void Camera::setExpTime(double exp_time)

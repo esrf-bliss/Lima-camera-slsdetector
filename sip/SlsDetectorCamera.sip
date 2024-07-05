@@ -76,6 +76,8 @@ public:
 
 	void setSkipFrameFreq(unsigned long  skip_frame_freq);
 	void getSkipFrameFreq(unsigned long& skip_frame_freq /Out/);
+	void setSkipFrameIdx(unsigned long  skip_frame_idx);
+	void getSkipFrameIdx(unsigned long& skip_frame_idx /Out/);
 
 	// setDAC: mod_idx: 0-N=module, -1=all
 	void setDAC(int mod_idx, SlsDetector::Defs::DACIndex dac_idx,

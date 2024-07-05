@@ -114,6 +114,8 @@ public:
 
 	void setSkipFrameFreq(FrameType  skip_frame_freq);
 	void getSkipFrameFreq(FrameType& skip_frame_freq);
+	void setSkipFrameIdx(FrameType  skip_frame_idx);
+	void getSkipFrameIdx(FrameType& skip_frame_idx);
 
 	// setDAC: mod_idx: 0-N=module, -1=all
 	void setDAC(int mod_idx, DACIndex dac_idx, int  val, 
@@ -298,6 +300,7 @@ private:
 	FrameType m_lima_nb_frames;
 	FrameType m_det_nb_frames;
 	FrameType m_skip_frame_freq;
+	FrameType m_skip_frame_idx;
 	SortedIntList m_missing_last_skipped_frame;
 	double m_last_skipped_frame_timeout;
 	double m_exp_time;

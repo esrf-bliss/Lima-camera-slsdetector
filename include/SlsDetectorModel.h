@@ -81,6 +81,7 @@ class Model
 
 	virtual bool checkTrigMode(TrigMode trig_mode) = 0;
 
+	// Returns how many SDK triggers are required for the req. frames
 	virtual FrameType getSdkNbFrames(FrameType nb_frames)
 	{ return nb_frames; }
 
