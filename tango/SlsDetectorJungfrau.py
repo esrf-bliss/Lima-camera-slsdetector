@@ -212,12 +212,23 @@ class SlsDetectorJungfrau(SlsDetector):
         attr.set_value(data)
 
     @Core.DEB_MEMBER_FUNCT
-    def read_ave_map(self, attr):
+    def readAveMap(self, req_frame):
+        deb.Param("req_frame=%s" % req_frame)
         jungfrau = _SlsDetectorJungfrau
-        ave_data, nb_frames, frame = jungfrau.readAveMap(-1)
+        ave_data, nb_frames, frame = jungfrau.readAveMap(req_frame)
         deb.Return("frame=%s, nb_frames=%s, ave_data=%s" % (frame, nb_frames,
                                                             ave_data))
+        return ave_data, nb_frames, frame
+
+    @Core.DEB_MEMBER_FUNCT
+    def read_ave_map(self, attr):
+        ave_data, nb_frames, frame = self.readAveMap(-1)
         attr.set_value(ave_data.buffer)
+
+    @Core.DEB_MEMBER_FUNCT
+    def read_ave_nb_frames(self, attr):
+        ave_data, nb_frames, frame = self.readAveMap(-1)
+        attr.set_value(nb_frames)
 
     @Core.DEB_MEMBER_FUNCT
     def write_gain_ped_calib_map(self, attr, map_select, gain):
@@ -323,6 +334,10 @@ class SlsDetectorJungfrauClass(SlsDetectorClass):
         [[PyTango.DevDouble,
           PyTango.IMAGE,
           PyTango.READ, 8192, 8192]],
+        'ave_nb_frames':
+        [[PyTango.DevULong,
+          PyTango.SCALAR,
+          PyTango.READ]],
         'ave_curr_storage_cell':
         [[PyTango.DevLong,
           PyTango.SCALAR,
