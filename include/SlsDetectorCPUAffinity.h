@@ -565,11 +565,11 @@ inline CPUAffinity RecvCPUAffinityList_all(const RecvCPUAffinityList& l,
 }
 					       
 struct GlobalCPUAffinity {
-	RecvCPUAffinityList recv;
-	CPUAffinity acq;
-	CPUAffinity lima;
-	CPUAffinity other;
-	NetDevGroupCPUAffinityList netdev;
+	RecvCPUAffinityList recv_cpu;
+	CPUAffinity acq_cpu;
+	CPUAffinity lima_cpu;
+	CPUAffinity other_cpu;
+	NetDevGroupCPUAffinityList netdev_cpu;
 	StringList rx_netdev;
 
 	CPUAffinity all() const;

@@ -392,11 +392,11 @@ SlsDetector::CPUAffinity RecvCPUAffinityList_all(
 				const SlsDetector::RecvCPUAffinityList& l);
 
 struct GlobalCPUAffinity {
-	SlsDetector::RecvCPUAffinityList recv;
-	SlsDetector::CPUAffinity acq;
-	SlsDetector::CPUAffinity lima;
-	SlsDetector::CPUAffinity other;
-	SlsDetector::NetDevGroupCPUAffinityList netdev;
+	SlsDetector::RecvCPUAffinityList recv_cpu;
+	SlsDetector::CPUAffinity acq_cpu;
+	SlsDetector::CPUAffinity lima_cpu;
+	SlsDetector::CPUAffinity other_cpu;
+	SlsDetector::NetDevGroupCPUAffinityList netdev_cpu;
 	std::vector<std::string> rx_netdev;
 
 	SlsDetector::CPUAffinity all() const;
