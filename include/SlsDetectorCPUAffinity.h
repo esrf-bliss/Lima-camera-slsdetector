@@ -136,6 +136,8 @@ class SystemCmdPipe
 	SystemCmd m_cmd;
 };
 
+typedef lima::CPUMask CPUMask;
+typedef lima::NumaNodeMask NumaNodeMask;
 
 class CPUAffinity 
 {
@@ -150,6 +152,7 @@ class CPUAffinity
 
 	CPUAffinity() {}
 	CPUAffinity(const Mask& m) : m_mask(m) {}
+	CPUAffinity(const CPUMask& m) : m_mask(m.m_mask) {}
 
 	static int getNbSystemCPUs(bool max_nb = false);
 
