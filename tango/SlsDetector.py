@@ -389,8 +389,21 @@ class SlsDetector(PyTango.Device_4Impl):
         self.expandPixelDepthRefs(aff_map_raw)
         aff_map = {}
         for pixel_depth, aff_data in aff_map_raw.items():
-            recv_aff, acq, lima, other, netdev_aff = aff_data[:5]
-            rx_netdev = list(aff_data[5]) if len(aff_data) > 5 else []
+            if isinstance(aff_data, tuple):
+                recv_aff, acq, lima, other, netdev_aff = aff_data[:5]
+                rx_netdev = list(aff_data[5]) if len(aff_data) > 5 else []
+            elif isinstance(aff_data, dict):
+                recv_aff = aff_data['recv']
+                acq = aff_data['acq']
+                lima = aff_data['lima']
+                other = aff_data['other']
+                netdev_aff = aff_data['netdev']
+                rx_netdev = list(aff_data.get('rx_netdev', []))
+            else:
+                msg = 'Invalid affinity data for %s-bit: %s' % (pixel_depth,
+                                                                aff_data)
+                deb.Error(msg)
+                raise ValueError(msg)
             global_aff = GlobalCPUAffinity()
             recv_list = []
             for listeners in recv_aff:
@@ -445,18 +458,21 @@ class SlsDetector(PyTango.Device_4Impl):
             netdev_grp_list = []
             for netdev_grp in global_aff.netdev:
                 name_str = ','.join(netdev_grp.name_list)
-                queue_list = [('%d: %s)' % (q, aff_2_str((a.irq, 
+                queue_list = [('%d: %s' % (q, aff_2_str((a.irq, 
                                                           a.processing))))
                               for q, a in netdev_grp.queue_affinity.items()]
                 queue_str = ','.join(queue_list)
-                netdev_str = '"%s": {%s}' % (name_str, queue_str)
+                netdev_str = "('%s', {%s})" % (name_str, queue_str)
                 netdev_grp_list.append(netdev_str)
             netdev_grp_str = '(%s)' % ', '.join(netdev_grp_list)
-            aff_data = [recv_str, acq_str, lima_str, other_str, netdev_grp_str]
+            aff_data = OrderedDict(recv=recv_str, acq=acq_str,
+                                   lima=lima_str, other=other_str,
+                                   netdev=netdev_grp_str)
             if global_aff.rx_netdev:
-                aff_data.append(str(tuple(global_aff.rx_netdev)))
-            aff_str = ', '.join(aff_data)
-            pixel_depth_aff_list.append('%d: (%s)' % (pixel_depth, aff_str))
+                aff_data['rx_netdev'] = str(tuple(global_aff.rx_netdev))
+            aff_str_items = ["'%s': %s" % kv for kv in aff_data.items()]
+            aff_str = '{' + ', '.join(aff_str_items) + '}'
+            pixel_depth_aff_list.append('%d: %s' % (pixel_depth, aff_str))
         return '{%s}' % ', '.join(pixel_depth_aff_list)
 
     @Core.DEB_MEMBER_FUNCT
