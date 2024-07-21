@@ -379,12 +379,12 @@ class SlsDetector(PyTango.Device_4Impl):
         NetDevRxQueueCPUAffinity = SlsDetectorHw.NetDevRxQueueCPUAffinity
         NetDevGroupCPUAffinity = SlsDetectorHw.NetDevGroupCPUAffinity
         GlobalCPUAffinity = SlsDetectorHw.GlobalCPUAffinity
-        Mask = lambda x: CPUAffinity(hex(x).encode())
+        CPUMask = lambda x: CPUAffinity(hex(x).encode())
         def CPU(*x):
             if type(x[0]) in [tuple, list]:
                 x = list(chain(*x))
             m = reduce(lambda a, b: a | b, map(lambda a: 1 << a, x))
-            return Mask(m)
+            return CPUMask(m)
         aff_map_raw = eval(aff_str)
         self.expandPixelDepthRefs(aff_map_raw)
         aff_map = {}
@@ -438,7 +438,7 @@ class SlsDetector(PyTango.Device_4Impl):
             cpu_list = [str(i) for i in range(128) if NumAffinity(a) & (1 << i)]
             return 'CPU(%s)' % ', '.join(cpu_list)
         def mask_str(a):
-            return 'Mask(0x%x)' % NumAffinity(a)
+            return 'CPUMask(0x%x)' % NumAffinity(a)
         def aff_2_str(a):
             if type(a) in [tuple, list]:
                 str_list = list(map(aff_2_str, a))
@@ -584,7 +584,7 @@ class SlsDetectorClass(PyTango.DeviceClass):
          "(<comma_separated_netdev_name_list>, <rx_queue_affinity_map>), the "
          "latter in the form of: {<queue>: (<irq>, <processing>)}, and "
          "rx_netdev is an optional list of Rx netdev names. "
-         "Each affinity can be expressed by one of the functions: Mask(mask) "
+         "Each affinity can be expressed by one of the functions: CPUMask(mask) "
          "or CPU(<cpu1>[, ..., <cpuN>]) for independent CPU enumeration", []],
         'buffer_max_memory':
         [PyTango.DevString,
