@@ -53,9 +53,8 @@ from Lima import Core
 from Lima import SlsDetector as SlsDetectorHw
 from Lima.Server.AttrHelper import get_attr_4u, get_attr_string_value_list
 
-NumAffinity = long if sys.version_info.major == 2 else int
-NumAffinity = lambda a: NumAffinity(a.getMask()) \
-			if type(a) is SlsDetectorHw.CPUAffinity else a
+def NumAffinity(a):
+    return int(a.getMask()) if type(a) is SlsDetectorHw.CPUAffinity else a
 
 def ConstListAttr(nl, vl=None, namespc=SlsDetectorHw.Defs):
     def g(x):
@@ -379,7 +378,7 @@ class SlsDetector(PyTango.Device_4Impl):
         NetDevRxQueueCPUAffinity = SlsDetectorHw.NetDevRxQueueCPUAffinity
         NetDevGroupCPUAffinity = SlsDetectorHw.NetDevGroupCPUAffinity
         GlobalCPUAffinity = SlsDetectorHw.GlobalCPUAffinity
-        CPUMask = lambda x: CPUAffinity(hex(x).encode())
+        CPUMask = CPUAffinity
         def CPU(*x):
             if type(x[0]) in [tuple, list]:
                 x = list(chain(*x))

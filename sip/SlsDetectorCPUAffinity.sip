@@ -33,19 +33,17 @@ using namespace lima::SlsDetector;
 
 %ConvertToTypeCode
 	if (sipIsErr == NULL)
-		return PyBytes_Check(sipPy);
+		return PyLong_Check(sipPy);
 
-	char *s = PyBytes_AsString(sipPy);
-	int base = 2;
-	Py_ssize_t len = PyBytes_Size(sipPy);
-	if ((len > 2) && (strncmp(s, "0x", 2) == 0))
-		base = 16;
+	std::string s = Hex(sipPy, sipIsErr);
+	if (*sipIsErr)
+		return 0;
 
 	try {
-		*sipCppPtr = new CPUMask(CPUMask::fromString(s, base));
+		*sipCppPtr = new CPUMask(CPUMask::fromString(s, 16));
 	} catch (...) {
 		*sipIsErr = 1;
-		std::string err = "Invalid CPUMask: " + std::string(s);
+		std::string err = "Invalid CPUMask: " + s;
 		PyErr_SetString(sipException_Exception, err.c_str());
 		return 0;
 	}
@@ -72,9 +70,12 @@ using namespace lima::SlsDetector;
 
 %ConvertToTypeCode
 	if (sipIsErr == NULL)
-		return PyBytes_Check(sipPy);
+		return PyLong_Check(sipPy);
 
-	char *s = PyBytes_AsString(sipPy);
+	std::string s = Hex(sipPy, sipIsErr);
+	if (*sipIsErr)
+		return 0;
+
 	try {
 		*sipCppPtr = new NumaNodeMask(NumaNodeMask::fromString(s));
 	} catch (...) {
