@@ -65,6 +65,12 @@ class BufferCtrlObj : public SoftBufferCtrlObj {
 		AllocatorFactory::get().setDefaultAllocator(alloc);
 	}
 
+	void setNumaNodeMask(const NumaNodeMask& mask)
+	{
+		Allocator::Ref alloc = std::make_shared<NumaAllocator>(mask);
+		AllocatorFactory::get().setDefaultAllocator(alloc);
+	}
+
 	Data getFrameData(FrameType frame)
 	{
 		StdBufferCbMgr& buffer = getBuffer();
@@ -86,6 +92,7 @@ public:
 	void setBufferCtrlObj(BufferCtrlObj *buffer_ctrl_obj);
 
 	void setBufferCPUAffinity(CPUAffinity buffer_affinity);
+	void setBufferNumaNode(NumaNodeMask buffer_node);
 
 	bool waitFrame(FrameType frame_nb);
 
@@ -123,7 +130,6 @@ private:
 	Camera *m_cam;
 	Cond& m_cond;
 	ResizePolicy m_resize_policy;
-	CPUAffinity m_buffer_affinity;
 	BufferCtrlObj *m_buffer_ctrl_obj;
 	BufferSync *m_buffer_sync;
 	int m_max_memory;

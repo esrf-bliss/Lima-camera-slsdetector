@@ -1563,7 +1563,10 @@ void GlobalCPUAffinityMgr::applyAndSet(const GlobalCPUAffinity& o)
 		DEB_WARNING() << "Hyper-threading seems activated!";
 
 	setLimaThreadAffinity(o.lima_cpu);
-	setLimaBufferAffinity(o.lima_cpu);
+	if (o.lima_node != NumaNodeMask())
+		setLimaBufferNumaNode(o.lima_node);
+	else
+		setLimaBufferAffinity(o.lima_cpu);
 	setRecvAffinity(o.recv_cpu);
 	setAcqAffinity(o.acq_cpu);
 
@@ -1627,6 +1630,12 @@ void GlobalCPUAffinityMgr::setLimaBufferAffinity(CPUAffinity lima_affinity)
 {
 	DEB_MEMBER_FUNCT();
 	m_cam->m_buffer.setBufferCPUAffinity(lima_affinity);
+}
+
+void GlobalCPUAffinityMgr::setLimaBufferNumaNode(NumaNodeMask lima_node)
+{
+	DEB_MEMBER_FUNCT();
+	m_cam->m_buffer.setBufferNumaNode(lima_node);
 }
 
 void GlobalCPUAffinityMgr::setRecvAffinity(

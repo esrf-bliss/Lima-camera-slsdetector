@@ -571,6 +571,7 @@ struct GlobalCPUAffinity {
 	RecvCPUAffinityList recv_cpu;
 	CPUAffinity acq_cpu;
 	CPUAffinity lima_cpu;
+	NumaNodeMask lima_node;
 	CPUAffinity other_cpu;
 	NetDevGroupCPUAffinityList netdev_cpu;
 	StringList rx_netdev;
@@ -674,6 +675,8 @@ class GlobalCPUAffinityMgr
 
 	void setLimaThreadAffinity(CPUAffinity lima_affinity);
 	void setLimaBufferAffinity(CPUAffinity lima_affinity);
+	void setLimaBufferNumaNode(NumaNodeMask lima_node);
+	void setLimaNumaAffinity(CPUAffinity lima_affinity);
 	void setRecvAffinity(const RecvCPUAffinityList& recv_affinity_list);
 	void setAcqAffinity(CPUAffinity acq_affinity);
 

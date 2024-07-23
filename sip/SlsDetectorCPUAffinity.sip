@@ -410,6 +410,7 @@ struct GlobalCPUAffinity {
 	SlsDetector::RecvCPUAffinityList recv_cpu;
 	SlsDetector::CPUAffinity acq_cpu;
 	SlsDetector::CPUAffinity lima_cpu;
+	SlsDetector::NumaNodeMask lima_node;
 	SlsDetector::CPUAffinity other_cpu;
 	SlsDetector::NetDevGroupCPUAffinityList netdev_cpu;
 	std::vector<std::string> rx_netdev;

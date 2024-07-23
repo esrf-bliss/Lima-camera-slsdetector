@@ -384,6 +384,12 @@ class SlsDetector(PyTango.Device_4Impl):
                 x = list(chain(*x))
             m = reduce(lambda a, b: a | b, map(lambda a: 1 << a, x))
             return CPUMask(m)
+        NodeMask = lambda x: x
+        def Node(*x):
+            if type(x[0]) in [tuple, list]:
+                x = list(chain(*x))
+            m = reduce(lambda a, b: a | b, map(lambda a: 1 << a, x))
+            return NodeMask(m)
         aff_map_raw = eval(aff_str)
         self.expandPixelDepthRefs(aff_map_raw)
         aff_map = {}
@@ -391,10 +397,12 @@ class SlsDetector(PyTango.Device_4Impl):
             if isinstance(aff_data, tuple):
                 recv_cpu, acq_cpu, lima_cpu, other_cpu, netdev_cpu = aff_data[:5]
                 rx_netdev = list(aff_data[5]) if len(aff_data) > 5 else []
+                lima_node = 0
             elif isinstance(aff_data, dict):
                 recv_cpu = aff_data['recv_cpu']
                 acq_cpu = aff_data['acq_cpu']
                 lima_cpu = aff_data['lima_cpu']
+                lima_node = aff_data.get('lima_node', 0)
                 other_cpu = aff_data['other_cpu']
                 netdev_cpu = aff_data['netdev_cpu']
                 rx_netdev = list(aff_data.get('rx_netdev', []))
@@ -412,6 +420,7 @@ class SlsDetector(PyTango.Device_4Impl):
             global_aff.recv_cpu = recv_list
             global_aff.acq_cpu = acq_cpu
             global_aff.lima_cpu = lima_cpu
+            global_aff.lima_node = lima_node
             global_aff.other_cpu = other_cpu
             ng_aff_list = []
             for name_list, queue_data in netdev_cpu:
@@ -446,6 +455,9 @@ class SlsDetector(PyTango.Device_4Impl):
                 return '(%s)' % ', '.join(str_list)
             f = cpu_str if use_cpu else mask_str
             return f(a)
+        def node_str(a):
+            node_list = [str(i) for i in range(1024) if NumAffinity(a) & (1 << i)]
+            return 'Node(%s)' % ', '.join(node_list)
         for pixel_depth, global_aff in sorted(aff_map.items()):
             recv_list = []
             for r in global_aff.recv_cpu:
@@ -453,6 +465,7 @@ class SlsDetector(PyTango.Device_4Impl):
             recv_cpu = aff_2_str(recv_list)
             acq_cpu = aff_2_str(global_aff.acq_cpu)
             lima_cpu = aff_2_str(global_aff.lima_cpu)
+            lima_node = node_str(global_aff.lima_node)
             other_cpu = aff_2_str(global_aff.other_cpu)
             netdev_grp_list = []
             for netdev_grp in global_aff.netdev_cpu:
@@ -465,7 +478,8 @@ class SlsDetector(PyTango.Device_4Impl):
                 netdev_grp_list.append(netdev_str)
             netdev_cpu = '(%s)' % ', '.join(netdev_grp_list)
             aff_data = OrderedDict(recv_cpu=recv_cpu, acq_cpu=acq_cpu,
-                                   lima_cpu=lima_cpu, other_cpu=other_cpu,
+                                   lima_cpu=lima_cpu, lima_node=lima_node,
+                                   other_cpu=other_cpu,
                                    netdev_cpu=netdev_cpu)
             if global_aff.rx_netdev:
                 aff_data['rx_netdev'] = str(tuple(global_aff.rx_netdev))
@@ -505,10 +519,12 @@ class SlsDetector(PyTango.Device_4Impl):
             s = "RecvCpu[%d]:" % i
             s += " listeners=%s" % [A(x) for x in r.listeners]
             deb.Always('  ' + s)
-        acq, lima, other = (global_aff.acq_cpu, global_aff.lima_cpu,
-                            global_aff.other_cpu)
-        deb.Always('  AcqCpu=%s, LimaCpu=%s, OtherCpu=%s' %
-                   (A(acq), A(lima), A(other)))
+        acq, lima_cpu, lima_node, other = (global_aff.acq_cpu,
+                                           global_aff.lima_cpu,
+                                           global_aff.lima_node,
+                                           global_aff.other_cpu)
+        deb.Always('  AcqCpu=%s, LimaCpu=%s, LimaNode=%s, OtherCpu=%s' %
+                   (A(acq), A(lima_cpu), A(lima_node), A(other)))
         for netdev_grp in global_aff.netdev_cpu:
             s = "NetDevGroupCpu[%s]: {" % ','.join(netdev_grp.name_list)
             l = []
