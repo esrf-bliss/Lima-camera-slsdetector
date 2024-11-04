@@ -66,8 +66,12 @@ class Jungfrau : public Model
 
 		enum MapType { Map16, Map32 };
 
+		static constexpr double DefaultCalibEnergy = 12.0; // keV
+
 		struct Map16Data {
 			static constexpr MapType Type = Map16;
+			static constexpr double DefaultKevAdus =
+				1.15552007e-02 / DefaultCalibEnergy;
 			static constexpr double DefaultCoeffs[3][2] = {
 				{ 8.654262e+1, -83556.9},
 				{-3.309899e+0,  18267.3},
@@ -79,6 +83,8 @@ class Jungfrau : public Model
 
 		struct Map32Data {
 			static constexpr MapType Type = Map32;
+			static constexpr double DefaultKevAdus =
+				5.49821338e+02 / DefaultCalibEnergy;
 			static constexpr double DefaultCoeffs[3][2] = {
 				{ 1.000048e+0,    -0.4}, // effectively {1, 0}
 				{-3.824832e-2, 15071.6}, // G0 x26
@@ -108,6 +114,9 @@ class Jungfrau : public Model
 		void setCalib(const Calib& calib);
 		void getCalib(Calib& calib);
 
+		void setCalibKevAdus(double  kev_adus);
+		void getCalibKevAdus(double& kev_adus);
+
 	private:
 		template <class M> struct Impl {
 			DEB_CLASS_NAMESPC(DebModCamera,
@@ -130,6 +139,11 @@ class Jungfrau : public Model
 			void processFrame(Data& data, Data& proc,
 					  const FrameMetadata& md);
 
+			void setCalibKevAdus(double kev_adus)
+			{ m_calib_kev_adus = kev_adus; }
+			double getCalibKevAdus() const
+			{ return m_calib_kev_adus; }
+
 			Calib& getCalib(int sc)
 			{ return m_calib_map.at(sc); }
 			const Calib& getCalib(int sc) const
@@ -146,6 +160,7 @@ class Jungfrau : public Model
 			int m_pixels{0};
 			int m_curr_sc;
 			CalibMap m_calib_map;
+			double m_calib_kev_adus;
 		};
 		using AnyImpl = std::variant<Impl<Map16Data>, Impl<Map32Data>>;
 
@@ -217,6 +232,11 @@ class Jungfrau : public Model
 	{ m_gain_ped_img_proc->m_gain_ped.setCalib(calib); }
 	void getGainPedCalib(GainPed::Calib& calib)
 	{ m_gain_ped_img_proc->m_gain_ped.getCalib(calib); }
+
+	void setCalibKevAdus(double  kev_adus)
+	{ m_gain_ped_img_proc->m_gain_ped.setCalibKevAdus(kev_adus); }
+	void getCalibKevAdus(double& kev_adus)
+	{ m_gain_ped_img_proc->m_gain_ped.getCalibKevAdus(kev_adus); }
 
 	void setGainPedCalibCurrStorageCell(int  sc)
 	{ m_gain_ped_img_proc->m_gain_ped.setCurrStorageCell(sc); }

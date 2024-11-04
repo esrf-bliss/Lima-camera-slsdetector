@@ -127,6 +127,7 @@ void Jungfrau::GainPed::GainPed::Impl<M>::setDefaultCalib()
 	CalibMap::iterator it, end = m_calib_map.end();
 	for (it = m_calib_map.begin(); it != end; ++it)
 		getDefaultCalib(it->second);
+	m_calib_kev_adus = M::DefaultKevAdus;
 }
 
 template <class M>
@@ -227,6 +228,18 @@ void Jungfrau::GainPed::getCalib(Calib& calib)
 {
 	DEB_MEMBER_FUNCT();
 	std::visit([&](auto& impl) { calib = impl.currCalib(); }, m_impl);
+}
+
+void Jungfrau::GainPed::setCalibKevAdus(double kev_adus)
+{
+	DEB_MEMBER_FUNCT();
+	std::visit([&](auto& impl) { impl.setCalibKevAdus(kev_adus); }, m_impl);
+}
+
+void Jungfrau::GainPed::getCalibKevAdus(double& kev_adus)
+{
+	DEB_MEMBER_FUNCT();
+	std::visit([&](auto& impl) { kev_adus = impl.getCalibKevAdus(); }, m_impl);
 }
 
 void Jungfrau::GainPed::setCurrStorageCell(int sc)

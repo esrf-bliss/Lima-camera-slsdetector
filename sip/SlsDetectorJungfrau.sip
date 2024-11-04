@@ -195,6 +195,9 @@ class Jungfrau : public SlsDetector::Model
 	void setGainPedCalib(const SlsDetector::Jungfrau::GainPed::Calib& calib);
 	void getGainPedCalib(SlsDetector::Jungfrau::GainPed::Calib& calib /Out/);
 
+	void setCalibKevAdus(double  kev_adus);
+	void getCalibKevAdus(double& kev_adus /Out/);
+
 	void setGainPedCalibCurrStorageCell(int  sc);
 	void getGainPedCalibCurrStorageCell(int& sc /Out/);
 
