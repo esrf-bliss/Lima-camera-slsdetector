@@ -188,6 +188,9 @@ class Jungfrau : public SlsDetector::Model
 	void setGainPedCalib(const SlsDetector::Jungfrau::GainPed::Calib& calib);
 	void getGainPedCalib(SlsDetector::Jungfrau::GainPed::Calib& calib /Out/);
 
+	void setDelayAfterTrigger(double  trig_delay);
+	void getDelayAfterTrigger(double& trig_delay /Out/);
+
 	void setImgSrc(Jungfrau::ImgSrc  img_src);
 	void getImgSrc(Jungfrau::ImgSrc& img_src /Out/);
 

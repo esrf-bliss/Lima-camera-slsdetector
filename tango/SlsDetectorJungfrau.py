@@ -60,6 +60,7 @@ class SlsDetectorJungfrau(SlsDetector):
                   'img_proc_config',
                   'img_src',
                   'gain_ped_map_type',
+                  'delay_after_trigger',
     ]
 
     NbGains = 3
@@ -308,6 +309,10 @@ class SlsDetectorJungfrauClass(SlsDetectorClass):
         [[PyTango.DevDouble,
           PyTango.IMAGE,
           PyTango.READ, 8192, 8192]],
+        'delay_after_trigger':
+        [[PyTango.DevDouble,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
         'gain_0_calib_map':
         [[PyTango.DevDouble,
           PyTango.IMAGE,

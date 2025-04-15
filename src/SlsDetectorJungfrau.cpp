@@ -1043,6 +1043,24 @@ void Jungfrau::getGainPedMapType(GainPed::MapType& map_type)
 	DEB_RETURN() << DEB_VAR1(map_type);
 }
 
+void Jungfrau::setDelayAfterTrigger(double trig_delay)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(trig_delay);
+	sls::ns trig_delay_ns = Camera::NSec(trig_delay);
+	EXC_CHECK(m_det->setDelayAfterTrigger(trig_delay_ns));
+}
+
+void Jungfrau::getDelayAfterTrigger(double& trig_delay)
+{
+	DEB_MEMBER_FUNCT();
+	sls::ns trig_delay_ns;
+	const char *err_msg = "Detector trigger delay are different";
+	EXC_CHECK(trig_delay_ns = m_det->getDelayAfterTrigger().tsquash(err_msg));
+	trig_delay = Camera::Sec(trig_delay_ns);
+	DEB_RETURN() << DEB_VAR1(trig_delay);
+}
+
 std::ostream& lima::SlsDetector::operator <<(std::ostream& os,
 					     Jungfrau::ImgSrc img_src)
 {

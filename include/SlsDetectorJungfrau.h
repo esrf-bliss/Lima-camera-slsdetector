@@ -188,6 +188,9 @@ class Jungfrau : public Model
 	void getGainPedCalib(GainPed::Calib& calib)
 	{ m_gain_ped_img_proc->m_gain_ped.getCalib(calib); }
 
+	void setDelayAfterTrigger(double  trig_delay);
+	void getDelayAfterTrigger(double& trig_delay);
+
 	void setImgSrc(ImgSrc  img_src);
 	void getImgSrc(ImgSrc& img_src);
 
