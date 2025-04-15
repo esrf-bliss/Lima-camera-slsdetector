@@ -60,6 +60,8 @@ class SlsDetectorJungfrau(SlsDetector):
                   'img_proc_config',
                   'img_src',
                   'gain_ped_map_type',
+                  'corr_threshold_active',
+                  'corr_threshold_adus',
                   'delay_after_trigger',
     ]
 
@@ -309,6 +311,14 @@ class SlsDetectorJungfrauClass(SlsDetectorClass):
         [[PyTango.DevDouble,
           PyTango.IMAGE,
           PyTango.READ, 8192, 8192]],
+        'corr_threshold_active':
+        [[PyTango.DevBoolean,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'corr_threshold_adus':
+        [[PyTango.DevDouble,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
         'delay_after_trigger':
         [[PyTango.DevDouble,
           PyTango.SCALAR,

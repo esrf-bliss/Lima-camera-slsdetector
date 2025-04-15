@@ -129,10 +129,14 @@ void Jungfrau::GainPed::Impl<M>::processFrame(Data& data, Data& proc)
 				*dst = 0;
 				continue;
 			}
-			if (coeffs[gain][0][i] != 0)
-				*dst = std::round((adc - coeffs[gain][1][i]) /
-						  coeffs[gain][0][i]);
-			else
+			if (coeffs[gain][0][i] != 0) {
+				auto v = ((adc - coeffs[gain][1][i]) /
+					  coeffs[gain][0][i]);
+				if (!m_thres_active || (v >= m_thres_adus))
+					*dst = std::round(v);
+				else
+					*dst = 0;
+			} else
 				*dst = 0;
 			DEB_TRACE() << DEB_VAR1(*dst);
 		}
@@ -189,6 +193,34 @@ void Jungfrau::GainPed::getCalib(Calib& calib)
 {
 	DEB_MEMBER_FUNCT();
 	std::visit([&](auto& impl) { calib = impl.m_calib; }, m_impl);
+}
+
+void Jungfrau::GainPed::setThresholdActive(bool thres_active)
+{
+	DEB_MEMBER_FUNCT();
+	std::visit([&](auto& impl) { impl.setThresholdActive(thres_active); },
+		   m_impl);
+}
+
+void Jungfrau::GainPed::getThresholdActive(bool& thres_active)
+{
+	DEB_MEMBER_FUNCT();
+	std::visit([&](auto& impl) { thres_active = impl.getThresholdActive(); },
+		   m_impl);
+}
+
+void Jungfrau::GainPed::setThresholdAdus(double thres_adus)
+{
+	DEB_MEMBER_FUNCT();
+	std::visit([&](auto& impl) { impl.setThresholdAdus(thres_adus); },
+		   m_impl);
+}
+
+void Jungfrau::GainPed::getThresholdAdus(double& thres_adus)
+{
+	DEB_MEMBER_FUNCT();
+	std::visit([&](auto& impl) { thres_adus = impl.getThresholdAdus(); },
+		   m_impl);
 }
 
 void Jungfrau::GainPed::updateImageSize(Size size, bool raw)

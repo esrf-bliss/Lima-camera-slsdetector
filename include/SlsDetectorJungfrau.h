@@ -101,6 +101,12 @@ class Jungfrau : public Model
 		void setCalib(const Calib& calib);
 		void getCalib(Calib& calib);
 
+		void setThresholdActive(bool thres_active);
+		void getThresholdActive(bool& thres_active);
+
+		void setThresholdAdus(double  thres_adus);
+		void getThresholdAdus(double& thres_adus);
+
 	private:
 		template <class M> struct Impl {
 			DEB_CLASS_NAMESPC(DebModCamera,
@@ -114,11 +120,23 @@ class Jungfrau : public Model
 			void setDefaultCalib() { getDefaultCalib(m_calib); }
 			void processFrame(Data& data, Data& proc);
 
+			void setThresholdActive(bool thres_active)
+			{ m_thres_active = thres_active; }
+			bool getThresholdActive() const
+			{ return m_thres_active; }
+
+			void setThresholdAdus(double thres_adus)
+			{ m_thres_adus = thres_adus; }
+			double getThresholdAdus() const
+			{ return m_thres_adus; }
+
 			Jungfrau *m_jungfrau;
 			Size m_size;
 			bool m_raw;
 			int m_pixels{0};
 			Calib m_calib;
+			bool m_thres_active{false};
+			double m_thres_adus{0};
 		};
 		using AnyImpl = std::variant<Impl<Map16Data>, Impl<Map32Data>>;
 
@@ -187,6 +205,15 @@ class Jungfrau : public Model
 	{ m_gain_ped_img_proc->m_gain_ped.setCalib(calib); }
 	void getGainPedCalib(GainPed::Calib& calib)
 	{ m_gain_ped_img_proc->m_gain_ped.getCalib(calib); }
+
+	void setCorrThresholdActive(bool  thres_active)
+	{ m_gain_ped_img_proc->m_gain_ped.setThresholdActive(thres_active); }
+	void getCorrThresholdActive(bool& thres_active)
+	{ m_gain_ped_img_proc->m_gain_ped.getThresholdActive(thres_active); }
+	void setCorrThresholdAdus(double  thres_adus)
+	{ m_gain_ped_img_proc->m_gain_ped.setThresholdAdus(thres_adus); }
+	void getCorrThresholdAdus(double& thres_adus)
+	{ m_gain_ped_img_proc->m_gain_ped.getThresholdAdus(thres_adus); }
 
 	void setDelayAfterTrigger(double  trig_delay);
 	void getDelayAfterTrigger(double& trig_delay);
