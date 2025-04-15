@@ -74,6 +74,9 @@ public:
 	void setFramePeriod(double  frame_period);
 	void getFramePeriod(double& frame_period /Out/);
 
+	void getNbDetFrames(unsigned long& nb_det_frames /Out/);
+	void getNbDetTriggers(unsigned long& nb_det_triggers /Out/);
+
 	void setSkipFrameFreq(unsigned long  skip_frame_freq);
 	void getSkipFrameFreq(unsigned long& skip_frame_freq /Out/);
 
