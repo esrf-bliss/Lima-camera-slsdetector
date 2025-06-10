@@ -1372,14 +1372,15 @@ RecvCPUAffinity& RecvCPUAffinity::operator =(CPUAffinity a)
 
 CPUAffinity GlobalCPUAffinity::all() const
 {
-	return (RecvCPUAffinityList_all(recv) |
-		NetDevGroupCPUAffinityList_all(netdev) | lima | other);
+	return (RecvCPUAffinityList_all(recv_cpu) |
+		NetDevGroupCPUAffinityList_all(netdev_cpu) | lima_cpu |
+		other_cpu);
 }
 
 void GlobalCPUAffinity::updateRecvAffinity(CPUAffinity a)
 {
-	RecvCPUAffinityList::iterator it, end = recv.end();
-	for (it = recv.begin(); it != end; ++it)
+	RecvCPUAffinityList::iterator it, end = recv_cpu.end();
+	for (it = recv_cpu.begin(); it != end; ++it)
 		*it = a;
 }
 
@@ -1561,18 +1562,21 @@ void GlobalCPUAffinityMgr::applyAndSet(const GlobalCPUAffinity& o)
 	if (all_system.getNbCPUs() == CPUAffinity::getNbSystemCPUs() / 2)
 		DEB_WARNING() << "Hyper-threading seems activated!";
 
-	setLimaThreadAffinity(o.lima);
-	setLimaBufferAffinity(o.lima);
-	setRecvAffinity(o.recv);
-	setAcqAffinity(o.acq);
+	setLimaThreadAffinity(o.lima_cpu);
+	if (o.lima_node != NumaNodeMask())
+		setLimaBufferNumaNode(o.lima_node);
+	else
+		setLimaBufferAffinity(o.lima_cpu);
+	setRecvAffinity(o.recv_cpu);
+	setAcqAffinity(o.acq_cpu);
 
 	if (!m_system_mgr)
 		m_system_mgr = new SystemCPUAffinityMgr();
 
-	m_system_mgr->setOtherCPUAffinity(o.other);
-	m_curr.other = o.other;
-	m_system_mgr->setNetDevCPUAffinity(o.netdev);
-	m_curr.netdev = o.netdev;
+	m_system_mgr->setOtherCPUAffinity(o.other_cpu);
+	m_curr.other_cpu = o.other_cpu;
+	m_system_mgr->setNetDevCPUAffinity(o.netdev_cpu);
+	m_curr.netdev_cpu = o.netdev_cpu;
 	m_curr.rx_netdev = o.rx_netdev;
 
 	m_set = o;
@@ -1582,12 +1586,12 @@ CPUAffinity GlobalCPUAffinityMgr::getAllRecvCPUAffinity()
 {
 	DEB_MEMBER_FUNCT();
 
-	CPUAffinity recv_all = RecvCPUAffinityList_all(m_curr.recv);
+	CPUAffinity recv_all = RecvCPUAffinityList_all(m_curr.recv_cpu);
 	StringList& rx_netdev_list = m_curr.rx_netdev;
 	StringList::iterator nit, nend = rx_netdev_list.end();
 	for (nit = rx_netdev_list.begin(); nit != nend; ++nit) {
 		typedef NetDevGroupCPUAffinityList GroupList;
-		GroupList& group_list = m_curr.netdev;
+		GroupList& group_list = m_curr.netdev_cpu;
 		GroupList::iterator git, gend = group_list.end();
 		for (git = group_list.begin(); git != gend; ++git) {
 			StringList::iterator end = git->name_list.end();
@@ -1605,7 +1609,7 @@ void GlobalCPUAffinityMgr::setLimaThreadAffinity(CPUAffinity lima_affinity)
 {
 	DEB_MEMBER_FUNCT();
 
-	if (lima_affinity == m_curr.lima)
+	if (lima_affinity == m_curr.lima_cpu)
 		return;
 
 	if (m_lima_tids.size()) {
@@ -1619,7 +1623,7 @@ void GlobalCPUAffinityMgr::setLimaThreadAffinity(CPUAffinity lima_affinity)
 		m_curr.updateRecvAffinity(lima_affinity);
 	}
 
-	m_curr.lima = lima_affinity;
+	m_curr.lima_cpu = lima_affinity;
 }
 
 void GlobalCPUAffinityMgr::setLimaBufferAffinity(CPUAffinity lima_affinity)
@@ -1628,16 +1632,22 @@ void GlobalCPUAffinityMgr::setLimaBufferAffinity(CPUAffinity lima_affinity)
 	m_cam->m_buffer.setBufferCPUAffinity(lima_affinity);
 }
 
+void GlobalCPUAffinityMgr::setLimaBufferNumaNode(NumaNodeMask lima_node)
+{
+	DEB_MEMBER_FUNCT();
+	m_cam->m_buffer.setBufferNumaNode(lima_node);
+}
+
 void GlobalCPUAffinityMgr::setRecvAffinity(
 			   const RecvCPUAffinityList& recv_affinity_list)
 {
 	DEB_MEMBER_FUNCT();
 
-	if (recv_affinity_list == m_curr.recv)
+	if (recv_affinity_list == m_curr.recv_cpu)
 		return;
 
 	m_cam->setRecvCPUAffinity(recv_affinity_list);
-	m_curr.recv = recv_affinity_list;
+	m_curr.recv_cpu = recv_affinity_list;
 }
 
 void GlobalCPUAffinityMgr::setAcqAffinity(CPUAffinity acq_affinity)
@@ -1645,17 +1655,17 @@ void GlobalCPUAffinityMgr::setAcqAffinity(CPUAffinity acq_affinity)
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(acq_affinity);
 
-	if (acq_affinity == m_curr.acq)
+	if (acq_affinity == m_curr.acq_cpu)
 		return;
 
 	m_cam->m_acq_thread_cpu_affinity = acq_affinity;
-	m_curr.acq = acq_affinity;
+	m_curr.acq_cpu = acq_affinity;
 }
 
 void GlobalCPUAffinityMgr::updateRecvRestart()
 {
 	DEB_MEMBER_FUNCT();
-	m_curr.updateRecvAffinity(m_curr.lima);
+	m_curr.updateRecvAffinity(m_curr.lima_cpu);
 }
 
 GlobalCPUAffinityMgr::ProcessingFinishedEvent *
@@ -1705,11 +1715,12 @@ void GlobalCPUAffinityMgr::recvFinished()
 	} else {
 		PoolThreadMgr& pool_thread_mgr = PoolThreadMgr::get();
 		int nb_threads = pool_thread_mgr.getNumberOfThread();
-		int nb_cpus = m_curr.lima.getNbCPUs();
+		const CPUAffinity& lima_cpu = m_curr.lima_cpu;
+		int nb_cpus = lima_cpu.getNbCPUs();
 		DEB_TRACE() << DEB_VAR2(nb_threads, nb_cpus);
-		proc_affinity = m_curr.lima | getAllRecvCPUAffinity();
-		DEB_TRACE() << DEB_VAR2(m_curr.lima, proc_affinity);
-		if ((nb_threads <= nb_cpus) || (m_curr.lima == proc_affinity)) {
+		proc_affinity = lima_cpu | getAllRecvCPUAffinity();
+		DEB_TRACE() << DEB_VAR2(lima_cpu, proc_affinity);
+		if ((nb_threads <= nb_cpus) || (lima_cpu == proc_affinity)) {
 			DEB_ALWAYS() << "Skipping Lima processing on Recv CPUs";
 			m_state = Ready;
 		}
@@ -1726,7 +1737,7 @@ void GlobalCPUAffinityMgr::recvFinished()
 	SystemCPUAffinityMgr::Filter filter;
 	filter = SystemCPUAffinityMgr::MatchAffinity;
 	m_lima_tids = SystemCPUAffinityMgr::getThreadList(filter,
-							m_curr.lima);
+							m_curr.lima_cpu);
 	DEB_ALWAYS() << "Lima TIDs: " << PrettyIntList(m_lima_tids);
 	DEB_ALWAYS() << "Allowing Lima processing to run on Recv CPUs: "
 		     << proc_affinity;
@@ -1747,12 +1758,12 @@ void GlobalCPUAffinityMgr::limaFinished()
 
 	StateCleanUp state_cleanup(*this, Ready, l, DEB_PTR());
 
-	if (m_curr.lima != m_set.lima) {
+	if (m_curr.lima_cpu != m_set.lima_cpu) {
 		m_state = Restoring;
 		AutoMutexUnlock u(l);
 		DEB_ALWAYS() << "Restoring Lima to dedicated CPUs: "
-			     << m_set.lima;
-		setLimaThreadAffinity(m_set.lima);
+			     << m_set.lima_cpu;
+		setLimaThreadAffinity(m_set.lima_cpu);
 	}
 }
 
@@ -1851,11 +1862,12 @@ lima::SlsDetector::operator <<(ostream& os, const RecvCPUAffinityList& l)
 ostream& lima::SlsDetector::operator <<(ostream& os, const GlobalCPUAffinity& a)
 {
 	os << "<";
-	os << "recv=" << a.recv << ", lima=" << a.lima << ", other=" << a.other;
-	os << "netdev=<";
+	os << "recv=" << a.recv_cpu << ", lima=" << a.lima_cpu << ", "
+	   << "other=" << a.other_cpu << ", ";
+	os << "netdev_cpu=<";
 	bool first = true;
-	NetDevGroupCPUAffinityList::const_iterator it, end = a.netdev.end();
-	for (it = a.netdev.begin(); it != end; ++it, first = false)
+	NetDevGroupCPUAffinityList::const_iterator it, end = a.netdev_cpu.end();
+	for (it = a.netdev_cpu.begin(); it != end; ++it, first = false)
 		os << (first ? "" : ", ") << *it;
 	return os << ">>";
 }

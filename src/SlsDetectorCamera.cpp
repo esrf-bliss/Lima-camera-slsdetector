@@ -48,6 +48,10 @@ void Camera::AppInputData::parseConfigFile()
 	DEB_MEMBER_FUNCT();
 
 	ifstream config_file(config_file_name);
+	if (config_file.fail())
+		THROW_HW_FATAL(InvalidValue) << "Error opening config file: "
+					     << config_file_name;
+
 	while (config_file) {
 		string s;
 		config_file >> s;

@@ -455,5 +455,58 @@ class SipMap
 	MappedSipType Sip_MappedType;
 };
 
+/*******************************************************
+ * Hex
+ *******************************************************/
+
+inline std::string Hex(PyObject *i, int *sipIsErr)
+{
+	if (sipIsErr == NULL)
+		throw std::exception();
+
+	auto py_check = [](PyObject *p, char *err = NULL) {
+		if (p == NULL) {
+			if (err != NULL)
+				PyErr_SetString(sipException_Exception, err);
+			throw std::exception();
+		}
+	};
+
+	try {
+		PyObject *builtins_dict = PyEval_GetBuiltins();
+		py_check(builtins_dict);
+
+		PyObject *hex_func = PyDict_GetItemString(builtins_dict, "hex");
+		py_check(hex_func, "hex function not found in builtins");
+		if (!PyCallable_Check(hex_func)) {
+			std::string err = "Builtin hex is not callable";
+			PyErr_SetString(sipException_Exception, err.c_str());
+			throw std::exception();
+		}
+
+		PyObjectPtr hex_str = PyObject_CallFunctionObjArgs(hex_func, i,
+								   NULL);
+		py_check(hex_str);
+		if (!PyUnicode_Check(hex_str)) {
+			std::string err = "Builtin hex did not return string";
+			PyErr_SetString(sipException_Exception, err.c_str());
+			throw std::exception();
+		}
+
+		const char *s = PyUnicode_AsUTF8(hex_str);
+		if (s == NULL) {
+			std::string err = "Error decoding hex string";
+			PyErr_SetString(sipException_Exception, err.c_str());
+			throw std::exception();
+		}
+
+		return s;
+	} catch (...) {
+		*sipIsErr = 1;
+		return {};
+	}
+}
+
+
 #endif // __SLS_DETECTOR_SIP_H
 

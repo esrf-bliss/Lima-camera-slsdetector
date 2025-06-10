@@ -72,7 +72,17 @@ void BufferMgr::setBufferCPUAffinity(CPUAffinity buffer_affinity)
 	BufferCtrlObj *buffer = getBufferCtrlObj();
 	if (buffer)
 		buffer->setCPUAffinityMask(buffer_affinity.getMask());
-	m_buffer_affinity = buffer_affinity;
+}
+
+void BufferMgr::setBufferNumaNode(NumaNodeMask buffer_node)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_ALWAYS() << DEB_VAR1(buffer_node);
+	DEB_ALWAYS() << "cpu_mask=" << buffer_node.toCPUMask();
+	
+	BufferCtrlObj *buffer = getBufferCtrlObj();
+	if (buffer)
+		buffer->setNumaNodeMask(buffer_node);
 }
 
 void BufferMgr::setMaxMemory(short max_memory)

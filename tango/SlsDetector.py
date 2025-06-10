@@ -53,9 +53,8 @@ from Lima import Core
 from Lima import SlsDetector as SlsDetectorHw
 from Lima.Server.AttrHelper import get_attr_4u, get_attr_string_value_list
 
-NumAffinity = long if sys.version_info.major == 2 else int
-NumAffinity = lambda a: NumAffinity(a.getMask()) \
-			if type(a) is SlsDetectorHw.CPUAffinity else a
+def NumAffinity(a):
+    return int(a.getMask()) if type(a) is SlsDetectorHw.CPUAffinity else a
 
 def ConstListAttr(nl, vl=None, namespc=SlsDetectorHw.Defs):
     def g(x):
@@ -379,30 +378,52 @@ class SlsDetector(PyTango.Device_4Impl):
         NetDevRxQueueCPUAffinity = SlsDetectorHw.NetDevRxQueueCPUAffinity
         NetDevGroupCPUAffinity = SlsDetectorHw.NetDevGroupCPUAffinity
         GlobalCPUAffinity = SlsDetectorHw.GlobalCPUAffinity
-        Mask = lambda x: CPUAffinity(hex(x).encode())
+        CPUMask = CPUAffinity
         def CPU(*x):
             if type(x[0]) in [tuple, list]:
                 x = list(chain(*x))
             m = reduce(lambda a, b: a | b, map(lambda a: 1 << a, x))
-            return Mask(m)
+            return CPUMask(m)
+        NodeMask = lambda x: x
+        def Node(*x):
+            if type(x[0]) in [tuple, list]:
+                x = list(chain(*x))
+            m = reduce(lambda a, b: a | b, map(lambda a: 1 << a, x))
+            return NodeMask(m)
         aff_map_raw = eval(aff_str)
         self.expandPixelDepthRefs(aff_map_raw)
         aff_map = {}
         for pixel_depth, aff_data in aff_map_raw.items():
-            recv_aff, acq, lima, other, netdev_aff = aff_data[:5]
-            rx_netdev = list(aff_data[5]) if len(aff_data) > 5 else []
+            if isinstance(aff_data, tuple):
+                recv_cpu, acq_cpu, lima_cpu, other_cpu, netdev_cpu = aff_data[:5]
+                rx_netdev = list(aff_data[5]) if len(aff_data) > 5 else []
+                lima_node = 0
+            elif isinstance(aff_data, dict):
+                recv_cpu = aff_data['recv_cpu']
+                acq_cpu = aff_data['acq_cpu']
+                lima_cpu = aff_data['lima_cpu']
+                lima_node = aff_data.get('lima_node', 0)
+                other_cpu = aff_data['other_cpu']
+                netdev_cpu = aff_data['netdev_cpu']
+                rx_netdev = list(aff_data.get('rx_netdev', []))
+            else:
+                msg = 'Invalid affinity data for %s-bit: %s' % (pixel_depth,
+                                                                aff_data)
+                deb.Error(msg)
+                raise ValueError(msg)
             global_aff = GlobalCPUAffinity()
             recv_list = []
-            for listeners in recv_aff:
+            for listeners in recv_cpu:
                 recv = RecvCPUAffinity()
                 recv.listeners = list(listeners)
                 recv_list.append(recv)
-            global_aff.recv = recv_list
-            global_aff.acq = acq
-            global_aff.lima = lima
-            global_aff.other = other
+            global_aff.recv_cpu = recv_list
+            global_aff.acq_cpu = acq_cpu
+            global_aff.lima_cpu = lima_cpu
+            global_aff.lima_node = lima_node
+            global_aff.other_cpu = other_cpu
             ng_aff_list = []
-            for name_list, queue_data in netdev_aff:
+            for name_list, queue_data in netdev_cpu:
                 ng_aff = NetDevGroupCPUAffinity()
                 ng_aff.name_list = name_list.split(',')
                 queue_aff = {}
@@ -413,7 +434,7 @@ class SlsDetector(PyTango.Device_4Impl):
                     queue_aff[queue] = ng_aff_queue
                 ng_aff.queue_affinity = queue_aff
                 ng_aff_list.append(ng_aff)
-            global_aff.netdev = ng_aff_list
+            global_aff.netdev_cpu = ng_aff_list
             global_aff.rx_netdev = rx_netdev
             aff_map[pixel_depth] = global_aff
         return aff_map
@@ -425,7 +446,7 @@ class SlsDetector(PyTango.Device_4Impl):
             cpu_list = [str(i) for i in range(128) if NumAffinity(a) & (1 << i)]
             return 'CPU(%s)' % ', '.join(cpu_list)
         def mask_str(a):
-            return 'Mask(0x%x)' % NumAffinity(a)
+            return 'CPUMask(0x%x)' % NumAffinity(a)
         def aff_2_str(a):
             if type(a) in [tuple, list]:
                 str_list = list(map(aff_2_str, a))
@@ -434,29 +455,37 @@ class SlsDetector(PyTango.Device_4Impl):
                 return '(%s)' % ', '.join(str_list)
             f = cpu_str if use_cpu else mask_str
             return f(a)
+        def node_str(a):
+            node_list = [str(i) for i in range(1024) if NumAffinity(a) & (1 << i)]
+            return 'Node(%s)' % ', '.join(node_list)
         for pixel_depth, global_aff in sorted(aff_map.items()):
             recv_list = []
-            for r in global_aff.recv:
+            for r in global_aff.recv_cpu:
                 recv_list.append(r.listeners)
-            recv_str = aff_2_str(recv_list)
-            acq_str = aff_2_str(global_aff.acq)
-            lima_str = aff_2_str(global_aff.lima)
-            other_str = aff_2_str(global_aff.other)
+            recv_cpu = aff_2_str(recv_list)
+            acq_cpu = aff_2_str(global_aff.acq_cpu)
+            lima_cpu = aff_2_str(global_aff.lima_cpu)
+            lima_node = node_str(global_aff.lima_node)
+            other_cpu = aff_2_str(global_aff.other_cpu)
             netdev_grp_list = []
-            for netdev_grp in global_aff.netdev:
+            for netdev_grp in global_aff.netdev_cpu:
                 name_str = ','.join(netdev_grp.name_list)
-                queue_list = [('%d: %s)' % (q, aff_2_str((a.irq, 
+                queue_list = [('%d: %s' % (q, aff_2_str((a.irq, 
                                                           a.processing))))
                               for q, a in netdev_grp.queue_affinity.items()]
                 queue_str = ','.join(queue_list)
-                netdev_str = '"%s": {%s}' % (name_str, queue_str)
+                netdev_str = "('%s', {%s})" % (name_str, queue_str)
                 netdev_grp_list.append(netdev_str)
-            netdev_grp_str = '(%s)' % ', '.join(netdev_grp_list)
-            aff_data = [recv_str, acq_str, lima_str, other_str, netdev_grp_str]
+            netdev_cpu = '(%s)' % ', '.join(netdev_grp_list)
+            aff_data = OrderedDict(recv_cpu=recv_cpu, acq_cpu=acq_cpu,
+                                   lima_cpu=lima_cpu, lima_node=lima_node,
+                                   other_cpu=other_cpu,
+                                   netdev_cpu=netdev_cpu)
             if global_aff.rx_netdev:
-                aff_data.append(str(tuple(global_aff.rx_netdev)))
-            aff_str = ', '.join(aff_data)
-            pixel_depth_aff_list.append('%d: (%s)' % (pixel_depth, aff_str))
+                aff_data['rx_netdev'] = str(tuple(global_aff.rx_netdev))
+            aff_str_items = ["'%s': %s" % kv for kv in aff_data.items()]
+            aff_str = '{' + ', '.join(aff_str_items) + '}'
+            pixel_depth_aff_list.append('%d: %s' % (pixel_depth, aff_str))
         return '{%s}' % ', '.join(pixel_depth_aff_list)
 
     @Core.DEB_MEMBER_FUNCT
@@ -486,14 +515,18 @@ class SlsDetector(PyTango.Device_4Impl):
     def printGlobalAffinity(self, global_aff):
         def A(x):
             return hex(NumAffinity(x))
-        for i, r in enumerate(global_aff.recv):
-            s = "Recv[%d]:" % i
+        for i, r in enumerate(global_aff.recv_cpu):
+            s = "RecvCpu[%d]:" % i
             s += " listeners=%s" % [A(x) for x in r.listeners]
             deb.Always('  ' + s)
-        acq, lima, other = global_aff.acq, global_aff.lima, global_aff.other
-        deb.Always('  Acq=%s, Lima=%s, Other=%s' % (A(acq), A(lima), A(other)))
-        for netdev_grp in global_aff.netdev:
-            s = "NetDevGroup[%s]: {" % ','.join(netdev_grp.name_list)
+        acq, lima_cpu, lima_node, other = (global_aff.acq_cpu,
+                                           global_aff.lima_cpu,
+                                           global_aff.lima_node,
+                                           global_aff.other_cpu)
+        deb.Always('  AcqCpu=%s, LimaCpu=%s, LimaNode=%s, OtherCpu=%s' %
+                   (A(acq), A(lima_cpu), A(lima_node), A(other)))
+        for netdev_grp in global_aff.netdev_cpu:
+            s = "NetDevGroupCpu[%s]: {" % ','.join(netdev_grp.name_list)
             l = []
             for queue, queue_aff in netdev_grp.queue_affinity.items():
                 l.append('%d: (%s, %s)' % (queue, A(queue_aff.irq), 
@@ -566,7 +599,7 @@ class SlsDetectorClass(PyTango.DeviceClass):
          "(<comma_separated_netdev_name_list>, <rx_queue_affinity_map>), the "
          "latter in the form of: {<queue>: (<irq>, <processing>)}, and "
          "rx_netdev is an optional list of Rx netdev names. "
-         "Each affinity can be expressed by one of the functions: Mask(mask) "
+         "Each affinity can be expressed by one of the functions: CPUMask(mask) "
          "or CPU(<cpu1>[, ..., <cpuN>]) for independent CPU enumeration", []],
         'buffer_max_memory':
         [PyTango.DevString,
