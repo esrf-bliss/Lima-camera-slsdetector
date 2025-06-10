@@ -882,6 +882,20 @@ void Camera::getFramePeriod(double& frame_period)
 	DEB_RETURN() << DEB_VAR1(frame_period);
 }
 
+void Camera::getNbDetFrames(FrameType& nb_det_frames)
+{
+	DEB_MEMBER_FUNCT();
+	nb_det_frames = m_det->getNumberOfFrames().squash();
+	DEB_RETURN() << DEB_VAR1(nb_det_frames);
+}
+
+void Camera::getNbDetTriggers(FrameType& nb_det_triggers)
+{
+	DEB_MEMBER_FUNCT();
+	nb_det_triggers = m_det->getNumberOfTriggers().squash();
+	DEB_RETURN() << DEB_VAR1(nb_det_triggers);
+}
+
 void Camera::updateImageSize()
 {
 	DEB_MEMBER_FUNCT();

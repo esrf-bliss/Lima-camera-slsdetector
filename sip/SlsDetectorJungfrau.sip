@@ -213,6 +213,14 @@ class Jungfrau : public SlsDetector::Model
 	void setStorageCellDelay(double  sc_delay);
 	void getStorageCellDelay(double& sc_delay /Out/);
 
+	void setCorrThresholdActive(bool  thres_active);
+	void getCorrThresholdActive(bool& thres_active /Out/);
+	void setCorrThresholdAdus(double  thres_adus);
+	void getCorrThresholdAdus(double& thres_adus /Out/);
+
+	void setDelayAfterTrigger(double  trig_delay);
+	void getDelayAfterTrigger(double& trig_delay /Out/);
+
 	void setImgSrc(Jungfrau::ImgSrc  img_src);
 	void getImgSrc(Jungfrau::ImgSrc& img_src /Out/);
 

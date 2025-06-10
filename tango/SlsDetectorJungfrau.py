@@ -66,6 +66,9 @@ class SlsDetectorJungfrau(SlsDetector):
                   'storage_cell_delay',
                   'gain_ped_calib_curr_storage_cell',
                   'ave_curr_storage_cell',
+                  'corr_threshold_active',
+                  'corr_threshold_adus',
+                  'delay_after_trigger',
     ]
 
     NbGains = 3
@@ -499,6 +502,18 @@ class SlsDetectorJungfrauClass(SlsDetectorClass):
           PyTango.SCALAR,
           PyTango.READ_WRITE]],
         'calib_kev_adus':
+        [[PyTango.DevDouble,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'corr_threshold_active':
+        [[PyTango.DevBoolean,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'corr_threshold_adus':
+        [[PyTango.DevDouble,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'delay_after_trigger':
         [[PyTango.DevDouble,
           PyTango.SCALAR,
           PyTango.READ_WRITE]],

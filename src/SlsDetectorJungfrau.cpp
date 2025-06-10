@@ -28,6 +28,7 @@
 
 #include <emmintrin.h>
 #include <sched.h>
+#include <cmath>
 
 using namespace std;
 using namespace lima;
@@ -165,14 +166,18 @@ void Jungfrau::GainPed::Impl<M>::processFrame(Data& data, Data& proc,
 			if (gain == 3)
 				gain = 2;
 			else if (gain == 2) {
-				*dst = std::numeric_limits<P>::max() - 0x10;
+				*dst = 0;
 				continue;
 			}
-			if (coeffs[gain][0][i] != 0)
-				*dst = ((adc - coeffs[gain][1][i]) / coeffs[gain][0][i]
-					+ 0.5);
-			else
-				*dst = std::numeric_limits<P>::min() + 0x10;
+			if (coeffs[gain][0][i] != 0) {
+				auto v = ((adc - coeffs[gain][1][i]) /
+					  coeffs[gain][0][i]);
+				if (!m_thres_active || (v >= m_thres_adus))
+					*dst = std::round(v);
+				else
+					*dst = 0;
+			} else
+				*dst = 0;
 			DEB_TRACE() << DEB_VAR1(*dst);
 		}
 	}
@@ -252,6 +257,34 @@ void Jungfrau::GainPed::getCurrStorageCell(int& sc)
 {
 	DEB_MEMBER_FUNCT();
 	std::visit([&](auto& impl) { sc = impl.getCurrStorageCell(); }, m_impl);
+}
+
+void Jungfrau::GainPed::setThresholdActive(bool thres_active)
+{
+	DEB_MEMBER_FUNCT();
+	std::visit([&](auto& impl) { impl.setThresholdActive(thres_active); },
+		   m_impl);
+}
+
+void Jungfrau::GainPed::getThresholdActive(bool& thres_active)
+{
+	DEB_MEMBER_FUNCT();
+	std::visit([&](auto& impl) { thres_active = impl.getThresholdActive(); },
+		   m_impl);
+}
+
+void Jungfrau::GainPed::setThresholdAdus(double thres_adus)
+{
+	DEB_MEMBER_FUNCT();
+	std::visit([&](auto& impl) { impl.setThresholdAdus(thres_adus); },
+		   m_impl);
+}
+
+void Jungfrau::GainPed::getThresholdAdus(double& thres_adus)
+{
+	DEB_MEMBER_FUNCT();
+	std::visit([&](auto& impl) { thres_adus = impl.getThresholdAdus(); },
+		   m_impl);
 }
 
 void Jungfrau::GainPed::updateImageSize(Size size, bool raw)
@@ -1191,6 +1224,24 @@ void Jungfrau::getStorageCellDelay(double& sc_delay)
 	EXC_CHECK(sc_delay_ns = m_det->getStorageCellDelay().tsquash(err_msg));
 	sc_delay = Camera::Sec(sc_delay_ns);
 	DEB_RETURN() << DEB_VAR1(sc_delay);
+}
+
+void Jungfrau::setDelayAfterTrigger(double trig_delay)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(trig_delay);
+	sls::ns trig_delay_ns = Camera::NSec(trig_delay);
+	EXC_CHECK(m_det->setDelayAfterTrigger(trig_delay_ns));
+}
+
+void Jungfrau::getDelayAfterTrigger(double& trig_delay)
+{
+	DEB_MEMBER_FUNCT();
+	sls::ns trig_delay_ns;
+	const char *err_msg = "Detector trigger delay are different";
+	EXC_CHECK(trig_delay_ns = m_det->getDelayAfterTrigger().tsquash(err_msg));
+	trig_delay = Camera::Sec(trig_delay_ns);
+	DEB_RETURN() << DEB_VAR1(trig_delay);
 }
 
 std::ostream& lima::SlsDetector::operator <<(std::ostream& os,
