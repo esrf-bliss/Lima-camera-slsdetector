@@ -188,6 +188,35 @@ class SlsDetectorJungfrau(SlsDetector):
                     prev_ave = gd_ave
 
     @Core.DEB_MEMBER_FUNCT
+    def loadPedestalFile(self, ped_file):
+        deb.Param("ped_file=%s" % ped_file)
+        import h5py as h5
+        deb.Always("Loading pedestals file: '%s'" % ped_file)
+        jungfrau = _SlsDetectorJungfrau
+        with h5.File(ped_file, 'r') as f:
+            d = f['/data']
+            if len(d.shape) not in [3, 4]:
+                raise ValueError('Bad data dimensions: %s' % (d.shape,))
+            nb_gains, height, width = d.shape[-3:]
+            if nb_gains != self.NbGains:
+                raise ValueError('Bad nb of gains: %s' % nb_gains)
+            has_sc = (len(d.shape) == 4)
+            nb_sc = d.shape[0] if has_sc else 1
+            if has_sc and (nb_sc != self.NbStorageCells):
+                raise ValueError('Bad nb of pedestal SCs: %s' % nb_sc)
+            std_mode = (nb_sc == 1)
+            deb.Always("Pedestal storage cells: %d - %s mode" %
+                       (nb_sc, 'STD' if std_mode else 'SC'))
+            sc_list = [self.DefaultStorageCell] if std_mode else range(nb_sc)
+            for sc in sc_list:
+                self.model.setGainPedCalibCurrStorageCell(sc)
+                gp = d[sc] if has_sc else d
+                for i, pd in enumerate(gp):
+                    deb.Always("Storage cell #%d - Gain %d ..." % (sc, i))
+                    self.setGainPedCalibMap('ped', i, pd)
+            deb.Always("Pedestals updated!")
+
+    @Core.DEB_MEMBER_FUNCT
     def read_det_map(self, attr):
         det_map = self.model.getDetMap();
         attr.set_value(det_map.buffer)
@@ -393,6 +422,9 @@ class SlsDetectorJungfrauClass(SlsDetectorClass):
     cmd_list = {
         'loadCalibFile':
         [[PyTango.DevString, "Calibration file path"],
+         [PyTango.DevVoid, ""]],
+        'loadPedestalFile':
+        [[PyTango.DevString, "Pedestal file path"],
          [PyTango.DevVoid, ""]],
         }
     cmd_list.update(SlsDetectorClass.cmd_list)
