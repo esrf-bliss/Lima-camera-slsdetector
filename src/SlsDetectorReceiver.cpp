@@ -98,14 +98,15 @@ void Receiver::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
 	m_recv->setListenersCPUAffinity(cpu_masks);
 }
 
-AutoPtr<Receiver::ImagePackets> Receiver::readSkippableImagePackets()
+AutoPtr<Receiver::ImagePackets> Receiver::readSkippableImagePackets(
+							FrameType det_frame)
 {
 	DEB_MEMBER_FUNCT();
 	AutoPtr<ImagePackets> image_data = new RecvImagePackets(this);
 	AnyPacketBlockList& blocks = RecvImagePacketBlocks(image_data);
 	slsDetectorDefs::sls_detector_header *header = NULL;
 	FrameType& frame = image_data->frame;
-	blocks = std::move(m_recv->GetFramePacketBlocks());
+	blocks = std::move(m_recv->GetFramePacketBlocks(det_frame));
 	image_data->numberOfPorts = blocks.size();
 	bool incomplete_data = (image_data->numberOfPorts == 0);
 	for (int i = 0; i < image_data->numberOfPorts; ++i) {
@@ -145,7 +146,7 @@ AutoPtr<Receiver::ImagePackets> Receiver::readSkippableImagePackets()
 	return image_data;
 }
 
-AutoPtr<Receiver::ImagePackets> Receiver::readImagePackets()
+AutoPtr<Receiver::ImagePackets> Receiver::readImagePackets(FrameType frame)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -159,7 +160,7 @@ AutoPtr<Receiver::ImagePackets> Receiver::readImagePackets()
 
 	AutoPtr<ImagePackets> image_data;
 	try {
-		image_data = readSkippableImagePackets();
+		image_data = readSkippableImagePackets(frame + 1);
 		if (!image_data)
 			return NULL;
 
@@ -179,7 +180,7 @@ AutoPtr<Receiver::ImagePackets> Receiver::readImagePackets()
 		}
 
 		if (skip_this) {
-			image_data = readSkippableImagePackets();
+			image_data = readSkippableImagePackets(det_frame + 1);
 			if (!image_data)
 				return NULL;
 			det_frame = image_data->frame;
@@ -189,8 +190,12 @@ AutoPtr<Receiver::ImagePackets> Receiver::readImagePackets()
 		if (skip_freq)
 			image_data->frame -= det_frame / (skip_freq + 1);
 
+		if (image_data->frame != frame)
+			DEB_WARNING() << "Unexpected frame: "
+				      << DEB_VAR2(image_data->frame, frame);
+
 		if (skip_next && !m_last_skipped) {
-			AutoPtr<ImagePackets> skip = readSkippableImagePackets();
+			AutoPtr<ImagePackets> skip = readSkippableImagePackets(det_frame + 1);
 			if (!skip)
 				return NULL;
 			m_last_skipped = true;

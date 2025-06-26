@@ -79,7 +79,7 @@ public:
 
 	void setCPUAffinity(const RecvCPUAffinity& recv_affinity);
 
-	AutoPtr<ImagePackets> readImagePackets();
+	AutoPtr<ImagePackets> readImagePackets(FrameType frame);
 
 	void fillBadFrame(char *buf);
 
@@ -106,7 +106,7 @@ private:
 	struct AssemblerImpl;
 
 	bool asmImagePackets(ImagePackets *image_data, char *buffer);
-	AutoPtr<ImagePackets> readSkippableImagePackets();
+	AutoPtr<ImagePackets> readSkippableImagePackets(FrameType det_frame);
 
 	Camera *m_cam;
 	int m_idx;
