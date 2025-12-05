@@ -20,10 +20,13 @@
 // along with this program; if not, see <http://www.gnu.org/licenses/>.
 //###########################################################################
 
+#include <cstdlib>
+
 #include "SlsDetectorEiger.h"
 #include "SlsDetectorJungfrau.h"
 #include "SlsDetectorInterface.h"
 #include "lima/CtTestApp.h"
+#include "processlib/PoolThreadMgr.h"
 
 using namespace std;
 using namespace lima;
@@ -169,6 +172,7 @@ CtControl *TestApp::getCtControl()
 int main(int argc, char *argv[])
 {
 	DEB_GLOBAL_FUNCT();
+	std::atexit(PoolThreadMgr::cleanup);
         try {
 		TestApp app(argc, argv);
 		app.run();
