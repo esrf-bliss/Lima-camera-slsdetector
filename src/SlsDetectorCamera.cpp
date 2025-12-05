@@ -397,7 +397,7 @@ DetFrameImagePackets Camera::AcqThread::readRecvPackets(FrameType frame)
 			return {};
 		AutoPtr<Receiver::ImagePackets> image_packets;
 		Receiver *recv = m_cam->m_recv_list[i];
-		image_packets = recv->readImagePackets();
+		image_packets = recv->readImagePackets(frame);
 		if (stopped())
 			return {};
 		else if (!image_packets)
