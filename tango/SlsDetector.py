@@ -144,7 +144,12 @@ class SlsDetector(PyTango.Device_4Impl):
         aff_arr = self.pixel_depth_cpu_affinity_map
         if aff_arr:
             aff_str = ' '.join(aff_arr)
-            aff_map = self.getPixelDepthCPUAffinityMapFromString(aff_str)
+            try:
+                aff_map = self.getPixelDepthCPUAffinityMapFromString(aff_str)
+            except Exception as e:
+                deb.Error("Invalid pixel_depth_cpu_affinity_map '%s': %s" %
+                          (aff_str, e))
+                raise
             self.printPixelDepthCPUAffinityMap(aff_map)
             self.cam.setPixelDepthCPUAffinityMap(aff_map)
 
@@ -373,6 +378,7 @@ class SlsDetector(PyTango.Device_4Impl):
 
     @Core.DEB_MEMBER_FUNCT
     def getPixelDepthCPUAffinityMapFromString(self, aff_str):
+        deb.Trace("aff_str=\"%s\"" % aff_str)
         CPUAffinity = SlsDetectorHw.CPUAffinity
         RecvCPUAffinity = SlsDetectorHw.RecvCPUAffinity
         NetDevRxQueueCPUAffinity = SlsDetectorHw.NetDevRxQueueCPUAffinity
@@ -399,12 +405,12 @@ class SlsDetector(PyTango.Device_4Impl):
                 rx_netdev = list(aff_data[5]) if len(aff_data) > 5 else []
                 lima_node = 0
             elif isinstance(aff_data, dict):
-                recv_cpu = aff_data['recv_cpu']
-                acq_cpu = aff_data['acq_cpu']
-                lima_cpu = aff_data['lima_cpu']
+                recv_cpu = aff_data.get('recv_cpu', [])
+                acq_cpu = aff_data.get('acq_cpu', CPUMask())
+                lima_cpu = aff_data.get('lima_cpu', CPUMask())
                 lima_node = aff_data.get('lima_node', 0)
-                other_cpu = aff_data['other_cpu']
-                netdev_cpu = aff_data['netdev_cpu']
+                other_cpu = aff_data.get('other_cpu', CPUMask())
+                netdev_cpu = aff_data.get('netdev_cpu', [])
                 rx_netdev = list(aff_data.get('rx_netdev', []))
             else:
                 msg = 'Invalid affinity data for %s-bit: %s' % (pixel_depth,
