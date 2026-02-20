@@ -30,7 +30,8 @@ is included:
 
 ::
 
-    lisgeiger1:~ % \
+    lisgeiger1:~ % ssh-agent bash
+    lisgeiger1:~ % if true; then
         [ -n "${SLS_DETECTOR_MODULES}" ] || . ${SLS_DETECTORS_DIR}/common/scripts/det_env_setup.sh
         EIGER_MODULE_TOP=$(echo ${SLS_DETECTOR_MODULES} | cut -f1 -d" ")
         cat ${SLS_DETECTORS_DIR}/eiger/ssh/id_dsa.pub
@@ -42,6 +43,7 @@ is included:
             ssh -x root@${m} cat .ssh/authorized_keys > ssh_authorized_keys_${m}
         done
         cat ssh_authorized_keys_${EIGER_MODULE_TOP} 
+    fi
     ssh-dss AAAAB3NzaC1kc3MAAACBALGVR0qC2i/HgaJl4fuiwmOVrq46Bz3bs+o3/jdw/dqMaPjx35Ha
     shyC4zS+2wHyZVSjwTMIbVT8LPsNMGxL40ZxqWaAUyzn0XnjJMe3XT7h+yyx+iLUXvyCK489PAwT0srE
     iWbGNeQTgEYiwX+jqezQTiwss2sgypOrrwIrGrZBAAAAFQDjOUdgHjbCc1UMW37Zu+7b/AV1cQAAAIAu
@@ -82,8 +84,9 @@ Check that all the keys are identical:
 
 ::
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % if true; then
         md5sum ssh_authorized_keys_beb*
+    fi
     1c183bdaa3a2f27029fca84b9cb3b857  ssh_authorized_keys_beb024
     1c183bdaa3a2f27029fca84b9cb3b857  ssh_authorized_keys_beb025
 
@@ -92,7 +95,7 @@ add them in order to open SSH sessions automatically on the detector modules:
 
 ::
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % if true; then
         if grep -q 'opid00@lisgeiger1' ssh_authorized_keys_beb*; then
             echo "SSH keys already installed in detector ${SLS_DETECTOR_NAME}"
         else
@@ -102,15 +105,17 @@ add them in order to open SSH sessions automatically on the detector modules:
                     < ${SLS_DETECTORS_DIR}/eiger/ssh/id_dsa.pub
             done
         fi
+    fi
 
 Also check that the SSH public host keys are identical (same Linux image):
 
 ::
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % if true; then
         for m in ${SLS_DETECTOR_MODULES}; do
             ssh-keygen -f ~/.ssh/known_hosts -F ${m} -l
         done
+    fi
     # Host beb024 found: line 82 type RSA
     1040 21:78:5d:39:d5:cc:92:7a:42:f8:4d:69:38:3b:40:40 |1|m9PYbOqjp0h4qI8tq9u9H8x7pKQ=|wXZou5Y2oMKiULF5ZOuBjV0U7oo= (RSA)
     # Host beb025 found: line 84 type RSA
@@ -124,7 +129,7 @@ the current versions stored on the modules:
 
 ::
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % if true; then
         server_dir="executables"
         server_name="eigerDetectorServer"
         server="${server_dir}/${server_name}"
@@ -143,6 +148,7 @@ the current versions stored on the modules:
         cat md5sum_${server_str}_${EIGER_MODULE_TOP}.out
         echo
         md5sum md5sum_${server_str}_beb*
+    fi
     -rwxr-xr-x    1 root     root        280601 Jan  1 01:15 executables/eigerDetectorServer
     -rwxr-xr-x    1 root     root        277442 Aug 26  2016 executables/eigerDetectorServer_bkp
     -rwxr-xr-x    1 root     root        277442 Aug 26  2016 executables/eigerDetectorServerv2.0.5.14.3
@@ -160,18 +166,19 @@ Backup startup script before modifying it:
 
 ::
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % if true; then
         for m in ${SLS_DETECTOR_MODULES}; do
             scp root@${m}:/etc/init.d/board_com.sh etc-init.d-board_com.sh_${m}
         done
+    fi
 
 Kill the running servers and disable the automatic startup:
 
 ::
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % if true; then
         if [ -z "${full_server}" ]; then
-	    echo "Server variables empty: run initialization code"
+            echo "Server variables empty: run initialization code"
         else
             for m in ${SLS_DETECTOR_MODULES}; do
                 ssh -x root@${m} killall ${server_name}
@@ -181,31 +188,34 @@ Kill the running servers and disable the automatic startup:
                                      /etc/init.d/board_com.sh
             done
         fi
+    fi
 
 Force a filesystem *sync* on each host to make the changes persistent,
 just before power-cycling:
 
 ::
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % if true; then
         for m in ${SLS_DETECTOR_MODULES}; do
             ssh -x root@${m} sync
         done
+    fi
 
 Power-cycle the detector and check that no *eigerDetectorServer* is running:
 
 ::
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % if true; then
         for m in ${SLS_DETECTOR_MODULES}; do \
             ssh -x root@${m} 'ps -ef | grep '${server}' | grep -v grep'; \
         done
+    fi
 
 Backup the current version, and transfer the new version:
 
 ::
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % if true; then
         for m in ${SLS_DETECTOR_MODULES}; do
             ssh -x root@${m} 'mv '${server}' '${server}'_bkp'
         done
@@ -220,6 +230,7 @@ Backup the current version, and transfer the new version:
         for m in ${SLS_DETECTOR_MODULES}; do
             ssh -x root@${m} "cp ${server_dir}/$(basename ${new_server}) ${server}"
         done
+    fi
     50ef053f1ddd0b49314479a558c9c330  ./slsDetectorSoftware/eigerDetectorServer/bin/eigerDetectorServerv3.1.1.16.0
     50ef053f1ddd0b49314479a558c9c330  ./serverBin/eigerDetectorServerv3.1.1.16.0
 
@@ -230,7 +241,7 @@ Check that all is as expected:
 
 ::
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % \
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1828 % if true; then
         cd
         this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
         mkdir -p ${this_dir} && cd ${this_dir}
@@ -247,6 +258,7 @@ Check that all is as expected:
         cat md5sum_${server_str}_${EIGER_MODULE_TOP}.out
         echo
         md5sum md5sum_${server_str}_beb*
+    fi
     -rwxr-xr-x    1 root     root        293085 Jan 10 02:35 executables/eigerDetectorServer
     -rwxr-xr-x    1 root     root        280601 Jan  1 01:15 executables/eigerDetectorServer_bkp
     -rwxr-xr-x    1 root     root        277442 Aug 26  2016 executables/eigerDetectorServerv2.0.5.14.3
@@ -266,17 +278,18 @@ Force a another filesystem *sync*:
 
 ::
 
-    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1927 % \
+    lisgeiger1:~/eiger/psi_eiger_500k_024_025/2018-04-01-1927 % if true; then
         cd
         for m in ${SLS_DETECTOR_MODULES}; do
             ssh -x root@${m} sync
         done
+    fi
 
 And finally perform a *paranoid* check after power-cycling the detector:
 
 ::
 
-    lisgeiger1:~ % \
+    lisgeiger1:~ % if true; then
         prev_dir=${this_dir}
         this_dir="${base_dir}/$(date +%Y-%m-%d-%H%M)"
         mkdir -p ${this_dir} && cd ${this_dir}
@@ -289,6 +302,7 @@ And finally perform a *paranoid* check after power-cycling the detector:
             (diff ${prev_dir}/md5sum_${server_str}_${m}.out ${this_dir} &&
                 echo "${m} OK" || echo "${m} changed")
         done
+    fi
     beb024 OK
     beb025 OK
 
@@ -498,22 +512,23 @@ Start the *eigerDetectorServer* and check that everything is OK:
 
 ::
 
-    lisgeiger1:~ % \
+    lisgeiger1:~ % if true; then
         if [ -z "${server}" ]; then
-	    echo "Server variables empty: run initialization code"
+            echo "Server variables empty: run initialization code"
         else
             for m in ${SLS_DETECTOR_MODULES}; do
                 ssh -x root@${m} 'nohup '${server}' > /dev/null 2>&1 &'
             done
         fi
+    fi
 
 Once verified that the new server runs fine with the new firmware, restore automatic startup:
 
 ::
 
-    lisgeiger1:~ % \
+    lisgeiger1:~ % if true; then
         if [ -z "${full_server}" ]; then
-	    echo "Server variables empty: run initialization code"
+            echo "Server variables empty: run initialization code"
         else
             for m in ${SLS_DETECTOR_MODULES}; do
                 ssh -x root@${m} sed -i '"s:^#\?\('${full_server}'\).*$:\1 \&:"' \
@@ -523,19 +538,21 @@ Once verified that the new server runs fine with the new firmware, restore autom
                 ssh -x root@${m} sync
             done
         fi
+    fi
 
 Power-cycle the detector and verify that the servers start automatically:
 
 ::
 
-    lisgeiger1:~ % \
+    lisgeiger1:~ % if true; then
         if [ -z "${server}" ]; then
-	    echo "Server variables empty: run initialization code"
+            echo "Server variables empty: run initialization code"
         else
             for m in ${SLS_DETECTOR_MODULES}; do \
                 ssh -x root@${m} 'ps -ef | grep '${server}' | grep -v grep'; \
             done
         fi
+    fi
       961 root       0:00 /home/root/executables/eigerDetectorServer
       965 root       0:00 /home/root/executables/eigerDetectorServer -stopserver
       961 root       0:00 /home/root/executables/eigerDetectorServer
