@@ -49,6 +49,8 @@ class Receiver
 public:
 	class ImagePackets {
 	public:
+		typedef slsDetectorDefs::sls_detector_header *HeaderPtr;
+
 		FrameType frame;
 		int numberOfPorts;
 		std::bitset<MAX_NUM_PORTS> validPortData;
@@ -57,6 +59,9 @@ public:
 
 		bool assemble(char *buf)
 		{ return recv->asmImagePackets(this, buf); }
+
+		virtual HeaderPtr getNetworkHeader() const
+		{ return nullptr; }
 
 	protected:
 		friend class Receiver;
@@ -79,7 +84,7 @@ public:
 
 	void setCPUAffinity(const RecvCPUAffinity& recv_affinity);
 
-	AutoPtr<ImagePackets> readImagePackets();
+	AutoPtr<ImagePackets> readImagePackets(FrameType frame);
 
 	void fillBadFrame(char *buf);
 
@@ -106,7 +111,7 @@ private:
 	struct AssemblerImpl;
 
 	bool asmImagePackets(ImagePackets *image_data, char *buffer);
-	AutoPtr<ImagePackets> readSkippableImagePackets();
+	AutoPtr<ImagePackets> readSkippableImagePackets(FrameType det_frame);
 
 	Camera *m_cam;
 	int m_idx;

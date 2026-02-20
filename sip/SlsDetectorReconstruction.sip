@@ -48,7 +48,8 @@ public:
 	void getActive(bool& active /Out/);
 
 	virtual Data process(Data& data);
-	virtual Data processModel(Data& data) = 0;
+	virtual Data processModel(Data& data,
+				  const SlsDetector::FrameMetadata& md) = 0;
 
 private:
 	Reconstruction(const SlsDetector::Reconstruction& o);

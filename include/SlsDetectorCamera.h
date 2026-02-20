@@ -112,8 +112,13 @@ public:
 	void setFramePeriod(double  frame_period);
 	void getFramePeriod(double& frame_period);
 
+	void getNbDetFrames(FrameType& nb_det_frames);
+	void getNbDetTriggers(FrameType& nb_det_triggers);
+
 	void setSkipFrameFreq(FrameType  skip_frame_freq);
 	void getSkipFrameFreq(FrameType& skip_frame_freq);
+	void setSkipFrameIdx(FrameType  skip_frame_idx);
+	void getSkipFrameIdx(FrameType& skip_frame_idx);
 
 	// setDAC: mod_idx: 0-N=module, -1=all
 	void setDAC(int mod_idx, DACIndex dac_idx, int  val, 
@@ -150,6 +155,20 @@ public:
 		getProcessingFinishedEvent();
 
 	void reportException(Exception& e, std::string name);
+
+	static sls::ns NSec(double x)
+	{
+		std::chrono::duration<double> sec(x);
+		return std::chrono::duration_cast<sls::ns>(sec);
+	}
+
+	static double Sec(sls::ns ns)
+	{
+		std::chrono::duration<double> sec(ns);
+		return sec.count();
+	}
+
+	static const std::string packet_sideband_data_key;
 
 private:
 	typedef std::map<int, int> RecvPortMap;
@@ -240,12 +259,6 @@ private:
 	void updateCPUAffinity(bool recv_restarted);
 	void setRecvCPUAffinity(const RecvCPUAffinityList& recv_affinity_list);
 
-	static sls::ns NSec(double x)
-	{
-		std::chrono::duration<double> sec(x);
-		return std::chrono::duration_cast<sls::ns>(sec);
-	}
-
 	AcqState getEffectiveState(AutoMutex& l);
 
 	void checkDetIdleStatus();
@@ -290,6 +303,7 @@ private:
 	FrameType m_lima_nb_frames;
 	FrameType m_det_nb_frames;
 	FrameType m_skip_frame_freq;
+	FrameType m_skip_frame_idx;
 	SortedIntList m_missing_last_skipped_frame;
 	double m_last_skipped_frame_timeout;
 	double m_exp_time;

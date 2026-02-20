@@ -34,6 +34,8 @@ using namespace lima;
 using namespace lima::SlsDetector;
 
 
+const std::string Camera::packet_sideband_data_key = "packet_data";
+
 Camera::AppInputData::AppInputData(string cfg_fname) 
 	: config_file_name(cfg_fname)
 {
@@ -46,6 +48,10 @@ void Camera::AppInputData::parseConfigFile()
 	DEB_MEMBER_FUNCT();
 
 	ifstream config_file(config_file_name);
+	if (config_file.fail())
+		THROW_HW_FATAL(InvalidValue) << "Error opening config file: "
+					     << config_file_name;
+
 	while (config_file) {
 		string s;
 		config_file >> s;
@@ -192,8 +198,7 @@ Camera::AcqThread::newFrameReady(DetFrameImagePackets&& packets)
 	HwFrameInfoType frame_info;
 	FrameType frame = packets.first;
 	frame_info.acq_frame_nb = frame;
-	static const std::string key = "packet_data";
-	HwAddData(key, frame_info,
+	HwAddData(packet_sideband_data_key, frame_info,
 		  std::make_shared<PacketData>(std::move(packets)));
 	DEB_TRACE() << DEB_VAR1(frame_info);
 	StdBufferCbMgr *cb_mgr = m_cam->m_buffer.getBufferCbMgr();
@@ -392,7 +397,7 @@ DetFrameImagePackets Camera::AcqThread::readRecvPackets(FrameType frame)
 			return {};
 		AutoPtr<Receiver::ImagePackets> image_packets;
 		Receiver *recv = m_cam->m_recv_list[i];
-		image_packets = recv->readImagePackets();
+		image_packets = recv->readImagePackets(frame);
 		if (stopped())
 			return {};
 		else if (!image_packets)
@@ -507,6 +512,7 @@ Camera::Camera(string config_fname, int det_id)
 	  m_lima_nb_frames(1),
 	  m_det_nb_frames(1),
 	  m_skip_frame_freq(0),
+	  m_skip_frame_idx(0),
 	  m_last_skipped_frame_timeout(0.5),
 	  m_lat_time(0),
 	  m_buffer(this),
@@ -755,12 +761,21 @@ void Camera::setNbFrames(FrameType nb_frames)
 
 	waitAcqState(Idle);
 	FrameType det_nb_frames = nb_frames;
-	if (m_skip_frame_freq)
-		det_nb_frames += nb_frames / m_skip_frame_freq;
+	FrameType sdk_nb_frames = det_nb_frames;
+	if (m_model) {
+		if (m_skip_frame_freq) {
+			det_nb_frames += det_nb_frames / m_skip_frame_freq;
+			if (det_nb_frames % (m_skip_frame_freq + 1) != 0)
+				THROW_HW_ERROR(InvalidValue)
+					<< "Total nb frames not multiple of "
+					<< "effective skip_frame_freq";
+		}
+		sdk_nb_frames = m_model->getSdkNbFrames(det_nb_frames);
+	}
 	bool trig_exp = ((m_trig_mode == Defs::TriggerExposure) ||
 			 (m_trig_mode == Defs::SoftTriggerExposure));
-	int cam_frames = trig_exp ? 1 : det_nb_frames;
-	int cam_triggers = trig_exp ? det_nb_frames : 1;
+	int cam_frames = trig_exp ? 1 : sdk_nb_frames;
+	int cam_triggers = trig_exp ? sdk_nb_frames : 1;
 	EXC_CHECK(m_det->setNumberOfFrames(cam_frames));
 	EXC_CHECK(m_det->setNumberOfTriggers(cam_triggers));
 	m_lima_nb_frames = nb_frames;
@@ -778,7 +793,13 @@ void Camera::setSkipFrameFreq(FrameType skip_frame_freq)
 {
 	DEB_MEMBER_FUNCT();
 	DEB_PARAM() << DEB_VAR1(skip_frame_freq);
+	bool idx_was_last = (m_skip_frame_idx == m_skip_frame_freq);
 	m_skip_frame_freq = skip_frame_freq;
+	if (idx_was_last || (m_skip_frame_idx > m_skip_frame_freq))
+		m_skip_frame_idx = m_skip_frame_freq;
+	FrameType misalign = m_lima_nb_frames % (m_skip_frame_freq + 1);
+	if (misalign != m_skip_frame_freq)
+		m_lima_nb_frames += m_skip_frame_freq - misalign;
 	setNbFrames(m_lima_nb_frames);
 }
 
@@ -787,6 +808,23 @@ void Camera::getSkipFrameFreq(FrameType& skip_frame_freq)
 	DEB_MEMBER_FUNCT();
 	skip_frame_freq = m_skip_frame_freq;
 	DEB_RETURN() << DEB_VAR1(skip_frame_freq);
+}
+
+void Camera::setSkipFrameIdx(FrameType skip_frame_idx)
+{
+	DEB_MEMBER_FUNCT();
+	DEB_PARAM() << DEB_VAR1(skip_frame_idx);
+	if (skip_frame_idx > m_skip_frame_freq)
+		THROW_HW_ERROR(InvalidValue) << "Skip Frame Idx too high";
+	m_skip_frame_idx = skip_frame_idx;
+	setNbFrames(m_lima_nb_frames);
+}
+
+void Camera::getSkipFrameIdx(FrameType& skip_frame_idx)
+{
+	DEB_MEMBER_FUNCT();
+	skip_frame_idx = m_skip_frame_idx;
+	DEB_RETURN() << DEB_VAR1(skip_frame_idx);
 }
 
 void Camera::setExpTime(double exp_time)
@@ -846,6 +884,20 @@ void Camera::getFramePeriod(double& frame_period)
 	DEB_MEMBER_FUNCT();
 	frame_period = m_frame_period;
 	DEB_RETURN() << DEB_VAR1(frame_period);
+}
+
+void Camera::getNbDetFrames(FrameType& nb_det_frames)
+{
+	DEB_MEMBER_FUNCT();
+	nb_det_frames = m_det->getNumberOfFrames().squash();
+	DEB_RETURN() << DEB_VAR1(nb_det_frames);
+}
+
+void Camera::getNbDetTriggers(FrameType& nb_det_triggers)
+{
+	DEB_MEMBER_FUNCT();
+	nb_det_triggers = m_det->getNumberOfTriggers().squash();
+	DEB_RETURN() << DEB_VAR1(nb_det_triggers);
 }
 
 void Camera::updateImageSize()
@@ -1177,12 +1229,16 @@ void Camera::processLastSkippedFrame(int recv_idx)
 int Camera::getFramesCaught()
 {
 	DEB_MEMBER_FUNCT();
-	sls::Result<int64_t> res;
+	typedef std::vector<int64_t> PortFrameList;
+	sls::Result<PortFrameList> res;
 	EXC_CHECK(res = m_det->getFramesCaught());
 	int64_t frames_caught = 0;
-	sls::Result<int64_t>::iterator it, end = res.end();
-	for (it = res.begin(); it != end; ++it)
-		frames_caught = max(frames_caught, *it);
+	sls::Result<PortFrameList>::iterator it, end = res.end();
+	for (it = res.begin(); it != end; ++it) {
+		PortFrameList::iterator pit, pend = it->end();
+		for (pit = it->begin(); pit != pend; ++pit)
+			frames_caught = max(frames_caught, *pit);
+	}
 	DEB_RETURN() << DEB_VAR1(frames_caught);
 	return frames_caught;
 }
@@ -1190,12 +1246,16 @@ int Camera::getFramesCaught()
 int Camera::getLastFrameCaught()
 {
 	DEB_MEMBER_FUNCT();
-	sls::Result<uint64_t> res;
+	typedef std::vector<int64_t> PortFrameList;
+	sls::Result<PortFrameList> res;
 	EXC_CHECK(res = m_det->getRxCurrentFrameIndex());
-	uint64_t last_frame_caught = ULONG_MAX;
-	sls::Result<uint64_t>::iterator it, end = res.end();
-	for (it = res.begin(); it != end; ++it)
-		last_frame_caught = min(last_frame_caught, *it);
+	int64_t last_frame_caught = LONG_MAX;
+	sls::Result<PortFrameList>::iterator it, end = res.end();
+	for (it = res.begin(); it != end; ++it) {
+		PortFrameList::iterator pit, pend = it->end();
+		for (pit = it->begin(); pit != pend; ++pit)
+			last_frame_caught = min(last_frame_caught, *pit);
+	}
 	DEB_RETURN() << DEB_VAR1(last_frame_caught);
 	return last_frame_caught - 1;
 }

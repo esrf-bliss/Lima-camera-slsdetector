@@ -21,6 +21,80 @@
 //###########################################################################
 
 
+%MappedType SlsDetector::CPUMask
+{
+%TypeHeaderCode
+#include "SlsDetectorCPUAffinity.h"
+#include "sipAPIlimaslsdetector.h"
+#include "SlsDetectorSip.h"
+
+using namespace lima::SlsDetector;
+%End
+
+%ConvertToTypeCode
+	if (sipIsErr == NULL)
+		return PyLong_Check(sipPy);
+
+	std::string s = Hex(sipPy, sipIsErr);
+	if (*sipIsErr)
+		return 0;
+
+	try {
+		*sipCppPtr = new CPUMask(CPUMask::fromString(s, 16));
+	} catch (...) {
+		*sipIsErr = 1;
+		std::string err = "Invalid CPUMask: " + s;
+		PyErr_SetString(sipException_Exception, err.c_str());
+		return 0;
+	}
+
+	return sipGetState(sipTransferObj);
+%End
+
+%ConvertFromTypeCode
+	std::string r = sipCpp->toString();
+	return PyLong_FromString(r.c_str(), NULL, 16);
+%End
+};
+
+
+%MappedType SlsDetector::NumaNodeMask
+{
+%TypeHeaderCode
+#include "SlsDetectorCPUAffinity.h"
+#include "sipAPIlimaslsdetector.h"
+#include "SlsDetectorSip.h"
+
+using namespace lima::SlsDetector;
+%End
+
+%ConvertToTypeCode
+	if (sipIsErr == NULL)
+		return PyLong_Check(sipPy);
+
+	std::string s = Hex(sipPy, sipIsErr);
+	if (*sipIsErr)
+		return 0;
+
+	try {
+		*sipCppPtr = new NumaNodeMask(NumaNodeMask::fromString(s));
+	} catch (...) {
+		*sipIsErr = 1;
+		std::string err = "Invalid NumaNodeMask: " + std::string(s);
+		PyErr_SetString(sipException_Exception, err.c_str());
+		return 0;
+	}
+
+	return sipGetState(sipTransferObj);
+%End
+
+%ConvertFromTypeCode
+	std::string r = sipCpp->toString();
+	return PyLong_FromString(r.c_str(), NULL, 16);
+%End
+};
+
+
 // namespace SlsDetector
 // {
 // typedef std::vector<CPUAffinity> CPUAffinityList;
@@ -209,58 +283,13 @@ public:
 
 class CPUAffinity
 {
-%TypeCode
-	PyObject *maskToPyLong(const CPUMask& mask)
-	{
-		std::string r = mask.m_mask.to_string();
-		return PyLong_FromString(r.c_str(), NULL, 2);
-	}
-
-	CPUMask pyBytesToCPUMask(PyObject *py_bytes)
-	{
-		char *r = PyBytes_AsString(py_bytes);
-		if (!r)
-			throw LIMA_HW_EXC(InvalidValue, "Invalid PyBytes");
-		int base = 2;
-		Py_ssize_t len = PyBytes_Size(py_bytes);
-		if ((len > 2) && (strncmp(r, "0x", 2) == 0))
-			base = 16;
-		return CPUMask::fromString(r, base);
-	}
-%End
-
 public:
 	CPUAffinity();
-	CPUAffinity(SIP_PYOBJECT mask);
-%MethodCode
-	Py_BEGIN_ALLOW_THREADS
-	try
-	{
-		if (!PyBytes_Check(a0))
-			throw LIMA_HW_EXC(InvalidValue, "CPUAffinity accepts "
-							"PyBytes objects only");
-		CPUMask mask = pyBytesToCPUMask(a0);
-		sipCpp = new ::SlsDetector::CPUAffinity(mask.m_mask);
-	}
-	catch (...)
-	{
-		Py_BLOCK_THREADS
-		sipRaiseUnknownException();
-		return NULL;
-	}
-	Py_END_ALLOW_THREADS
-%End
+	CPUAffinity(const SlsDetector::CPUMask& mask);
 
 	static int getNbSystemCPUs(bool max_nb = false);
 	static int getNbHexDigits(bool max_nb = false);
-	static SIP_PYOBJECT allCPUs(bool max_nb = false);
-%MethodCode
-	CPUMask mask;
-	Py_BEGIN_ALLOW_THREADS
-	mask = ::SlsDetector::CPUAffinity::allCPUs(a0);
-	Py_END_ALLOW_THREADS
-	sipRes = maskToPyLong(mask);
-%End
+	static SlsDetector::CPUMask allCPUs(bool max_nb = false);
 
 	int getNbCPUs() const;
 
@@ -268,23 +297,9 @@ public:
 	void applyToTask(int task, bool incl_threads = true,
 			 bool use_taskset = true) const;
 
-	SIP_PYOBJECT getMask() const;
-%MethodCode
-	CPUMask mask;
-	Py_BEGIN_ALLOW_THREADS
-	mask = sipCpp->getMask();
-	Py_END_ALLOW_THREADS
-	sipRes = maskToPyLong(mask);
-%End
+	SlsDetector::CPUMask getMask() const;
 
-	SIP_PYOBJECT getZeroDefaultMask() const;
-%MethodCode
-	CPUMask mask;
-	Py_BEGIN_ALLOW_THREADS
-	mask = sipCpp->getZeroDefaultMask();
-	Py_END_ALLOW_THREADS
-	sipRes = maskToPyLong(mask);
-%End
+	SlsDetector::CPUMask getZeroDefaultMask() const;
 
 	SlsDetector::CPUAffinity& operator |=(const SlsDetector::CPUAffinity& o);
 
@@ -392,11 +407,12 @@ SlsDetector::CPUAffinity RecvCPUAffinityList_all(
 				const SlsDetector::RecvCPUAffinityList& l);
 
 struct GlobalCPUAffinity {
-	SlsDetector::RecvCPUAffinityList recv;
-	SlsDetector::CPUAffinity acq;
-	SlsDetector::CPUAffinity lima;
-	SlsDetector::CPUAffinity other;
-	SlsDetector::NetDevGroupCPUAffinityList netdev;
+	SlsDetector::RecvCPUAffinityList recv_cpu;
+	SlsDetector::CPUAffinity acq_cpu;
+	SlsDetector::CPUAffinity lima_cpu;
+	SlsDetector::NumaNodeMask lima_node;
+	SlsDetector::CPUAffinity other_cpu;
+	SlsDetector::NetDevGroupCPUAffinityList netdev_cpu;
 	std::vector<std::string> rx_netdev;
 
 	SlsDetector::CPUAffinity all() const;

@@ -60,10 +60,21 @@ class SlsDetectorJungfrau(SlsDetector):
                   'img_proc_config',
                   'img_src',
                   'gain_ped_map_type',
+                  'calib_kev_adus',
+                  'storage_cell_start',
+                  'nb_additional_storage_cells',
+                  'storage_cell_delay',
+                  'gain_ped_calib_curr_storage_cell',
+                  'ave_curr_storage_cell',
+                  'corr_threshold_active',
+                  'corr_threshold_adus',
+                  'delay_after_trigger',
     ]
 
     NbGains = 3
-
+    NbStorageCells = SlsDetectorHw.Jungfrau.NbStorageCells
+    DefaultStorageCell = SlsDetectorHw.Jungfrau.DefaultStorageCell
+    
     GainPedCalibAttrRe = re.compile('((?P<action>read|write)_)?'
                                     '(?P<select>gain|ped)_'
                                     '(?P<gain>[0-2])_calib_map')
@@ -92,35 +103,18 @@ class SlsDetectorJungfrau(SlsDetector):
     @Core.DEB_MEMBER_FUNCT
     def init_device(self):
         SlsDetector.init_device(self)
-        calib_file = self.det_asm_calib_file
-        if calib_file and isinstance(calib_file, list):
-            calib_file = calib_file[0]
-        if calib_file:
-            try:
-                import numpy as np
-                import h5py as h5
-                deb.Always("Loading calibration file: '%s'" % calib_file)
-                with h5.File(calib_file, 'r') as f:
-                    d = f['/data']
-                    nb_gains, height, width = d.shape
-                    if nb_gains != self.NbGains:
-                        raise ValueError('Bad nb of calib gains: %s' % nb_gains)
-                    valid_pixels = (d[0] != 0) 
-                    deb.Always("size=(%dx%d), valid_pixels=%d" %
-                               (width, height, valid_pixels.sum()))
-                    g0_ave = d[0][valid_pixels].mean()
-                    deb.Always("OrigGain[0].ave=%.8f" % g0_ave)
-                    for i, gd in enumerate(d):
-                        gd[valid_pixels] /= g0_ave
-                        gd_ave = gd[valid_pixels].mean()
-                        factor = (f' [x{int(abs(prev_ave / gd_ave))}]'
-                                  if i > 0 else '')
-                        deb.Always("NormGain[%d].ave=%.8f%s" % (i, gd_ave,
-                                                                factor))
-                        self.setGainPedCalibMap('gain', i, gd)
-                        prev_ave = gd_ave
-            except Exception as e:
-                deb.Error("Error loading calibration: %s" % e)
+        try:
+            # load STD mode calib file & calc. calib_kev_adus
+            calib_file = self.getStorageCellModeCalibFile(False)
+            if calib_file:
+                self.loadCalibFile(calib_file)
+        except Exception as e:
+            deb.Error("Error loading STD mode calib. file: %s" % e)
+        try:
+            active = self.getStorageCellModeActive()
+            self.setStorageCellModeActive(active)
+        except Exception as e:
+            deb.Error("Error getting/setting SC mode ative: %s" % e)
         sys.stderr.flush()
 
     def init_list_attr(self):
@@ -153,6 +147,77 @@ class SlsDetectorJungfrau(SlsDetector):
             if attr in name:
                 obj = self.model
         return self.getDevAttr(name, obj)
+
+    @Core.DEB_MEMBER_FUNCT
+    def loadCalibFile(self, calib_file):
+        deb.Param("calib_file=%s" % calib_file)
+        import h5py as h5
+        deb.Always("Loading calibration file: '%s'" % calib_file)
+        jungfrau = _SlsDetectorJungfrau
+        with h5.File(calib_file, 'r') as f:
+            d = f['/data']
+            nb_frames, height, width = d.shape
+            nb_sc, aux = divmod(nb_frames, self.NbGains)
+            if aux != 0 or nb_sc not in [1, self.NbStorageCells]:
+                raise ValueError('Bad nb of calib gains: %s' % nb_frames)
+            std_mode = (nb_sc == 1)
+            kev_adus = None if std_mode else jungfrau.getCalibKevAdus()
+            deb.Always("Calibration storage cells: %d - %s mode" %
+                       (nb_sc, 'STD' if std_mode else 'SC'))
+            if not std_mode:
+                deb.Always("Calibration ADUs per keV: %.8f" % kev_adus)
+            sc_list = [self.DefaultStorageCell] if std_mode else range(nb_sc)
+            gain_offset_list = range(0, nb_frames, self.NbGains)
+            for sc, go in zip(sc_list, gain_offset_list):
+                deb.Always("Storage cell #%d:" % sc)
+                self.model.setGainPedCalibCurrStorageCell(sc)
+                valid_pixels = (d[go] != 0) 
+                deb.Always("size=(%dx%d), valid_pixels=%d" %
+                           (width, height, valid_pixels.sum()))
+                g0_ave = d[go][valid_pixels].mean()
+                deb.Always("OrigGain[0].ave=%.8f" % g0_ave)
+                if std_mode:
+                    kev_adus = g0_ave
+                    deb.Always("Setting ADUs per keV: %.8f" % kev_adus)
+                    jungfrau.setCalibKevAdus(kev_adus)
+                for i, gd in enumerate(d[go:go+self.NbGains]):
+                    gd[valid_pixels] /= kev_adus
+                    gd_ave = gd[valid_pixels].mean()
+                    factor = (f' [x{int(abs(prev_ave / gd_ave))}]'
+                              if i > 0 else '')
+                    deb.Always("NormGain[%d].ave=%.8f%s" % (i, gd_ave,
+                                                            factor))
+                    self.setGainPedCalibMap('gain', i, gd)
+                    prev_ave = gd_ave
+
+    @Core.DEB_MEMBER_FUNCT
+    def loadPedestalFile(self, ped_file):
+        deb.Param("ped_file=%s" % ped_file)
+        import h5py as h5
+        deb.Always("Loading pedestals file: '%s'" % ped_file)
+        jungfrau = _SlsDetectorJungfrau
+        with h5.File(ped_file, 'r') as f:
+            d = f['/data']
+            if len(d.shape) not in [3, 4]:
+                raise ValueError('Bad data dimensions: %s' % (d.shape,))
+            nb_gains, height, width = d.shape[-3:]
+            if nb_gains != self.NbGains:
+                raise ValueError('Bad nb of gains: %s' % nb_gains)
+            has_sc = (len(d.shape) == 4)
+            nb_sc = d.shape[0] if has_sc else 1
+            if has_sc and (nb_sc != self.NbStorageCells):
+                raise ValueError('Bad nb of pedestal SCs: %s' % nb_sc)
+            std_mode = (nb_sc == 1)
+            deb.Always("Pedestal storage cells: %d - %s mode" %
+                       (nb_sc, 'STD' if std_mode else 'SC'))
+            sc_list = [self.DefaultStorageCell] if std_mode else range(nb_sc)
+            for sc in sc_list:
+                self.model.setGainPedCalibCurrStorageCell(sc)
+                gp = d[sc] if has_sc else d
+                for i, pd in enumerate(gp):
+                    deb.Always("Storage cell #%d - Gain %d ..." % (sc, i))
+                    self.setGainPedCalibMap('ped', i, pd)
+            deb.Always("Pedestals updated!")
 
     @Core.DEB_MEMBER_FUNCT
     def read_det_map(self, attr):
@@ -197,12 +262,23 @@ class SlsDetectorJungfrau(SlsDetector):
         attr.set_value(data)
 
     @Core.DEB_MEMBER_FUNCT
-    def read_ave_map(self, attr):
+    def readAveMap(self, req_frame):
+        deb.Param("req_frame=%s" % req_frame)
         jungfrau = _SlsDetectorJungfrau
-        ave_data, nb_frames, frame = jungfrau.readAveMap(-1)
+        ave_data, nb_frames, frame = jungfrau.readAveMap(req_frame)
         deb.Return("frame=%s, nb_frames=%s, ave_data=%s" % (frame, nb_frames,
                                                             ave_data))
+        return ave_data, nb_frames, frame
+
+    @Core.DEB_MEMBER_FUNCT
+    def read_ave_map(self, attr):
+        ave_data, nb_frames, frame = self.readAveMap(-1)
         attr.set_value(ave_data.buffer)
+
+    @Core.DEB_MEMBER_FUNCT
+    def read_ave_nb_frames(self, attr):
+        ave_data, nb_frames, frame = self.readAveMap(-1)
+        attr.set_value(nb_frames)
 
     @Core.DEB_MEMBER_FUNCT
     def write_gain_ped_calib_map(self, attr, map_select, gain):
@@ -246,6 +322,85 @@ class SlsDetectorJungfrau(SlsDetector):
         deb.Return('settings=%s' % settings)
         return settings
 
+    @Core.DEB_MEMBER_FUNCT
+    def write_storage_cell_mode_active(self, attr):
+        active = attr.get_write_value()
+        if active != self.getStorageCellModeActive():
+            self.setStorageCellModeActive(active)
+
+    @Core.DEB_MEMBER_FUNCT
+    def read_storage_cell_mode_active(self, attr):
+        active = self.getStorageCellModeActive()
+        attr.set_value(active)
+
+    @Core.DEB_MEMBER_FUNCT
+    def setStorageCellModeActive(self, active):
+        deb.Param('active=%s' % active)
+        jungfrau = _SlsDetectorJungfrau
+        if active:
+            if not self.getStorageCellModeActive():
+                jungfrau.setNbAdditionalStorageCells(15)
+                jungfrau.setStorageCellStart(0)
+        else:
+            jungfrau.setNbAdditionalStorageCells(0)
+            jungfrau.setStorageCellStart(15)
+
+        calib_file = self.getStorageCellModeCalibFile(active)
+        if calib_file:
+            self.loadCalibFile(calib_file)
+    
+    @Core.DEB_MEMBER_FUNCT
+    def getStorageCellModeActive(self):
+        jungfrau = _SlsDetectorJungfrau
+        nb_sc = jungfrau.getNbAdditionalStorageCells() + 1
+        start_sc = jungfrau.getStorageCellStart()
+        active = nb_sc != 1 or start_sc != 15
+        deb.Return('active=%s' % active)
+        return active
+    
+    @Core.DEB_MEMBER_FUNCT
+    def getStorageCellModeCalibFile(self, active):
+        deb.Param('active=%s' % active)
+        calib_file_attr = ('det_asm_calib_file_sc'
+                           if active else 'det_asm_calib_file')
+        calib_file = getattr(self, calib_file_attr)
+        if calib_file and isinstance(calib_file, list):
+            calib_file = calib_file[0]
+        deb.Return('calib_file=%s' % calib_file)
+        return calib_file
+
+    @Core.DEB_MEMBER_FUNCT
+    def write_nb_additional_storage_cells(self, attr):
+        jungfrau = _SlsDetectorJungfrau
+        add_sc = attr.get_write_value()
+        deb.Param('add_sc=%s' % add_sc)
+        prev_add_sc = jungfrau.getNbAdditionalStorageCells() 
+        if add_sc == prev_add_sc:
+            return
+        prev_active = self.getStorageCellModeActive()
+        if not prev_active:
+            raise RuntimeError('Cannot change SC settings if not in SC mode')
+        jungfrau.setNbAdditionalStorageCells(add_sc)
+        # check if the SC mode did change due to new value and load config
+        if not self.getStorageCellModeActive():
+            self.setStorageCellModeActive(False)
+
+    @Core.DEB_MEMBER_FUNCT
+    def write_storage_cell_start(self, attr):
+        jungfrau = _SlsDetectorJungfrau
+        start_sc = attr.get_write_value()
+        deb.Param('start_sc=%s' % start_sc)
+        prev_start_sc = jungfrau.getStorageCellStart() 
+        if start_sc == prev_start_sc:
+            return
+        prev_active = self.getStorageCellModeActive()
+        if not prev_active:
+            raise RuntimeError('Cannot change SC settings if not in SC mode')
+        jungfrau.setStorageCellStart(start_sc)
+        # check if the SC mode did change due to new value and load config
+        if not self.getStorageCellModeActive():
+            self.setStorageCellModeActive(False)
+
 
 #------------------------------------------------------------------
 #    SlsDetectorJungfrau class
@@ -260,10 +415,20 @@ class SlsDetectorJungfrauClass(SlsDetectorClass):
         'det_asm_calib_file':
         [PyTango.DevString,
          "Detector assembled calibration HDF5 file with the 3 gains", ""],
+        'det_asm_calib_file_sc':
+        [PyTango.DevString,
+         "Detector assembled calibration HDF5 file with the 3 gains "
+         "for each SC", ""],
         }
     device_property_list.update(SlsDetectorClass.device_property_list)
 
     cmd_list = {
+        'loadCalibFile':
+        [[PyTango.DevString, "Calibration file path"],
+         [PyTango.DevVoid, ""]],
+        'loadPedestalFile':
+        [[PyTango.DevString, "Pedestal file path"],
+         [PyTango.DevVoid, ""]],
         }
     cmd_list.update(SlsDetectorClass.cmd_list)
 
@@ -308,6 +473,50 @@ class SlsDetectorJungfrauClass(SlsDetectorClass):
         [[PyTango.DevDouble,
           PyTango.IMAGE,
           PyTango.READ, 8192, 8192]],
+        'ave_nb_frames':
+        [[PyTango.DevULong,
+          PyTango.SCALAR,
+          PyTango.READ]],
+        'ave_curr_storage_cell':
+        [[PyTango.DevLong,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'storage_cell_mode_active':
+        [[PyTango.DevBoolean,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'storage_cell_start':
+        [[PyTango.DevLong,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'nb_additional_storage_cells':
+        [[PyTango.DevLong,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'storage_cell_delay':
+        [[PyTango.DevDouble,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'gain_ped_calib_curr_storage_cell':
+        [[PyTango.DevLong,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'calib_kev_adus':
+        [[PyTango.DevDouble,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'corr_threshold_active':
+        [[PyTango.DevBoolean,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'corr_threshold_adus':
+        [[PyTango.DevDouble,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
+        'delay_after_trigger':
+        [[PyTango.DevDouble,
+          PyTango.SCALAR,
+          PyTango.READ_WRITE]],
         'gain_0_calib_map':
         [[PyTango.DevDouble,
           PyTango.IMAGE,

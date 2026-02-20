@@ -136,6 +136,8 @@ class SystemCmdPipe
 	SystemCmd m_cmd;
 };
 
+typedef lima::CPUMask CPUMask;
+typedef lima::NumaNodeMask NumaNodeMask;
 
 class CPUAffinity 
 {
@@ -150,6 +152,7 @@ class CPUAffinity
 
 	CPUAffinity() {}
 	CPUAffinity(const Mask& m) : m_mask(m) {}
+	CPUAffinity(const CPUMask& m) : m_mask(m.m_mask) {}
 
 	static int getNbSystemCPUs(bool max_nb = false);
 
@@ -565,11 +568,12 @@ inline CPUAffinity RecvCPUAffinityList_all(const RecvCPUAffinityList& l,
 }
 					       
 struct GlobalCPUAffinity {
-	RecvCPUAffinityList recv;
-	CPUAffinity acq;
-	CPUAffinity lima;
-	CPUAffinity other;
-	NetDevGroupCPUAffinityList netdev;
+	RecvCPUAffinityList recv_cpu;
+	CPUAffinity acq_cpu;
+	CPUAffinity lima_cpu;
+	NumaNodeMask lima_node;
+	CPUAffinity other_cpu;
+	NetDevGroupCPUAffinityList netdev_cpu;
 	StringList rx_netdev;
 
 	CPUAffinity all() const;
@@ -671,6 +675,8 @@ class GlobalCPUAffinityMgr
 
 	void setLimaThreadAffinity(CPUAffinity lima_affinity);
 	void setLimaBufferAffinity(CPUAffinity lima_affinity);
+	void setLimaBufferNumaNode(NumaNodeMask lima_node);
+	void setLimaNumaAffinity(CPUAffinity lima_affinity);
 	void setRecvAffinity(const RecvCPUAffinityList& recv_affinity_list);
 	void setAcqAffinity(CPUAffinity acq_affinity);
 

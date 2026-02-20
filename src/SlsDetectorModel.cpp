@@ -109,8 +109,6 @@ void Model::getAcqFrameDim(FrameDim& frame_dim, bool raw)
 	DEB_RETURN() << DEB_VAR1(frame_dim);
 }
 
-#include "SlsDetectorReceiver.h"
-
 bool Model::isAcqActive()
 {
 	DEB_MEMBER_FUNCT();
@@ -123,4 +121,21 @@ Reconstruction *Model::getReconstruction()
 {
 	DEB_MEMBER_FUNCT();
 	return NULL;
+}
+
+void Model::initFrameMetadata(const DetFrameImagePackets& dfp,
+			      FrameMetadata& md)
+{
+	DEB_MEMBER_FUNCT();
+	auto& dp = dfp.second;
+	for (auto& mp: dp) {
+		auto& ip = mp.second;
+		if (!ip)
+			continue;
+		auto h = ip->getNetworkHeader();
+		if (!h)
+			continue;
+		md.network_header = *h;
+		break;
+	}
 }

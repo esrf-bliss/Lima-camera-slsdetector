@@ -313,5 +313,24 @@ private:
 	Stats(const SlsDetector::Stats& o);
 };
 
+struct FrameMetadata {
+	struct NetworkHeader {
+		unsigned long frameNumber;
+		unsigned int expLength;
+		unsigned int packetNumber;
+		unsigned long detSpec1;
+		unsigned long timestamp;
+		unsigned short modId;
+		unsigned short row;
+		unsigned short column;
+		unsigned short detSpec2;
+		unsigned int detSpec3;
+		unsigned short detSpec4;
+		unsigned char detType;
+		unsigned char version;
+	};
+
+	SlsDetector::FrameMetadata::NetworkHeader network_header;
+};
 
 }; // namespace SlsDetector

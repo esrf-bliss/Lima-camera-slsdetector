@@ -92,7 +92,7 @@ void Eiger::CorrBase::prepareAcq()
 	m_inter_lines[m_nb_eiger_modules - 1] = 0;
 }
 
-Data Eiger::ModelReconstruction::processModel(Data& data)
+Data Eiger::ModelReconstruction::processModel(Data& data, const FrameMetadata& md)
 {
 	DEB_MEMBER_FUNCT();
 

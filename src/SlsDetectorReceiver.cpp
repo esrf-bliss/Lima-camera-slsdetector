@@ -35,6 +35,20 @@ using AnyPacketBlockList = sls::AnyPacketBlockList;
 struct RecvImagePackets : public Receiver::ImagePackets {
 	using Receiver::ImagePackets::ImagePackets;
 	AnyPacketBlockList blocks;
+
+	HeaderPtr getNetworkHeader() const override
+	{
+		for (int i = 0; i < numberOfPorts; ++i) {
+			if (i >= blocks.size())
+				return nullptr;
+			else if (!validPortData[i])
+				continue;
+			return std::visit([](auto &b) {
+				return b ? b->getNetworkHeader() : nullptr;
+			}, blocks[i]);
+		}
+		return nullptr;
+	}
 };
 
 inline
@@ -98,14 +112,15 @@ void Receiver::setCPUAffinity(const RecvCPUAffinity& recv_affinity)
 	m_recv->setListenersCPUAffinity(cpu_masks);
 }
 
-AutoPtr<Receiver::ImagePackets> Receiver::readSkippableImagePackets()
+AutoPtr<Receiver::ImagePackets> Receiver::readSkippableImagePackets(
+							FrameType det_frame)
 {
 	DEB_MEMBER_FUNCT();
 	AutoPtr<ImagePackets> image_data = new RecvImagePackets(this);
 	AnyPacketBlockList& blocks = RecvImagePacketBlocks(image_data);
 	slsDetectorDefs::sls_detector_header *header = NULL;
 	FrameType& frame = image_data->frame;
-	blocks = std::move(m_recv->GetFramePacketBlocks());
+	blocks = std::move(m_recv->GetFramePacketBlocks(det_frame));
 	image_data->numberOfPorts = blocks.size();
 	bool incomplete_data = (image_data->numberOfPorts == 0);
 	for (int i = 0; i < image_data->numberOfPorts; ++i) {
@@ -145,7 +160,7 @@ AutoPtr<Receiver::ImagePackets> Receiver::readSkippableImagePackets()
 	return image_data;
 }
 
-AutoPtr<Receiver::ImagePackets> Receiver::readImagePackets()
+AutoPtr<Receiver::ImagePackets> Receiver::readImagePackets(FrameType frame)
 {
 	DEB_MEMBER_FUNCT();
 
@@ -159,38 +174,54 @@ AutoPtr<Receiver::ImagePackets> Receiver::readImagePackets()
 
 	AutoPtr<ImagePackets> image_data;
 	try {
-		image_data = readSkippableImagePackets();
+		image_data = readSkippableImagePackets(frame + 1);
 		if (!image_data)
 			return NULL;
 
-		FrameType det_frame = image_data->frame;
+		FrameType frame = image_data->frame - 1; // 1st frame set to 1
 		bool skip_this = false;
 		bool skip_next = false;
 		bool prev_last_skipped = m_last_skipped;
-		FrameType skip_freq = m_cam->m_skip_frame_freq;
-		if (skip_freq) {
-			skip_this = (det_frame % (skip_freq + 1) == 0);
-			FrameType last_frame = m_cam->m_det_nb_frames;
-			skip_next = ((det_frame + 1) == last_frame);
-			if (skip_this && (det_frame == last_frame))
+		FrameType skip_freq = m_cam->m_skip_frame_freq + 1;
+		FrameType skip_idx = m_cam->m_skip_frame_idx;
+		bool check_skip = (skip_freq > 1);
+		if (check_skip) {
+			auto must_skip = [&](FrameType f) {
+				return f % skip_freq == skip_idx;
+			};
+			auto is_last = [&](FrameType f) {
+				return f == m_cam->m_det_nb_frames - 1;
+			};
+			skip_this = must_skip(frame);
+			if (is_last(frame) || (skip_this && is_last(frame + 1)))
 				m_last_skipped = true;
-			DEB_TRACE() << DEB_VAR5(m_idx, det_frame, skip_this,
+			FrameType next_offset = skip_this ? 2 : 1;
+			skip_next = (must_skip(frame + next_offset) &&
+				     is_last(frame + next_offset));
+			DEB_TRACE() << DEB_VAR5(m_idx, frame, skip_this,
 						skip_next, m_last_skipped);
 		}
 
 		if (skip_this) {
-			image_data = readSkippableImagePackets();
+			image_data = readSkippableImagePackets(frame + 2);
 			if (!image_data)
 				return NULL;
-			det_frame = image_data->frame;
+			frame = image_data->frame - 1;
 		}
 
-		image_data->frame = det_frame - 1; // first frame is set to 1
-		if (skip_freq)
-			image_data->frame -= det_frame / (skip_freq + 1);
+		image_data->frame = frame; // Inject 0-based Lima frame
+		if (check_skip) {
+			FrameType offset = skip_freq - skip_idx;
+			image_data->frame -= (frame + offset) / skip_freq;
+			DEB_TRACE() << DEB_VAR1(image_data->frame);
+		}
+
+		if (image_data->frame != frame)
+			DEB_WARNING() << "Unexpected frame: "
+				      << DEB_VAR2(image_data->frame, frame);
 
 		if (skip_next && !m_last_skipped) {
-			AutoPtr<ImagePackets> skip = readSkippableImagePackets();
+			AutoPtr<ImagePackets> skip = readSkippableImagePackets(frame + 2);
 			if (!skip)
 				return NULL;
 			m_last_skipped = true;

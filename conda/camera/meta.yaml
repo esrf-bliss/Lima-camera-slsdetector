@@ -23,6 +23,7 @@ requirements:
     - libnuma
     - libpng
     - zeromq
+    - rapidjson
   build:
     - git
     - cmake

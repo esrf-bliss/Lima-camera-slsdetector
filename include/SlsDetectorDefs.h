@@ -526,6 +526,11 @@ typedef MatchList::const_iterator MatchListIt;
 		THROW_HW_ERROR(Error) << e.what();		\
 	}
 
+struct FrameMetadata {
+	typedef slsDetectorDefs::sls_detector_header NetworkHeader;
+	NetworkHeader network_header;
+};
+
 } // namespace SlsDetector
 
 } // namespace lima

@@ -192,10 +192,6 @@ class SlsDetectorEigerClass(SlsDetectorClass):
         [[PyTango.DevString,
           PyTango.SCALAR,
           PyTango.READ_WRITE]],
-        'skip_frame_freq':
-        [[PyTango.DevLong,
-          PyTango.SCALAR,
-          PyTango.READ_WRITE]],
         'tx_frame_delay':
         [[PyTango.DevLong,
           PyTango.SCALAR,
